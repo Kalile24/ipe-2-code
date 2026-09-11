@@ -22,3 +22,24 @@ Detalhes de arquitetura, decisões técnicas e plano de testes estão na spec:
 Python + [InsightFace](https://github.com/deepinsight/insightface)
 (detecção RetinaFace + embeddings ArcFace) via ONNX Runtime, com portagem
 futura planejada para a Jetson Orin NX do robô.
+
+## Como rodar
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+```
+
+Cadastrar pessoas conhecidas (coloque fotos em `data/known_faces/<nome>/`,
+não versionadas):
+
+```bash
+.venv/bin/python -m apps.enroll
+```
+
+Rodar o reconhecimento ao vivo pela webcam (ou por um vídeo gravado):
+
+```bash
+.venv/bin/python -m apps.webcam_demo
+.venv/bin/python -m apps.webcam_demo --source caminho/para/video.mp4
+```

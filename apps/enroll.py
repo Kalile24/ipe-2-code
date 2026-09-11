@@ -31,8 +31,9 @@ def enroll_from_directory(known_faces_dir: Path, engine: FaceEngine, store: Iden
 def main() -> None:
     engine = FaceEngine(det_size=DET_SIZE)
     store = IdentityStore(DB_PATH)
-    store.load()
     enroll_from_directory(Path(KNOWN_FACES_DIR), engine, store)
+    if not store.embeddings:
+        print(f"Aviso: nenhuma pessoa foi cadastrada a partir de {KNOWN_FACES_DIR}.")
     store.save()
 
 

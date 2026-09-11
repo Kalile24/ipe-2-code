@@ -20,6 +20,8 @@ def main() -> None:
     engine = FaceEngine(det_size=DET_SIZE)
     store = IdentityStore(DB_PATH)
     store.load()
+    if not store.embeddings:
+        print(f"Aviso: nenhuma identidade cadastrada em {DB_PATH}; todos os rostos serão marcados como Desconhecido.")
 
     cap = cv2.VideoCapture(source)
     if not cap.isOpened():

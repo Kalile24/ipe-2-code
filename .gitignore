@@ -6,3 +6,6 @@ data/known_faces/*
 !data/known_faces/.gitkeep
 data/identity_db.npz
 data/identity_db.json
+*.mp4
+*.avi
+*.mov
