@@ -397,6 +397,15 @@ git commit -m "Add FaceEngine wrapping InsightFace detection and embeddings"
 
 ## Task 4: `apps/enroll.py` — enrollment CLI
 
+**Amended 2026-09-11 post-implementation (final review finding):** the code
+below originally called `store.load()` before `enroll_from_directory` in
+`main()`, which made every re-run of `enroll.py` duplicate previously
+enrolled embeddings (`IdentityStore.enroll` extends, it doesn't replace).
+Fixed by dropping `store.load()` — `data/known_faces/` is the source of
+truth, so `enroll.py` always does a full rebuild — and by warning when no
+one got enrolled at all. See the implementation plan's ledger for the
+ruling.
+
 **Files:**
 - Create: `apps/enroll.py`
 - Test: `tests/test_enroll.py`
@@ -480,8 +489,9 @@ def enroll_from_directory(known_faces_dir: Path, engine: FaceEngine, store: Iden
 def main() -> None:
     engine = FaceEngine(det_size=DET_SIZE)
     store = IdentityStore(DB_PATH)
-    store.load()
     enroll_from_directory(Path(KNOWN_FACES_DIR), engine, store)
+    if not store.embeddings:
+        print(f"Aviso: nenhuma pessoa foi cadastrada a partir de {KNOWN_FACES_DIR}.")
     store.save()
 
 
