@@ -97,7 +97,9 @@ data/identity_db.json   # metadados (qtd de fotos, data de cadastro)
   - `identity_store`: similaridade de cosseno, aplicação do limiar,
     persistência (save/load) — com vetores sintéticos, sem depender do
     modelo pesado.
-  - `face_engine`: com 1-2 imagens fixture pequenas versionadas,
+  - `face_engine`: usando a imagem de amostra já embutida no próprio
+    pacote `insightface` (`insightface.data.get_image("t1")`), sem
+    precisar versionar fotos de pessoas reais no repositório —
     verificando detecção de rosto e dimensão do embedding retornado.
 - **Validação com vídeo gravado:** gravar um pequeno vídeo de teste
   (webcam) com pessoas cadastradas e não cadastradas, para servir como
@@ -109,10 +111,13 @@ data/identity_db.json   # metadados (qtd de fotos, data de cadastro)
 
 ## Ambiente e riscos de setup
 
-- Python do sistema é 3.14 (muito recente); `onnxruntime`/`insightface`
-  provavelmente não têm wheels ainda para essa versão. Mitigação: criar
-  um virtualenv dedicado ao projeto com uma versão de Python compatível
-  (ex: 3.11), sem alterar o Python do sistema.
+- Python do sistema é 3.14. **Verificado em 2026-09-11:** `numpy==2.5.3`,
+  `opencv-python==5.0.0.93`, `onnxruntime==1.30.0` e `insightface==2.0`
+  têm wheels para 3.14 e instalam/importam sem conflito; o download e
+  preparo do modelo `buffalo_l` (~280MB, primeira execução, requer
+  internet) e a detecção em uma imagem real foram testados com sucesso.
+  Não é necessário um Python separado — usamos um virtualenv comum
+  (`python3 -m venv`) com o Python do sistema.
 - WSL2 não acessa webcam USB nativamente. Mitigação: configurar
   `usbipd-win` para passthrough USB do Windows ao WSL; se isso for
   custoso, usar vídeo gravado como alternativa durante o
