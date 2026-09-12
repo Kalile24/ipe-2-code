@@ -12,10 +12,23 @@ apropriada (ex: reconhecer o general, se aproximar e prestar continência).
 
 ## Estado atual
 
-Fase de prototipagem local (webcam comum), sem integração com o robô ainda.
-Detalhes de arquitetura, decisões técnicas e plano de testes estão na spec:
+Protótipo local (webcam comum) validado em hardware real. Próximo passo:
+embrulhar o mesmo pipeline num nó ROS2, testado localmente antes de termos
+acesso ao robô. Specs completas:
 
-- [`docs/superpowers/specs/2026-09-10-facial-recognition-design.md`](docs/superpowers/specs/2026-09-10-facial-recognition-design.md)
+- [`docs/superpowers/specs/2026-09-10-facial-recognition-design.md`](docs/superpowers/specs/2026-09-10-facial-recognition-design.md) — protótipo standalone
+- [`docs/superpowers/specs/2026-09-12-ros2-node-migration-design.md`](docs/superpowers/specs/2026-09-12-ros2-node-migration-design.md) — migração para nó ROS2
+
+## Sobre o robô — Unitree G1 EDU
+
+- **Compute:** NVIDIA Jetson Orin NX (100–157 TOPS conforme variante) + CPU 8 núcleos.
+- **Câmera:** Intel RealSense D435i (RGB + profundidade + IMU).
+- **LiDAR:** Livox MID-360.
+- **SDK oficial:** ROS2 (testado/recomendado em Ubuntu 22.04 + ROS2 Humble).
+
+Referências:
+- [Página oficial do produto (unitree.com/g1)](https://www.unitree.com/g1/)
+- [SDK oficial ROS2 (github.com/unitreerobotics/unitree_ros2)](https://github.com/unitreerobotics/unitree_ros2)
 
 ## Stack
 
