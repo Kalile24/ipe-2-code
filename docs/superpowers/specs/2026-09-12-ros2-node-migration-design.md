@@ -51,31 +51,54 @@ extensão futura não vai exigir trocar o tipo de mensagem.
 
 ## Ambiente de desenvolvimento
 
-Nova instância WSL2 com **Ubuntu 22.04 (Jammy)**, dedicada a este trabalho —
-mesma versão de SO que o SDK oficial da Unitree testa/recomenda e que o
-JetPack do robô usa. Evita Docker/RoboStack e qualquer camada de
-compatibilidade. O projeto Python inteiro (venv, InsightFace, `core/`,
-`apps/`) é recriado nessa instância, já que o nó ROS2 precisa rodar no
-mesmo processo/ambiente. Bônus: Ubuntu 22.04 usa Python 3.10 por padrão,
-que é o alvo nativo do `rclpy` do Humble — sem a incerteza de compatibilidade
-que tivemos com o Python 3.14 do WSL anterior.
+**Revisado em 2026-09-12:** a ideia original era uma instância WSL2 dedicada
+com Ubuntu 22.04. O usuário mantém um único ambiente de desenvolvimento
+completo no WSL (Ubuntu 26.04, onde o Claude Code e todas as ferramentas já
+estão configuradas) e não quer fragmentar isso numa segunda distro. A
+solução adotada: **Docker**, rodando dentro dessa mesma distro.
+
+- **Imagem base:** `osrf/ros:humble-desktop` (Ubuntu 22.04 + ROS2 Humble +
+  rviz2/rqt, imagem oficial da OSRF) — dá o ambiente exato que o SDK da
+  Unitree testa/recomenda, sem precisar trocar de distro.
+- **`Dockerfile` próprio** (`docker/ros2.Dockerfile`), construído uma vez,
+  adicionando sobre a imagem base:
+  - `apt`: `ros-humble-cv-bridge`, `ros-humble-vision-msgs`,
+    `ros-humble-v4l2-camera`.
+  - `pip`: as mesmas dependências do protótipo (`numpy`, `opencv-python`,
+    `onnxruntime`, `insightface`, `pytest`) — direto no Python do sistema
+    do container (sem venv: o container já é o isolamento).
+  - `pip install -e .` do `core/` (bind-montado do host).
+- **Repositório como volume** (`-v <repo>:/workspace`): o container enxerga
+  os arquivos do repo ao vivo, incluindo o `ros2_ws/` criado neste plano —
+  nada é duplicado ou sincronizado manualmente.
+- **Webcam via `--device=/dev/video0`** (+ mapeamento do grupo `video` do
+  host pro container), reaproveitando o mesmo device node que o
+  `usbipd-win` já expõe nesta distro.
+- **Validação principal via `ros2 topic echo`** (não exige GUI).
+  `rqt_image_view` (interface gráfica) só funciona se o repasse do
+  socket X11/Wayland do WSLg pro container for configurado — tratado como
+  bônus opcional, não bloqueante.
 
 **Risco a verificar empiricamente durante a implementação:** `cv_bridge`
-(pacote `apt`) é compilado contra o OpenCV do sistema/ROS; misturar isso com
-`opencv-python` via `pip` no mesmo processo pode causar conflito de
-binário/versão. Pode ser necessário usar o `python3-opencv` do `apt` em vez
-do `opencv-python` do `pip` dentro do venv do nó ROS2. A ordem de resolução:
-criar o venv com `--system-site-packages` (pra enxergar `rclpy`/`cv_bridge`/
-`vision_msgs` instalados via `apt`), instalar as demais dependências do
-projeto, e testar a importação conjunta antes de escrever qualquer código —
-mesma abordagem de "verificar antes de assumir" que usamos com o Python
-3.14 na fase anterior.
+(pacote `apt`) é compilado contra o OpenCV do sistema/ROS da imagem base;
+misturar isso com `opencv-python` via `pip` no mesmo container pode causar
+conflito de binário/versão. Resolução: instalar tudo e testar a importação
+conjunta (`import cv2, rclpy, cv_bridge, vision_msgs`) antes de escrever
+qualquer código do nó — mesma abordagem de "verificar antes de assumir"
+usada com o Python 3.14 na fase anterior. Se houver conflito, considerar
+usar o `cv2` que vem com o `cv_bridge`/`apt` em vez do `pip`.
+
+A instância WSL2 Ubuntu 22.04 instalada durante a fase de brainstorming
+deixa de ser necessária para este plano — pode ser mantida sem uso ou
+removida, à critério do usuário.
 
 ## Arquitetura e estrutura de pacotes
 
 ```
 ipe-2-code/
 ├── pyproject.toml          # novo: torna core/ instalável (pip install -e .)
+├── docker/
+│   └── ros2.Dockerfile     # novo: osrf/ros:humble-desktop + apt/pip deps
 ├── core/                   # sem mudança de responsabilidade
 ├── apps/                   # inalterado
 ├── tests/                  # inalterado
@@ -174,8 +197,12 @@ próprio.
 
 ## Dependências novas
 
-- `rclpy`, `sensor_msgs` — parte de qualquer instalação ROS2 Humble.
-- `ros-humble-cv-bridge` (`apt`).
-- `ros-humble-vision-msgs` (`apt`).
-- `ros-humble-v4l2-camera` (`apt`, só pra teste local).
-- `pyproject.toml` novo na raiz do repo, pra tornar `core/` instalável.
+- Docker (motor já instalado nesta distro; usuário precisa estar no grupo
+  `docker`).
+- Imagem `osrf/ros:humble-desktop` + `docker/ros2.Dockerfile` próprio, com:
+  - `rclpy`, `sensor_msgs` — já vêm na imagem base do ROS2 Humble.
+  - `ros-humble-cv-bridge` (`apt`).
+  - `ros-humble-vision-msgs` (`apt`).
+  - `ros-humble-v4l2-camera` (`apt`, só pra teste local).
+- `pyproject.toml` novo na raiz do repo, pra tornar `core/` instalável
+  (`pip install -e .`, rodado dentro do container).
