@@ -345,8 +345,8 @@ def test_build_detection_unknown_person_uses_desconhecido_label():
 def test_build_detection_bbox_center_and_size():
     detection = build_detection(bbox=(10, 20, 110, 220), name="alice", score=0.87)
 
-    assert detection.bbox.center.position.x == 60.0
-    assert detection.bbox.center.position.y == 120.0
+    assert detection.bbox.center.x == 60.0
+    assert detection.bbox.center.y == 120.0
     assert detection.bbox.size_x == 100.0
     assert detection.bbox.size_y == 200.0
 ```
@@ -373,8 +373,8 @@ def build_detection(
     x1, y1, x2, y2 = bbox
 
     detection = Detection2D()
-    detection.bbox.center.position.x = float((x1 + x2) / 2)
-    detection.bbox.center.position.y = float((y1 + y2) / 2)
+    detection.bbox.center.x = float((x1 + x2) / 2)
+    detection.bbox.center.y = float((y1 + y2) / 2)
     detection.bbox.size_x = float(x2 - x1)
     detection.bbox.size_y = float(y2 - y1)
 
