@@ -2,6 +2,10 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+*.egg-info/
+build/
+install/
+log/
 data/known_faces/*
 !data/known_faces/.gitkeep
 data/identity_db.npz
