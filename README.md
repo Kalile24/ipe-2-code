@@ -12,9 +12,11 @@ apropriada (ex: reconhecer o general, se aproximar e prestar continência).
 
 ## Estado atual
 
-Protótipo local (webcam comum) validado em hardware real. Próximo passo:
-embrulhar o mesmo pipeline num nó ROS2, testado localmente antes de termos
-acesso ao robô. Specs completas:
+Protótipo local (webcam comum) validado em hardware real, **e** nó ROS2
+(`face_recognition_node`) validado ponta a ponta em Docker (câmera →
+detecção → reconhecimento → publicação em tópico), sem precisar de acesso ao
+robô. Próximo passo: portagem para o Jetson Orin NX do Unitree G1 EDU. Specs
+completas:
 
 - [`docs/superpowers/specs/2026-09-10-facial-recognition-design.md`](docs/superpowers/specs/2026-09-10-facial-recognition-design.md) — protótipo standalone
 - [`docs/superpowers/specs/2026-09-12-ros2-node-migration-design.md`](docs/superpowers/specs/2026-09-12-ros2-node-migration-design.md) — migração para nó ROS2
@@ -38,6 +40,8 @@ futura planejada para a Jetson Orin NX do robô.
 
 ## Como rodar
 
+### Protótipo standalone (webcam direta, sem ROS2)
+
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
@@ -56,3 +60,31 @@ Rodar o reconhecimento ao vivo pela webcam (ou por um vídeo gravado):
 .venv/bin/python -m apps.webcam_demo
 .venv/bin/python -m apps.webcam_demo --source caminho/para/video.mp4
 ```
+
+### Nó ROS2 (Docker)
+
+Requer Docker (usuário no grupo `docker`) e uma webcam em `/dev/video0`.
+
+```bash
+docker build -f docker/ros2.Dockerfile -t face-recognition-ros2:local .
+
+docker run --rm -it --device=/dev/video0 --group-add video \
+  -v "$(pwd)":/workspace -w /workspace face-recognition-ros2:local bash
+
+# dentro do container:
+pip install -e .
+cd ros2_ws
+colcon build --symlink-install
+source install/setup.bash
+ros2 launch face_recognition_ros face_recognition.launch.py
+```
+
+Em outro terminal, pra ver as detecções chegando:
+
+```bash
+docker exec -it <container_id> bash -lc \
+  "source /opt/ros/humble/setup.bash && ros2 topic echo /face_recognition/detections"
+```
+
+Guia completo (build, testes, troubleshooting, cadastro de pessoas):
+[`docs/guides/ros2-docker.md`](docs/guides/ros2-docker.md).

@@ -1,0 +1,6 @@
+setuptools==58.2.0
+numpy==1.26.4
+opencv-python==4.10.0.84
+onnxruntime==1.23.2
+insightface==2.0
+pytest==7.4.4
