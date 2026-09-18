@@ -7,11 +7,14 @@ name = "face-recognition-core"
 version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
-    "numpy==2.5.3",
-    "opencv-python==5.0.0.93",
-    "onnxruntime==1.30.0",
-    "insightface==2.0",
+    "numpy",
+    "opencv-python",
+    "onnxruntime",
+    "insightface",
 ]
 
 [tool.setuptools]
 packages = ["core"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -8,8 +8,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-humble-v4l2-camera \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir -r /tmp/requirements.txt
+COPY docker/requirements-ros2.txt /tmp/requirements-ros2.txt
+RUN pip install --no-cache-dir -r /tmp/requirements-ros2.txt
 
 WORKDIR /workspace
 
