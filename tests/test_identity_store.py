@@ -54,3 +54,22 @@ def test_save_and_load_round_trip(tmp_path):
 
     assert set(loaded.embeddings.keys()) == {"alice", "bob"}
     np.testing.assert_allclose(loaded.embeddings["alice"][0], [1.0, 0.0, 0.0])
+
+
+def test_db_path_includes_model_name(tmp_path):
+    db_path = str(tmp_path / "identity_db")
+    store = IdentityStore(db_path, model_name="buffalo_s")
+    assert store.db_path.name == "identity_db_buffalo_s"
+
+
+def test_different_models_use_separate_db_files(tmp_path):
+    db_path = str(tmp_path / "identity_db")
+
+    store_l = IdentityStore(db_path, model_name="buffalo_l")
+    store_l.enroll("alice", [np.array([1.0, 0.0, 0.0], dtype=np.float32)])
+    store_l.save()
+
+    store_s = IdentityStore(db_path, model_name="buffalo_s")
+    store_s.load()
+
+    assert store_s.embeddings == {}

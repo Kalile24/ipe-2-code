@@ -6,6 +6,7 @@ from core.config import (
     CAMERA_INDEX,
     DB_PATH,
     DET_SIZE,
+    MODEL_NAME,
     RECOGNITION_INTERVAL_FRAMES,
     SIMILARITY_THRESHOLD,
 )
@@ -20,11 +21,16 @@ def main() -> None:
         default=str(CAMERA_INDEX),
         help="Índice da câmera (ex: 0) ou caminho de um arquivo de vídeo",
     )
+    parser.add_argument(
+        "--model",
+        default=MODEL_NAME,
+        help="Pacote de modelo do InsightFace (ex: buffalo_l, buffalo_s, buffalo_sc)",
+    )
     args = parser.parse_args()
     source = int(args.source) if args.source.isdigit() else args.source
 
-    engine = FaceEngine(det_size=DET_SIZE)
-    store = IdentityStore(DB_PATH)
+    engine = FaceEngine(det_size=DET_SIZE, model_name=args.model)
+    store = IdentityStore(DB_PATH, model_name=args.model)
     store.load()
     if not store.embeddings:
         print(f"Aviso: nenhuma identidade cadastrada em {DB_PATH}; todos os rostos serão marcados como Desconhecido.")

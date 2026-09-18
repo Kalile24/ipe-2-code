@@ -1,8 +1,9 @@
+import argparse
 from pathlib import Path
 
 import cv2
 
-from core.config import DB_PATH, DET_SIZE, KNOWN_FACES_DIR
+from core.config import DB_PATH, DET_SIZE, KNOWN_FACES_DIR, MODEL_NAME
 from core.face_engine import FaceEngine
 from core.identity_store import IdentityStore
 
@@ -29,8 +30,16 @@ def enroll_from_directory(known_faces_dir: Path, engine: FaceEngine, store: Iden
 
 
 def main() -> None:
-    engine = FaceEngine(det_size=DET_SIZE)
-    store = IdentityStore(DB_PATH)
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--model",
+        default=MODEL_NAME,
+        help="Pacote de modelo do InsightFace (ex: buffalo_l, buffalo_s, buffalo_sc)",
+    )
+    args = parser.parse_args()
+
+    engine = FaceEngine(det_size=DET_SIZE, model_name=args.model)
+    store = IdentityStore(DB_PATH, model_name=args.model)
     enroll_from_directory(Path(KNOWN_FACES_DIR), engine, store)
     if not store.embeddings:
         print(f"Aviso: nenhuma pessoa foi cadastrada a partir de {KNOWN_FACES_DIR}.")

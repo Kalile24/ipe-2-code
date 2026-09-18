@@ -12,8 +12,8 @@ class FaceResult:
 
 
 class FaceEngine:
-    def __init__(self, det_size: tuple[int, int] = (640, 640)):
-        self._app = FaceAnalysis(name="buffalo_l", allowed_modules=["detection", "recognition"])
+    def __init__(self, det_size: tuple[int, int] = (640, 640), model_name: str = "buffalo_l"):
+        self._app = FaceAnalysis(name=model_name, allowed_modules=["detection", "recognition"])
         self._app.prepare(ctx_id=0, det_size=det_size)
 
     def extract_faces(self, frame: np.ndarray) -> list[FaceResult]:

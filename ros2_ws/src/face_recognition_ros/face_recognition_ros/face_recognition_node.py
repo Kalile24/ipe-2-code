@@ -5,7 +5,13 @@ from rclpy.qos import QoSProfile
 from sensor_msgs.msg import Image
 from vision_msgs.msg import Detection2DArray
 
-from core.config import DB_PATH, DET_SIZE, RECOGNITION_INTERVAL_FRAMES, SIMILARITY_THRESHOLD
+from core.config import (
+    DB_PATH,
+    DET_SIZE,
+    MODEL_NAME,
+    RECOGNITION_INTERVAL_FRAMES,
+    SIMILARITY_THRESHOLD,
+)
 from core.face_engine import FaceEngine
 from core.identity_store import IdentityStore
 
@@ -20,15 +26,17 @@ class FaceRecognitionNode(Node):
         self.declare_parameter("detections_topic", "/face_recognition/detections")
         self.declare_parameter("similarity_threshold", SIMILARITY_THRESHOLD)
         self.declare_parameter("db_path", DB_PATH)
+        self.declare_parameter("model_name", MODEL_NAME)
 
         image_topic = self.get_parameter("image_topic").value
         detections_topic = self.get_parameter("detections_topic").value
         self._threshold = self.get_parameter("similarity_threshold").value
         db_path = self.get_parameter("db_path").value
+        model_name = self.get_parameter("model_name").value
 
         self._bridge = CvBridge()
-        self._engine = FaceEngine(det_size=DET_SIZE)
-        self._store = IdentityStore(db_path)
+        self._engine = FaceEngine(det_size=DET_SIZE, model_name=model_name)
+        self._store = IdentityStore(db_path, model_name=model_name)
         self._store.load()
         if not self._store.embeddings:
             self.get_logger().warn(

@@ -61,6 +61,8 @@ Rodar o reconhecimento ao vivo pela webcam (ou por um vídeo gravado):
 .venv/bin/python -m apps.webcam_demo --source caminho/para/video.mp4
 ```
 
+`--model` escolhe o pacote do InsightFace (`buffalo_l` default, ou `buffalo_s`/`buffalo_sc` — mais leves, trocam acurácia por latência; cada um usa seu próprio banco de identidades). Aceito em `enroll` e `webcam_demo`; detalhes em [`docs/guides/ros2-docker.md`](docs/guides/ros2-docker.md#6-escolha-de-modelo-latência-vs-acurácia).
+
 ### Nó ROS2 (Docker)
 
 Requer Docker (usuário no grupo `docker`) e uma webcam em `/dev/video0`.

@@ -9,8 +9,9 @@ def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
 
 
 class IdentityStore:
-    def __init__(self, db_path: str):
-        self.db_path = Path(db_path)
+    def __init__(self, db_path: str, model_name: str = "buffalo_l"):
+        base = Path(db_path)
+        self.db_path = base.with_name(f"{base.name}_{model_name}")
         self.embeddings: dict[str, list[np.ndarray]] = {}
 
     def enroll(self, name: str, embeddings: list[np.ndarray]) -> None:

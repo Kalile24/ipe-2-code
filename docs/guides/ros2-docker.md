@@ -107,6 +107,31 @@ O nó só lê o banco de identidades **uma vez**, na inicialização — depois 
 cadastrar alguém novo, reinicie o `ros2 launch` (Terminal A: `Ctrl+C` e rode
 de novo) pra ele carregar o cadastro atualizado.
 
+## 6. Escolha de modelo (latência vs. acurácia)
+
+O InsightFace empacota três combinações de detector+reconhecedor, do mais
+preciso/pesado ao mais leve/rápido: `buffalo_l` (default), `buffalo_s`,
+`buffalo_sc`. Testado em CPU (sem GPU): `buffalo_l` roda visivelmente
+travado (~900ms por reconhecimento); `buffalo_sc` roda fluido, ao custo de
+acurácia — para poucas pessoas cadastradas essa perda tende a ser pequena.
+
+Cada modelo tem seu **próprio banco de identidades**
+(`data/identity_db_<modelo>.npz`/`.json`) — embeddings de modelos
+diferentes não são comparáveis entre si, então trocar de modelo sem
+recadastrar simplesmente não encontra ninguém (não dá resultado errado
+silenciosamente).
+
+```bash
+# protótipo standalone
+.venv/bin/python -m apps.enroll --model buffalo_sc
+.venv/bin/python -m apps.webcam_demo --model buffalo_sc
+
+# nó ROS2 (parâmetro de launch)
+ros2 launch face_recognition_ros face_recognition.launch.py model_name:=buffalo_sc
+```
+
+`--model`/`model_name` default para `buffalo_l` (`core.config.MODEL_NAME`) se omitido.
+
 ## Problemas comuns (já corrigidos no repo, contexto pra quem for mexer)
 
 - **`ModuleNotFoundError: No module named 'core'` mesmo com `pip install -e .`
