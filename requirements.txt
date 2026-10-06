@@ -1,5 +1,5 @@
-numpy==2.5.3
-opencv-python==5.0.0.93
-onnxruntime==1.30.0
-insightface==2.0
-pytest==9.1.1
+# Ambiente local (x86, CPU). As dependências vivem no pyproject.toml, com limites inferiores
+# em vez de pins exatos: assim o pip escolhe versões com wheel para o Python em uso (3.8 a 3.14).
+# Containers têm pins próprios: docker/requirements-ros2.txt (Docker x86) e o Dockerfile da Jetson.
+-e .[cpu]
+pytest>=7.4

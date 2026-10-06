@@ -1,239 +1,173 @@
 # Portagem do nó ROS2 pro Jetson Orin NX (Unitree G1 EDU) — Design
 
-Data: 2026-09-18
+Data: 2026-09-18 · **revisado em 2026-10-06** após revisão da documentação oficial da
+Unitree e do código (a versão anterior assumia Ubuntu 22.04 + ROS2 Humble nativos no robô,
+o que não se confirma — ver "Fatos do robô").
+
 Contexto: o nó ROS2 `face_recognition_ros` (spec anterior:
-`2026-09-12-ros2-node-migration-design.md`) já está validado localmente —
-build, testes e reconhecimento real confirmados via Docker + webcam +
-`v4l2_camera`, rodando 100% em CPU. Este documento cobre o próximo passo:
-preparar esse mesmo pacote pra rodar de verdade no computador de bordo do
-robô (Jetson Orin NX), usando a câmera real (Intel RealSense D435i) e a GPU
-da Jetson pra acelerar a inferência.
+`2026-09-12-ros2-node-migration-design.md`) já está validado localmente — build, testes e
+reconhecimento real via Docker + webcam + `v4l2_camera`, em CPU. Este documento cobre o
+próximo passo: rodar esse pacote no computador de bordo do robô, com a câmera real (Intel
+RealSense D435i) e a GPU da Jetson.
 
-**Sem acesso físico ao robô ou a uma Jetson avulsa no momento da escrita.**
-Este é um documento de planejamento: cobre o código que já dá pra escrever
-e testar (a parte "cola", sem GPU real disponível) e um guia de instalação
-com os passos e riscos a verificar no primeiro acesso ao hardware.
+**Sem acesso físico ao robô no momento da escrita.** O que dá pra provar sem hardware está
+provado (ver "Validado sem hardware"); o resto vira checklist do dia 1.
 
-## Risco #1 (bloqueante, verificar no dia 1): versão real de Ubuntu/ROS2/JetPack
+## Fatos do robô (documentação oficial da Unitree)
 
-O spec anterior assumiu Ubuntu 22.04 + ROS2 Humble com base na documentação
-do SDK `unitree_ros2`. Uma thread de fórum (fonte não-oficial, usuário
-comum, não confirmada pela Unitree) afirma que o G1 atualmente roda
-**ROS2 Foxy em Ubuntu 20.04 + JetPack 5** no computador de bordo — o
-`unitree_ros2` provavelmente documenta o requisito do **PC externo de
-desenvolvimento**, que é uma máquina diferente do computador de bordo do
-robô (PC2/Jetson).
+- **PC2 = JetPack 5.1.1 → Ubuntu 20.04 → Python 3.8.** A FAQ oficial publica a imagem de
+  restauração de fábrica `g1_nx_Jetpack5.1.1_20250930.img.bz2`.
+  https://support.unitree.com/home/en/G1_developer/FAQ
+- **PC1 é fechado; PC2 (`192.168.123.164`, `unitree`/`123`) é o único aberto ao
+  desenvolvedor.** A Unitree não entrega serviços no PC2 ("does not deploy services on the
+  NVIDIA Jetson Orin module"): **nosso nó abre a câmera por conta própria**, via
+  `realsense2_camera`. https://support.unitree.com/home/en/G1_developer/about_G1
+- **Os exemplos ROS2 oficiais são Foxy**; o robô fala **CycloneDDS** (domínio 0, interface
+  da rede do robô). https://support.unitree.com/home/en/G1_developer/ros2_communication_routine
+  · README de https://github.com/unitreerobotics/unitree_ros2
+- **`vision_msgs` muda de formato entre Foxy e Humble.** Foxy (2.0.0):
+  `bbox.center.x`, `results[i].id`. Humble (4.1.1): `bbox.center.position.x`,
+  `results[i].hypothesis.class_id`. Nosso `message_builder.py` é Humble.
+- **Tópico atual do `realsense-ros`:** `/camera/camera/color/image_raw` (namespace duplicado),
+  diferente do default do nó (`/camera/color/image_raw`) — o parâmetro `image_topic` cobre.
 
-**Decisão (aprovada com o usuário):** desenhar este documento e o plano de
-implementação assumindo **Humble** (mantém consistência com tudo que já foi
-construído — pacote, testes, specs, guias), e tratar a confirmação da
-versão real como a **primeira tarefa, bloqueante**, do plano de
-implementação. Se o computador de bordo vier com Foxy/Ubuntu 20.04, as
-diferenças conhecidas de API a re-verificar são as mesmas classes de
-problema já encontradas nesta migração (formato de mensagens `vision_msgs`,
-que teve uma mudança real de shape entre versões; comportamento de
-`rclpy`). Nenhuma linha de código deste design deve ser tratada como
-correta até essa verificação acontecer.
+Consequências técnicas:
 
-## Objetivo
+- Não existe Humble binário para Ubuntu 20.04. **Humble em JetPack 5 = Humble compilado do
+  fonte em Focal, com `rclpy` em Python 3.8** (imagens `dustynv/ros:humble-*-l4t-r35.x`).
+- **Container Ubuntu 22.04 não tem GPU em JetPack 5**: desde o JP 5.0 o runtime NVIDIA injeta
+  só os drivers do host; CUDA/TensorRT precisam estar dentro da imagem, e isso só é suportado
+  em imagens L4T (Ubuntu 20.04). Há falha reproduzida num Orin NX 16 GB:
+  https://github.com/dusty-nv/jetson-containers/issues/802
+- `insightface==2.0` exige Python ≥ 3.10 — **não roda no Python 3.8** do `rclpy`.
 
-Ter o `face_recognition_ros` pronto pra rodar no Jetson Orin NX do G1 EDU:
-assinando a câmera real (`realsense2_camera`) em vez da webcam local, e
-usando a GPU da Jetson (via ONNX Runtime + TensorRT/CUDA) em vez de CPU,
-sem exigir reescrever a arquitetura já validada.
+## Decisão
 
-## Não-objetivos (fora de escopo agora)
+**Um container, um processo, Python 3.8:**
 
-- Reexportar os modelos do InsightFace como engines TensorRT nativos
-  (`.engine`/`.plan`) — ganho de performance adicional sobre a Etapa 1,
-  mas exige build específico por dispositivo e troca da camada de
-  inferência do `FaceEngine`. Documentado na seção **Otimizações futuras**
-  como próximo passo, não implementado agora.
-- Pipeline `DeepStream` da NVIDIA — overkill pro escopo de um nó de
-  reconhecimento facial que já funciona bem com ROS2 puro. Citado só por
-  completude na seção **Otimizações futuras**.
-- Lógica de navegação/interação/movimento do robô (mesmo não-objetivo do
-  spec anterior — continua sendo trabalho de uma fase futura).
-- Instalar ROS2/`unitree_ros2` do zero no computador de bordo — assume-se
-  que o robô já vem com esse SDK configurado de fábrica; o guia cobre
-  *adicionar* nosso pacote a esse ambiente, não recriá-lo.
+- Base `dustynv/ros:humble-ros-base-l4t-r35.3.1` (Ubuntu 20.04; Humble do fonte; CUDA 11.4 e
+  TensorRT 8.5.2 dentro da imagem; CycloneDDS). Roda no PC2 de fábrica com
+  `--runtime nvidia --network host`, câmera por `--device`/`--privileged`. **O host não é
+  alterado** (sem reflash).
+- Inferência no mesmo processo do nó: **`insightface==0.7.3`** (última versão para Python
+  3.8) + **`onnxruntime-gpu 1.16.0` cp38 do Jetson Zoo para JetPack 5.1.1** + `numpy 1.24.4`.
+  Wheel verificada em 2026-10-06: tag `cp38-cp38-linux_aarch64`, inclui
+  `libonnxruntime_providers_cuda.so` e `libonnxruntime_providers_tensorrt.so`, exige
+  `numpy>=1.24.4`. https://nvidia.box.com/shared/static/iizg3ggrtdkqawkmebbfixo7sce6j365.whl
+  (tabela oficial: https://elinux.org/Jetson_Zoo#ONNX_Runtime)
+- O `docker/ros2.Dockerfile` (x86, Ubuntu 22.04) continua como ambiente de desenvolvimento.
 
-## Arquitetura
+Por que `insightface 0.7.3` serve: o `FaceEngine` só usa `FaceAnalysis(name, root,
+allowed_modules, providers)`, `prepare(ctx_id, det_size)`, `get(img)` e
+`face.bbox`/`det_score`/`normed_embedding` — API idêntica no 0.7.3 (conferido no código-fonte
+do pacote). E o 0.7.3 **não declara `onnxruntime` como dependência**, então instalá-lo não
+sobrescreve a wheel GPU pela de CPU (o 2.0 declara, e o pip troca o módulo sem erro).
 
-Duas mudanças pontuais sobre o pacote já existente, sem reestruturação:
+### Alternativas descartadas
 
-1. **`FaceEngine` aceita uma lista de execution providers do ONNX
-   Runtime**, em vez de assumir CPU implicitamente. Confirmado na fonte
-   (`insightface/app/face_analysis.py`, branch `master`): `FaceAnalysis`
-   já aceita `providers` via `**kwargs` e repassa pro `onnxruntime`
-   internamente — não precisa trocar de biblioteca nem reescrever o
-   `FaceEngine`.
-2. **`launch/face_recognition.launch.py` ganha um argumento `camera`**
-   (`v4l2` default — preserva o caminho de teste local já validado;
-   `realsense` — sobe `realsense2_camera` em vez de `v4l2_camera` pro robô
-   real). Só troca qual nó de câmera é lançado; `face_recognition_node` não
-   muda.
+- **Nativo no host (Foxy, Python 3.8):** exigiria instalar e manter ROS2 no host
+  (a Unitree não entrega) e uma camada de compatibilidade para o `vision_msgs` do Foxy.
+- **Reflash do PC2 para JetPack 6 (Ubuntu 22.04):** a imagem não está no portal oficial, a
+  carrier board da Unitree exige BSP específico e há relato de perda de garantia — risco
+  institucional para um equipamento do IME. Fica como último recurso.
+- **Dois processos (nó em 3.8 ↔ inferência em 3.10 com `insightface 2.0`, via IPC):**
+  preserva o 2.0 ao custo de um serviço de inferência, serialização de frames entre
+  processos, um segundo interpretador e um ambiente onde qualquer `pip install` pode trocar o
+  ORT GPU pelo de CPU sem erro. Não usamos nada do 2.0 que o 0.7.3 não tenha.
+- **Container Ubuntu 22.04 (`ros:humble` oficial):** sem GPU em JetPack 5.
 
-Nenhum call site existente (protótipo standalone, Docker local) muda de
-comportamento — CPU continua sendo o padrão em tudo que já roda hoje. GPU e
-câmera real são **overrides explícitos**, só usados no lançamento de
-produção no robô — mesmo princípio já usado com `model_name` (feature
-recém-mesclada na `master`).
+## Validado sem hardware
 
-## Componentes
+- **Suíte completa em Python 3.8.20 + `insightface 0.7.3` + `numpy 1.24.4` (x86, CPU):
+  35 passed**, incluindo os testes que carregam o `buffalo_l` real (detecção e cadastro).
+  Comando: `python:3.8` com `pip install 'numpy<1.25' onnxruntime opencv-python-headless
+  insightface==0.7.3 pytest`.
+- Todos os módulos importam em 3.8 (`from __future__ import annotations` em todos;
+  `tests/test_future_annotations.py` guarda isso; CI roda 3.8/3.10/3.12).
+- Wheel `onnxruntime-gpu 1.16.0` cp38: tags e providers conferidos (acima).
 
-### `core/config.py`
+## Componentes a implementar
 
-Nova constante, mesmo padrão de `MODEL_NAME`:
-
-```python
-ONNX_PROVIDERS = ["CPUExecutionProvider"]
-```
-
-### `core/face_engine.py`
+### `core/face_engine.py` — providers explícitos
 
 ```python
-class FaceEngine:
-    def __init__(
-        self,
-        det_size: tuple[int, int] = (640, 640),
-        model_name: str = "buffalo_l",
-        providers: list[str] | None = None,
-    ):
-        self._app = FaceAnalysis(
-            name=model_name,
-            allowed_modules=["detection", "recognition"],
-            providers=providers or ["CPUExecutionProvider"],
-        )
-        self._app.prepare(ctx_id=0, det_size=det_size)
+def __init__(self, det_size=(640, 640), model_name="buffalo_l",
+             model_root=None, providers=None):
+    kwargs = {"root": model_root} if model_root else {}
+    if providers:
+        kwargs["providers"] = providers
+    self._app = FaceAnalysis(name=model_name, allowed_modules=["detection", "recognition"], **kwargs)
 ```
 
-### `face_recognition_node.py`
+Sem `providers`, o InsightFace usa o default dele (no 0.7.3: CUDA → CPU). No robô, o nó
+passa `["TensorrtExecutionProvider", "CUDAExecutionProvider", "CPUExecutionProvider"]` via
+o parâmetro ROS2 `onnx_providers` (e argumento de launch de mesmo nome). Depois do
+`prepare()`, o nó loga os providers **efetivamente ativos** de cada sessão — o ONNX Runtime
+só emite `UserWarning` quando um provider pedido não existe e segue em CPU, sem exceção.
 
-Novo parâmetro ROS2 `onnx_providers` (lista de strings), mesmo padrão de
-`model_name`:
+### `docker/ros2-jetson.Dockerfile` — esboço
 
-```python
-self.declare_parameter("onnx_providers", ONNX_PROVIDERS)
-...
-providers = self.get_parameter("onnx_providers").value
-self._engine = FaceEngine(det_size=DET_SIZE, model_name=model_name, providers=providers)
+```dockerfile
+FROM dustynv/ros:humble-ros-base-l4t-r35.3.1
+# A imagem (dez/2023) traz a chave GPG do ROS expirada: renovar antes de qualquer apt.
+RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+      -o /usr/share/keyrings/ros-archive-keyring.gpg
+# Dependências do insightface 0.7.3 + a wheel GPU. numpy 1.24.4: última p/ Python 3.8 e
+# exigida pela wheel. Nunca instalar o pacote `onnxruntime` (CPU) — ele sobrescreve o módulo.
+RUN pip3 install "numpy==1.24.4" insightface==0.7.3 && \
+    wget -q -O /tmp/onnxruntime_gpu-1.16.0-cp38-cp38-linux_aarch64.whl \
+      https://nvidia.box.com/shared/static/iizg3ggrtdkqawkmebbfixo7sce6j365.whl && \
+    pip3 install /tmp/onnxruntime_gpu-1.16.0-cp38-cp38-linux_aarch64.whl && rm /tmp/*.whl
+# Modelos pré-baixados (o robô não tem internet): ver INSIGHTFACE_ROOT em core/config.py.
+ENV INSIGHTFACE_ROOT=/opt/insightface
 ```
 
-No robô, o launch/parâmetro passa
-`["TensorrtExecutionProvider", "CUDAExecutionProvider", "CPUExecutionProvider"]`.
-Em qualquer outro ambiente (Docker local, protótipo), o parâmetro é
-simplesmente omitido e o default (`["CPUExecutionProvider"]`) preserva o
-comportamento já validado.
+A construir e testar em arm64 emulado antes do dia 1; o `realsense2_camera` pode não vir na
+imagem (compilar `librealsense` + `realsense-ros` do fonte nesse caso).
 
-### `launch/face_recognition.launch.py`
+### Lançamento no robô
 
-Argumento `camera` (`v4l2` | `realsense`) seleciona qual `Node` de câmera
-entra na `LaunchDescription` — usando `IfCondition`/`UnlessCondition` do
-pacote `launch.conditions` (padrão comum do ROS2 pra isso, sem precisar de
-lógica Python custom). O `face_recognition_node` continua ouvindo o mesmo
-nome de tópico (`/camera/color/image_raw` por default); com `camera:=realsense`,
-o `realsense2_camera` publica nesse tópico (ou é remapeado pra ele, igual
-já fazemos com o `v4l2_camera` hoje).
+`realsense2_camera` sobe à parte e o nosso launch não sobe câmera nenhuma:
 
-**Risco a verificar no dia 1 (não bloqueante pro código, mas pro teste
-real):** o nome exato do tópico de imagem do `realsense2_camera` varia
-entre versões do pacote `realsense-ros` — a maioria publica em
-`/camera/color/image_raw`, mas versões mais novas usam
-`/camera/camera/color/image_raw` (namespace duplicado). O parâmetro
-`image_topic` que o `face_recognition_node` já expõe (desde o spec
-anterior) cobre esse caso — só ajustar o valor, sem mudar código.
+```bash
+ros2 launch face_recognition_ros face_recognition.launch.py camera:=none \
+  image_topic:=/camera/camera/color/image_raw model_root:=/opt/insightface \
+  onnx_providers:="['TensorrtExecutionProvider','CUDAExecutionProvider','CPUExecutionProvider']"
+```
 
-## Tratamento de erros
+### `docs/guides/jetson-deployment.md`
 
-- **Provider indisponível:** o ONNX Runtime já tem fallback nativo — se
-  `TensorrtExecutionProvider` não estiver disponível na instalação
-  (ex: `onnxruntime` não foi compilado com suporte a TensorRT), ele é
-  ignorado silenciosamente e o próximo da lista é usado, até chegar em
-  `CPUExecutionProvider` (sempre disponível). Isso significa que a lista de
-  providers da Jetson pode ser passada com segurança mesmo antes de
-  confirmar exatamente quais estão ativos — mas **isso precisa ser
-  confirmado empiricamente no hardware real** (`ort.get_available_providers()`)
-  antes de assumir que a aceleração está de fato acontecendo, não só
-  caindo silenciosamente pra CPU.
-- Demais tratamentos de erro (falha do `cv_bridge`, banco de identidades
-  vazio, zero rostos) — inalterados do spec anterior.
+Passo a passo de build/execução no PC2 + o checklist do dia 1 abaixo + troubleshooting.
 
-## Plano de testes
+## Checklist do dia 1 (no robô)
 
-- Testes automatizados cobrem só a "cola": `FaceEngine` aceita e repassa
-  `providers` corretamente pro `FaceAnalysis` (mesmo nível de teste já
-  feito pra `model_name` — não testa se a GPU acelera de verdade, só que o
-  parâmetro chega no lugar certo).
-- Validação real de aceleração por GPU/TensorRT **não pode ser
-  automatizada sem o hardware** — vira um checklist manual, documentado no
-  guia de instalação, pro primeiro dia de acesso à Jetson.
+1. `cat /etc/nv_tegra_release` → R35.3.1 · `python3 -V` → 3.8.
+2. `docker info | grep -i runtime` → `nvidia` (idealmente `default-runtime: nvidia` em
+   `/etc/docker/daemon.json`).
+3. `rs-enumerate-devices` → D435i visível. Confirmar que nenhum serviço da Unitree está
+   segurando a câmera (só um processo pode abri-la).
+4. Dentro do container: `python3 -c "import onnxruntime as o; print(o.get_available_providers())"`
+   lista `TensorrtExecutionProvider` e `CUDAExecutionProvider`.
+5. `cv_bridge`/`cv2` importam (dependem de libs Tegra montadas do host pelo runtime).
+6. Tópico real da câmera: `ros2 topic list | grep image_raw`.
+7. Latência por frame com GPU vs. CPU, com `buffalo_l` e `buffalo_sc`.
+8. Memória: 16 GB compartilhados CPU/GPU com Humble + modelos carregados.
 
-## Guia de instalação (`docs/guides/jetson-deployment.md`)
+## Riscos abertos
 
-Novo documento, mesmo espírito do `docs/guides/ros2-docker.md` (passo a
-passo + troubleshooting), cobrindo:
+1. **`cv2` duplicado no container:** o `insightface` usa o `cv2` do pip; a imagem dusty traz
+   OpenCV próprio, usado pelo `cv_bridge`. Mesma classe de conflito já vista no Docker x86
+   (numpy). Verificar no build emulado; se conflitar, usar só o OpenCV da imagem.
+2. **`realsense2_camera` ausente na imagem** → compilar do fonte.
+3. **Ganho real da GPU não medido** — se o TensorRT EP não bastar, ver "Otimizações futuras".
+4. **Primeiro uso do TensorRT EP é lento** (constrói o engine na hora); considerar o cache de
+   engines do ORT (`trt_engine_cache_enable`) se o arranque incomodar.
 
-1. **Passo 0, bloqueante:** confirmar a versão real de Ubuntu (`lsb_release -a`),
-   ROS2 (`ros2 --version` ou `printenv ROS_DISTRO`) e JetPack
-   (`dpkg -l | grep nvidia-jetpack` ou `cat /etc/nv_tegra_release`) no
-   computador de bordo, antes de qualquer instalação.
-2. Instalar `onnxruntime-gpu` com suporte a TensorRT: a Jetson é ARM64 e
-   usa builds próprias da NVIDIA — **não é o `pip install onnxruntime-gpu`
-   genérico do PyPI** (esse é x86_64). Referências reais:
-   - [onnxruntime.ai — TensorRT Execution Provider (docs oficiais)](https://onnxruntime.ai/docs/execution-providers/TensorRT-ExecutionProvider.html)
-   - [Fórum NVIDIA — instalação de onnxruntime em Jetson AGX Orin](https://forums.developer.nvidia.com/t/onnxruntime-installation-on-jetson-agx-orin-developer-kit/368180)
-   - [guyin24/onnxruntime-gpu-for-jetson — wheels pré-compiladas pra JetPack 6.1/6.2.x](https://github.com/guyin24/onnxruntime-gpu-for-jetson)
-   - Se nenhuma wheel pré-compilada bater com o JetPack real detectado no
-     Passo 0, compilar do fonte é o último recurso (mais lento, mas
-     sempre funciona).
-3. Verificar que os providers de GPU realmente carregaram:
-   `python3 -c "import onnxruntime as ort; print(ort.get_available_providers())"`
-   deve listar `TensorrtExecutionProvider`/`CUDAExecutionProvider`, não só
-   `CPUExecutionProvider`.
-4. Trocar a câmera do launch: `ros2 launch face_recognition_ros
-   face_recognition.launch.py camera:=realsense`. Se não houver detecção,
-   primeiro confirmar o tópico real publicado (`ros2 topic list`) antes de
-   assumir bug — ver risco de nome de tópico acima.
-5. Deploy nativo (sem Docker) direto no computador de bordo — GPU
-   passthrough em Docker na Jetson exige configuração extra
-   (`nvidia-container-runtime`) que não compensa pra um robô já com o
-   ambiente ROS2 nativo disponível.
-6. Seção **Otimizações futuras**, documentando sem implementar:
-   - **Etapa 2 — engines TensorRT nativos:** reexportar os modelos ONNX do
-     InsightFace pra `.engine`/`.plan` via `trtexec` ou API Python do
-     TensorRT, direto na Jetson (engine não é portável entre
-     hardware/versões — tem que ser gerado no dispositivo final). Ganho
-     adicional sobre o TensorRT Execution Provider do ONNX Runtime, ao
-     custo de uma etapa de build por modelo e troca da camada de
-     inferência do `FaceEngine`. Só vale a pena se a Etapa 1 não for
-     rápida o suficiente na prática.
-   - **Etapa 3 — DeepStream:** pipeline dedicado da NVIDIA pra
-     câmera→GPU, citado por completude — adiciona uma stack inteira nova
-     (GStreamer + plugins DeepStream) que não se justifica pro escopo
-     atual de um único nó de percepção.
+## Otimizações futuras (documentadas, não implementadas)
 
-## Dependências novas
-
-- `onnxruntime-gpu` (build ARM64/JetPack-específico, não PyPI genérico) —
-  substitui o `onnxruntime` (CPU) só no ambiente da Jetson; o `.venv`/
-  container local de desenvolvimento continuam usando o `onnxruntime` de
-  CPU normalmente.
-- `realsense2_camera` (pacote ROS2 padrão, já usado como referência desde
-  o spec anterior).
-
-## Riscos abertos (resumo)
-
-1. **Versão real de Ubuntu/ROS2/JetPack no computador de bordo**
-   (bloqueante — ver seção dedicada acima).
-2. **Nome exato do tópico de imagem do `realsense2_camera`** — varia entre
-   versões do `realsense-ros`; o parâmetro `image_topic` já existente
-   cobre o ajuste, só precisa do valor certo no dia 1.
-3. **Wheel de `onnxruntime-gpu` compatível com o JetPack real** — pode não
-   existir pré-compilada pro JetPack exato do robô; compilar do fonte é o
-   fallback garantido, mas mais lento.
-4. **Ganho real de performance não medido** — todo o design assume que o
-   TensorRT/CUDA Execution Provider entrega latência bem menor que os
-   ~900ms (CPU, `buffalo_l`) já medidos localmente, mas isso só se
-   confirma com hardware real. Etapas 2/3 ficam disponíveis caso a Etapa 1
-   não seja suficiente.
+- **Engines TensorRT nativos:** converter os ONNX do InsightFace com `trtexec` direto na
+  Jetson (engine não é portável entre hardware/versões) e reimplementar pré/pós-processamento
+  (anchors do SCRFD, alinhamento por landmarks, normalização do embedding) — o que o
+  InsightFace hoje faz por nós. Só se o TensorRT EP do ONNX Runtime não for suficiente.
+- **DeepStream:** pipeline NVIDIA câmera→GPU sobre GStreamer; stack inteira nova, não se
+  justifica para um único nó de percepção.

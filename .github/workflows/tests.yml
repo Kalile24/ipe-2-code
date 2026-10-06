@@ -1,0 +1,26 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  pure:
+    # Testes que não precisam de câmera, modelo nem ROS2. Python 3.8 está na
+    # matriz porque é o interpretador do PC2 de fábrica do G1 (JetPack 5.1.1).
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.8", "3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: python -m pip install --upgrade pip numpy pytest
+      # Tudo em tests/ menos o que precisa de OpenCV/InsightFace (modelo de 300 MB): assim novos
+      # testes puros entram sozinhos na matriz.
+      - run: python -m pytest tests -q --ignore=tests/test_enroll.py --ignore=tests/test_face_engine.py
+        env:
+          PYTHONPATH: .

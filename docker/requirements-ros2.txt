@@ -1,3 +1,6 @@
+# Container ROS2 Humble (Ubuntu 22.04, Python 3.10). numpy fica em 1.x DE PROPÓSITO: o cv_bridge
+# instalado pelo apt foi compilado contra numpy 1 e quebra com numpy 2. Por isso este arquivo
+# difere do venv local (pyproject.toml, sem pins, numpy 2.x).
 setuptools==58.2.0
 numpy==1.26.4
 opencv-python==4.10.0.84

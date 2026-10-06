@@ -21,3 +21,33 @@ def test_build_detection_bbox_center_and_size():
     assert detection.bbox.center.position.y == 120.0
     assert detection.bbox.size_x == 100.0
     assert detection.bbox.size_y == 200.0
+
+
+def test_build_detection_clips_bbox_to_image_and_sets_id():
+    from std_msgs.msg import Header
+
+    header = Header()
+    header.frame_id = "camera_color_optical_frame"
+    detection = build_detection(
+        bbox=(-10, -5, 700, 500), name="alice", score=0.9, header=header, image_shape=(480, 640)
+    )
+
+    assert detection.header.frame_id == "camera_color_optical_frame"
+    assert detection.id == ""  # reservado a rastreio; o nome vai em class_id
+    assert detection.bbox.center.position.x == 320.0
+    assert detection.bbox.center.position.y == 240.0
+    assert detection.bbox.size_x == 640.0
+    assert detection.bbox.size_y == 480.0
+
+
+def test_build_detection_without_shape_keeps_bbox():
+    detection = build_detection(bbox=(-10, 0, 20, 30), name=None, score=0.1)
+    assert detection.bbox.size_x == 30.0
+
+
+def test_clip_bbox_orders_corners_and_flags_outside_boxes():
+    from face_recognition_ros.message_builder import bbox_area, clip_bbox
+
+    assert clip_bbox((50, 10, 20, 50), None) == (20, 10, 50, 50)
+    outside = clip_bbox((700, 10, 800, 50), (480, 640))
+    assert bbox_area(outside) == 0

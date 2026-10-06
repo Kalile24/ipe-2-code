@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import argparse
 
 import cv2
@@ -7,6 +9,7 @@ from core.config import (
     DB_PATH,
     DET_SIZE,
     MODEL_NAME,
+    MODEL_ROOT,
     RECOGNITION_INTERVAL_FRAMES,
     SIMILARITY_THRESHOLD,
 )
@@ -26,10 +29,15 @@ def main() -> None:
         default=MODEL_NAME,
         help="Pacote de modelo do InsightFace (ex: buffalo_l, buffalo_s, buffalo_sc)",
     )
+    parser.add_argument(
+        "--model-root",
+        default=MODEL_ROOT,
+        help="Pasta raiz dos modelos do InsightFace (default ~/.insightface); use uma pré-carregada quando não houver internet",
+    )
     args = parser.parse_args()
     source = int(args.source) if args.source.isdigit() else args.source
 
-    engine = FaceEngine(det_size=DET_SIZE, model_name=args.model)
+    engine = FaceEngine(det_size=DET_SIZE, model_name=args.model, model_root=args.model_root)
     store = IdentityStore(DB_PATH, model_name=args.model)
     store.load()
     if not store.embeddings:

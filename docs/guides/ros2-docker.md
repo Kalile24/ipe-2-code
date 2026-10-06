@@ -35,7 +35,7 @@ precisar de rebuild.
 
 ```bash
 docker run --rm -v "$(pwd)":/workspace -w /workspace face-recognition-ros2:local \
-  bash -lc "source /opt/ros/humble/setup.bash && pip install -e . && python3 -c 'import cv2, rclpy, cv_bridge, vision_msgs; print(\"OK\", cv2.__version__)'"
+  bash -lc "source /opt/ros/humble/setup.bash && pip install -e .[cpu] && python3 -c 'import cv2, rclpy, cv_bridge, vision_msgs; print(\"OK\", cv2.__version__)'"
 ```
 
 Espera-se `OK <versão>`. Isso confirma que `numpy`/`opencv-python`/`onnxruntime`
@@ -51,7 +51,7 @@ docker run --rm -it --device=/dev/video0 --group-add video \
 Dentro do container:
 
 ```bash
-pip install -e .
+pip install -e .[cpu]
 cd ros2_ws
 colcon build --symlink-install
 colcon test
@@ -149,11 +149,12 @@ ros2 launch face_recognition_ros face_recognition.launch.py model_name:=buffalo_
   plugin de teste do próprio ROS2 (`launch_testing`) não é compatível com
   `pytest>=8.1`. Por isso `docker/requirements-ros2.txt` fixa
   `pytest==7.4.4`.
-- **Imagem/pacote pip não instala no container** — `numpy`/`onnxruntime` mais
-  recentes (as versões do `requirements.txt` da raiz, usadas pelo protótipo
-  standalone) não têm build pra Python 3.10 (o Python do Ubuntu 22.04/ROS2
-  Humble). Por isso existe `docker/requirements-ros2.txt` com versões
-  específicas pro container, separadas do `requirements.txt` do host.
+- **Por que o container tem versões próprias** — o venv do host não fixa
+  versões (`pyproject.toml` só tem limites inferiores, e o pip escolhe o que
+  tem build pro Python em uso). O container precisa de `numpy` 1.x, porque o
+  `cv_bridge` do apt foi compilado contra numpy 1. Por isso
+  `docker/requirements-ros2.txt` fixa versões específicas pro Python 3.10 do
+  Ubuntu 22.04/ROS2 Humble.
 - **`docker run ... face-recognition-ros2` reclama de "pull access denied"**
   — faltou a tag: use `face-recognition-ros2:local`, exatamente como no
   `docker build`.

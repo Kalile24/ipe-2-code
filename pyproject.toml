@@ -5,13 +5,23 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "face-recognition-core"
 version = "0.1.0"
-requires-python = ">=3.10"
+requires-python = ">=3.8"
 dependencies = [
-    "numpy",
-    "opencv-python",
-    "onnxruntime",
-    "insightface",
+    # Limites inferiores, não pins: o mesmo arquivo serve ao host (Python 3.14), ao Docker x86
+    # (3.10) e à Jetson (3.8, onde só existe insightface 0.7.3 — o 2.0 exige 3.10).
+    "numpy>=1.24",
+    "opencv-python>=4.10",
+    "insightface>=0.7.3",
 ]
+
+[project.optional-dependencies]
+# O onnxruntime NÃO é dependência dura: na Jetson ele vem como `onnxruntime-gpu` (wheel da
+# NVIDIA), que instala o MESMO módulo `onnxruntime` sob outro nome de pacote. Se `onnxruntime`
+# estivesse em `dependencies`, um `pip install -e .` no robô instalaria o pacote CPU por cima do
+# GPU, sem erro. Em x86 use `pip install -e .[cpu]` (ou requirements.txt). O insightface 2.0
+# também declara `onnxruntime`; o 0.7.3 (usado na Jetson) não. No robô, instale com
+# `pip install --no-deps -e .` e confira `onnxruntime.get_available_providers()`.
+cpu = ["onnxruntime>=1.16"]
 
 [tool.setuptools]
 packages = ["core"]

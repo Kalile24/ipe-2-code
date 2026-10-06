@@ -74,7 +74,7 @@ docker run --rm -it --device=/dev/video0 --group-add video \
   -v "$(pwd)":/workspace -w /workspace face-recognition-ros2:local bash
 
 # dentro do container:
-pip install -e .
+pip install -e .[cpu]
 cd ros2_ws
 colcon build --symlink-install
 source install/setup.bash
