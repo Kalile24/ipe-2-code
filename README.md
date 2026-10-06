@@ -15,11 +15,13 @@ apropriada (ex: reconhecer o general, se aproximar e prestar continência).
 Protótipo local (webcam comum) validado em hardware real, **e** nó ROS2
 (`face_recognition_node`) validado ponta a ponta em Docker (câmera →
 detecção → reconhecimento → publicação em tópico), sem precisar de acesso ao
-robô. Próximo passo: portagem para o Jetson Orin NX do Unitree G1 EDU. Specs
-completas:
+robô. O ambiente local (ROS2 Foxy, Ubuntu 20.04, Python 3.8) é o mesmo do computador do
+robô. Próximo passo: instalação no Jetson Orin NX do Unitree G1 EDU, com GPU — guia pronto,
+ainda não executado no robô. Specs completas:
 
 - [`docs/superpowers/specs/2026-09-10-facial-recognition-design.md`](docs/superpowers/specs/2026-09-10-facial-recognition-design.md) — protótipo standalone
 - [`docs/superpowers/specs/2026-09-12-ros2-node-migration-design.md`](docs/superpowers/specs/2026-09-12-ros2-node-migration-design.md) — migração para nó ROS2
+- [`docs/superpowers/specs/2026-09-18-jetson-gpu-migration-design.md`](docs/superpowers/specs/2026-09-18-jetson-gpu-migration-design.md) — portagem para o robô (Foxy + GPU)
 
 ## Sobre o robô — Unitree G1 EDU
 
@@ -90,3 +92,8 @@ docker exec -it <container_id> bash -lc \
 
 Guia completo (build, testes, troubleshooting, cadastro de pessoas):
 [`docs/guides/ros2-docker.md`](docs/guides/ros2-docker.md).
+
+### No robô (Jetson Orin NX do G1)
+
+Instalação nativa (ROS2 Foxy + venv Python 3.8 + `onnxruntime-gpu`), câmera RealSense e
+checklist do primeiro dia: [`docs/guides/jetson-deployment.md`](docs/guides/jetson-deployment.md).

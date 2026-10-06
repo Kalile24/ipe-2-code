@@ -19,14 +19,24 @@ class FaceEngine:
         det_size: tuple[int, int] = (640, 640),
         model_name: str = "buffalo_l",
         model_root: str | None = None,
+        providers: list[str] | None = None,
     ):
         # O InsightFace baixa o pacote de modelos (~300 MB, GitHub releases) AO INSTANCIAR
         # FaceAnalysis — não no prepare() — e só se `<root>/models/<model_name>/` não existir.
         # Não há variável de ambiente; o único controle é `root=`. No robô (sem internet)
         # o diretório precisa existir de antemão: ver docker/ros2.Dockerfile.
         kwargs = {"root": model_root} if model_root else {}
+        # Execution providers do ONNX Runtime, em ordem de preferência (ex: TensorRT, CUDA, CPU).
+        # Sem lista, vale o default do InsightFace. Provider indisponível não lança: o ORT só
+        # avisa e segue com o próximo — por isso existe active_providers().
+        if providers:
+            kwargs["providers"] = providers
         self._app = FaceAnalysis(name=model_name, allowed_modules=["detection", "recognition"], **kwargs)
         self._app.prepare(ctx_id=0, det_size=det_size)
+
+    def active_providers(self) -> dict[str, list[str]]:
+        """Providers que cada modelo está usando DE FATO (ex: {'detection': ['CPUExecutionProvider']})."""
+        return {task: model.session.get_providers() for task, model in self._app.models.items()}
 
     def extract_faces(self, frame: np.ndarray) -> list[FaceResult]:
         faces = self._app.get(frame)

@@ -39,6 +39,10 @@ class FaceRecognitionNode(Node):
         self.declare_parameter("db_path", DB_PATH)
         self.declare_parameter("model_name", MODEL_NAME)
         self.declare_parameter("model_root", MODEL_ROOT or "")
+        # Execution providers do ONNX Runtime em ordem de preferência, separados por vírgula
+        # (argumento de launch é sempre texto). Vazio = default do InsightFace. No robô:
+        # "TensorrtExecutionProvider,CUDAExecutionProvider,CPUExecutionProvider".
+        self.declare_parameter("onnx_providers", "")
 
         image_topic = self.get_parameter("image_topic").value
         detections_topic = self.get_parameter("detections_topic").value
@@ -47,12 +51,24 @@ class FaceRecognitionNode(Node):
         db_path = self.get_parameter("db_path").value
         model_name = self.get_parameter("model_name").value
         model_root = self.get_parameter("model_root").value or None
+        providers = [p.strip() for p in self.get_parameter("onnx_providers").value.split(",") if p.strip()] or None
 
         if image_qos_name not in _IMAGE_QOS:
             raise ValueError(f"image_qos deve ser um de {sorted(_IMAGE_QOS)}, não {image_qos_name!r}")
 
         self._bridge = CvBridge()
-        self._engine = FaceEngine(det_size=DET_SIZE, model_name=model_name, model_root=model_root)
+        self._engine = FaceEngine(
+            det_size=DET_SIZE, model_name=model_name, model_root=model_root, providers=providers
+        )
+        # O ORT não lança quando um provider pedido não existe — só avisa e cai pro próximo.
+        # Logar o que ficou ativo é o jeito de saber se a GPU está mesmo em uso.
+        active = self._engine.active_providers()
+        self.get_logger().info(f"providers ativos: {active}")
+        missing = {p for p in providers or [] if p != "CPUExecutionProvider"} - {
+            p for task_providers in active.values() for p in task_providers
+        }
+        if missing:
+            self.get_logger().warn(f"providers pedidos mas NÃO ativos (rodando sem eles): {sorted(missing)}")
         self._store = IdentityStore(db_path, model_name=model_name)
         self._store.load()
         if not self._store.embeddings:

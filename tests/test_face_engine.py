@@ -38,3 +38,35 @@ def test_model_root_is_forwarded_to_insightface(monkeypatch, tmp_path):
     seen.clear()
     FaceEngine(model_name="buffalo_sc")
     assert "root" not in seen  # sem model_root, o InsightFace usa o padrão dele
+
+
+def test_providers_are_forwarded_only_when_given(monkeypatch):
+    import core.face_engine as fe
+
+    seen = {}
+
+    class FakeFaceAnalysis:
+        def __init__(self, name, allowed_modules, **kwargs):
+            seen.update(kwargs)
+
+        def prepare(self, ctx_id, det_size):
+            pass
+
+    monkeypatch.setattr(fe, "FaceAnalysis", FakeFaceAnalysis)
+    FaceEngine(providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
+    assert seen["providers"] == ["CUDAExecutionProvider", "CPUExecutionProvider"]
+
+    seen.clear()
+    FaceEngine()
+    assert "providers" not in seen  # sem lista, vale o default do InsightFace
+
+
+def test_unavailable_gpu_provider_falls_back_to_cpu_and_is_reported():
+    # Num onnxruntime só-CPU, pedir TensorRT não pode derrubar nada: o ORT avisa e segue em CPU.
+    # active_providers() é o que o nó loga para mostrar se a GPU está de fato em uso.
+    engine = FaceEngine(providers=["TensorrtExecutionProvider", "CPUExecutionProvider"])
+
+    active = engine.active_providers()
+
+    assert set(active) == {"detection", "recognition"}
+    assert all(p == ["CPUExecutionProvider"] for p in active.values())

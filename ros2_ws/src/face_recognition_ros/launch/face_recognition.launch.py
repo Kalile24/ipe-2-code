@@ -27,6 +27,12 @@ def generate_launch_description() -> LaunchDescription:
         default_value="sensor_data",
         description="QoS da assinatura de imagem: sensor_data (best-effort, recebe de qualquer câmera) ou default",
     )
+    onnx_providers_arg = DeclareLaunchArgument(
+        "onnx_providers",
+        default_value="",
+        description="Execution providers do ONNX Runtime, separados por vírgula, em ordem de preferência "
+        "('' = default do InsightFace). No robô: TensorrtExecutionProvider,CUDAExecutionProvider,CPUExecutionProvider",
+    )
     model_root_arg = DeclareLaunchArgument(
         "model_root",
         default_value="",
@@ -51,6 +57,7 @@ def generate_launch_description() -> LaunchDescription:
                 "image_topic": LaunchConfiguration("image_topic"),
                 "image_qos": LaunchConfiguration("image_qos"),
                 "model_root": LaunchConfiguration("model_root"),
+                "onnx_providers": LaunchConfiguration("onnx_providers"),
             }
         ],
     )
@@ -59,6 +66,7 @@ def generate_launch_description() -> LaunchDescription:
         [
             model_name_arg,
             model_root_arg,
+            onnx_providers_arg,
             camera_arg,
             image_topic_arg,
             image_qos_arg,

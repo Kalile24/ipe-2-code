@@ -17,12 +17,16 @@ class _Face:
 
 class _FakeEngine:
     faces = []
+    kwargs = {}
 
     def __init__(self, *a, **k):
-        pass
+        _FakeEngine.kwargs = k
 
     def extract_faces(self, frame):
         return list(_FakeEngine.faces)
+
+    def active_providers(self):
+        return {"detection": ["CPUExecutionProvider"], "recognition": ["CPUExecutionProvider"]}
 
 
 @pytest.fixture
@@ -33,6 +37,26 @@ def node(monkeypatch, tmp_path):
     yield n
     n.destroy_node()
     rclpy.shutdown()
+
+
+def test_onnx_providers_param_is_split_and_forwarded(monkeypatch, tmp_path):
+    monkeypatch.setattr(node_mod, "FaceEngine", _FakeEngine)
+    rclpy.init(args=[
+        "--ros-args", "-p", f"db_path:={tmp_path}/identity_db",
+        "-p", "onnx_providers:=TensorrtExecutionProvider, CUDAExecutionProvider,CPUExecutionProvider",
+    ])
+    try:
+        n = node_mod.FaceRecognitionNode()
+        n.destroy_node()
+    finally:
+        rclpy.shutdown()
+    assert _FakeEngine.kwargs["providers"] == [
+        "TensorrtExecutionProvider", "CUDAExecutionProvider", "CPUExecutionProvider"
+    ]
+
+
+def test_without_onnx_providers_param_the_insightface_default_is_kept(node):
+    assert _FakeEngine.kwargs["providers"] is None
 
 
 def _image(frame_id, h=480, w=640):

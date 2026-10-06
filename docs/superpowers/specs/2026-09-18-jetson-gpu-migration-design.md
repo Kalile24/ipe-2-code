@@ -91,75 +91,29 @@ sistema do PC2 — que é o procedimento que a própria documentação do G1 ind
 - Todos os módulos importam em 3.8 (`tests/test_future_annotations.py`; CI em 3.8/3.10/3.12).
 - Wheel `onnxruntime-gpu 1.16.0` cp38: tags e providers conferidos (acima).
 
-## Componentes a implementar
+## Componentes (implementados em 2026-10-06)
 
-### `core/face_engine.py` — providers explícitos
-
-```python
-def __init__(self, det_size=(640, 640), model_name="buffalo_l",
-             model_root=None, providers=None):
-    kwargs = {"root": model_root} if model_root else {}
-    if providers:
-        kwargs["providers"] = providers
-    self._app = FaceAnalysis(name=model_name, allowed_modules=["detection", "recognition"], **kwargs)
-```
-
-Sem `providers`, o InsightFace 0.7.3 usa o default dele (CUDA → CPU). No robô, o nó passa
-`["TensorrtExecutionProvider", "CUDAExecutionProvider", "CPUExecutionProvider"]` via o
-parâmetro ROS2 `onnx_providers` (e argumento de launch de mesmo nome), e loga os providers
-**efetivamente ativos** — o ONNX Runtime só emite `UserWarning` quando um provider pedido não
-existe e segue em CPU, sem exceção.
-
-### Instalação no PC2 (`docs/guides/jetson-deployment.md`)
-
-```bash
-# ROS2 Foxy (não vem instalado; repositório apt configurado como no guia oficial do Foxy) + pacotes do nó
-sudo apt install ros-foxy-ros-base ros-foxy-cv-bridge ros-foxy-vision-msgs ros-foxy-realsense2-camera
-# venv Python 3.8 enxergando o ROS do sistema
-python3 -m venv --system-site-packages ~/face-venv && source ~/face-venv/bin/activate
-pip install --upgrade pip                                # o pip 20.0 do Ubuntu 20.04 não vê wheels manylinux_2_27+
-pip install "numpy==1.24.4" "opencv-python-headless==4.10.0.84" insightface==0.7.3
-# ^ nunca instalar o pacote `onnxruntime` (CPU); OpenCV fixo em 4.x (o 5 quebra o cv_bridge)
-wget -O /tmp/onnxruntime_gpu-1.16.0-cp38-cp38-linux_aarch64.whl \
-  https://nvidia.box.com/shared/static/iizg3ggrtdkqawkmebbfixo7sce6j365.whl
-pip install /tmp/onnxruntime_gpu-1.16.0-cp38-cp38-linux_aarch64.whl
-pip install --no-deps -e .
-```
-
-Os pacotes `ros-foxy-*` vêm do repositório oficial do ROS; o Foxy está fora de suporte, então
-confirmar no dia 1 que o repositório ainda os entrega (e renovar a chave GPG se o `apt` reclamar).
-
-### Lançamento no robô
-
-`realsense2_camera` sobe à parte e o nosso launch não sobe câmera nenhuma:
-
-```bash
-ros2 launch realsense2_camera rs_launch.py &
-ros2 launch face_recognition_ros face_recognition.launch.py camera:=none \
-  image_topic:=/camera/camera/color/image_raw \
-  onnx_providers:="['TensorrtExecutionProvider','CUDAExecutionProvider','CPUExecutionProvider']"
-```
-
-`RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` e `CYCLONEDDS_URI` com a interface da rede do robô,
-como no `unitree_ros2`, para a Fase 2.
-
-## Checklist do dia 1 (no robô)
-
-1. `cat /etc/nv_tegra_release` → R35.3.1 · `python3 -V` → 3.8 · `ls /opt/ros` (esperado: vazio).
-2. CUDA/TensorRT no host: `ls /usr/local/cuda`, `dpkg -l | grep -i tensorrt`.
-3. `rs-enumerate-devices` → D435i visível; confirmar que nenhum serviço da Unitree está
-   segurando a câmera (só um processo pode abri-la).
-4. No venv: `python3 -c "import onnxruntime as o; print(o.get_available_providers())"` lista
-   `TensorrtExecutionProvider` e `CUDAExecutionProvider`.
-5. `python3 -c "import cv_bridge, rclpy, vision_msgs"` no venv.
-6. Tópico real da câmera: `ros2 topic list | grep image_raw`.
-7. Latência por frame com GPU vs. CPU, com `buffalo_l` e `buffalo_sc`.
-8. Memória: 16 GB compartilhados CPU/GPU com ROS2 + modelos carregados.
+- **`core/face_engine.py`:** `FaceEngine(..., providers=None)` repassa a lista de execution
+  providers ao `FaceAnalysis` só quando ela é dada (sem lista, vale o default do InsightFace;
+  no 0.7.3: CUDA → CPU). `active_providers()` devolve os providers que cada modelo está usando
+  **de fato** — o ONNX Runtime só emite `UserWarning` quando um provider pedido não existe e
+  segue em CPU, sem exceção.
+- **Nó + launch:** parâmetro/argumento `onnx_providers`, texto separado por vírgulas (argumento
+  de launch é sempre texto). No arranque o nó loga `providers ativos: {...}` e avisa quais
+  providers pedidos ficaram de fora. Verificado ponta a ponta no container Foxy: pedindo
+  TensorRT/CUDA num ORT só-CPU, o nó sobe, cai para CPU e emite o aviso.
+- **Instalação, lançamento e checklist do dia 1:**
+  [`docs/guides/jetson-deployment.md`](../../guides/jetson-deployment.md) é a fonte única dos
+  comandos. Verificações feitas para ele: os pacotes `ros-foxy-*` usados existem para ARM64 no
+  repositório oficial (`realsense2_camera` 4.51.1, `vision_msgs` 2.0.0); e, num venv, o
+  executável do nó só aponta para o Python do venv se o build for `python3 -m colcon build`
+  (o `colcon` puro gera `#!/usr/bin/python3`, que não enxerga a wheel GPU nem o `insightface`).
 
 ## Riscos abertos
 
-1. **Pacotes `ros-foxy-*` indisponíveis** (Foxy fora de suporte) → plano B (container L4T
-   Foxy) ou compilar do fonte.
+1. **Pacotes `ros-foxy-*` saírem do repositório** (Foxy fora de suporte). Em 2026-10-06 todos
+   os usados estão disponíveis para ARM64; se sumirem → plano B (container L4T Foxy) ou
+   compilar do fonte.
 2. **numpy/OpenCV do pip × `cv_bridge` do apt** (compilado contra o numpy 1.17 e o OpenCV 4 do
    Ubuntu 20.04): funciona com numpy 1.24.4 e OpenCV 4.10 no container x86; falta confirmar no
    robô, onde o JetPack traz OpenCV próprio.
