@@ -7,8 +7,8 @@ name = "face-recognition-core"
 version = "0.1.0"
 requires-python = ">=3.8"
 dependencies = [
-    # Limites inferiores, não pins: o mesmo arquivo serve ao host (Python 3.14), ao Docker x86
-    # (3.10) e à Jetson (3.8, onde só existe insightface 0.7.3 — o 2.0 exige 3.10).
+    # Limites inferiores, não pins: o mesmo arquivo serve ao host (Python 3.14) e ao ROS2 Foxy do
+    # Docker e do robô (3.8, onde só existe insightface 0.7.3 — o 2.0 exige 3.10).
     "numpy>=1.24",
     "opencv-python>=4.10",
     "insightface>=0.7.3",

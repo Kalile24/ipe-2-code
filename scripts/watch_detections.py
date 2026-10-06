@@ -15,8 +15,8 @@ class Watcher(Node):
             print("(nenhum rosto)", flush=True)
             return
         for d in msg.detections:
-            h = d.results[0].hypothesis
-            print(f"{h.class_id}: {h.score:.2f}", flush=True)
+            r = d.results[0]  # vision_msgs do Foxy: id/score direto na hipótese
+            print(f"{r.id}: {r.score:.2f}", flush=True)
 
 
 def main():

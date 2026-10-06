@@ -36,16 +36,17 @@ def build_detection(
     detection = Detection2D()
     if header is not None:
         detection.header = header  # carimbo do frame em que a caixa foi medida
-    # `Detection2D.id` é reservado a rastreio ("same object across messages"); fica vazio.
-    # O nome vai só em `results[0].hypothesis.class_id`.
-    detection.bbox.center.position.x = float((x1 + x2) / 2)
-    detection.bbox.center.position.y = float((y1 + y2) / 2)
+    # vision_msgs do ROS2 Foxy (2.0.x), o mesmo do robô: `bbox.center` é um geometry_msgs/Pose2D
+    # plano (x, y, theta) e a hipótese tem `id`/`score` direto — no Humble (4.x) seriam
+    # `center.position.x` e `hypothesis.class_id`. `tracking_id` é de rastreio; fica vazio.
+    detection.bbox.center.x = float((x1 + x2) / 2)
+    detection.bbox.center.y = float((y1 + y2) / 2)
     detection.bbox.size_x = float(x2 - x1)
     detection.bbox.size_y = float(y2 - y1)
 
     hypothesis = ObjectHypothesisWithPose()
-    hypothesis.hypothesis.class_id = name if name else "desconhecido"
-    hypothesis.hypothesis.score = float(score)
+    hypothesis.id = name if name else "desconhecido"
+    hypothesis.score = float(score)
     detection.results.append(hypothesis)
 
     return detection

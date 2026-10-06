@@ -1,29 +1,29 @@
 from face_recognition_ros.message_builder import build_detection
 
 
-def test_build_detection_known_person_sets_class_id_and_score():
+def test_build_detection_known_person_sets_id_and_score():
     detection = build_detection(bbox=(10, 20, 110, 220), name="alice", score=0.87)
 
-    assert detection.results[0].hypothesis.class_id == "alice"
-    assert detection.results[0].hypothesis.score == 0.87
+    assert detection.results[0].id == "alice"
+    assert detection.results[0].score == 0.87
 
 
 def test_build_detection_unknown_person_uses_desconhecido_label():
     detection = build_detection(bbox=(0, 0, 50, 50), name=None, score=0.2)
 
-    assert detection.results[0].hypothesis.class_id == "desconhecido"
+    assert detection.results[0].id == "desconhecido"
 
 
 def test_build_detection_bbox_center_and_size():
     detection = build_detection(bbox=(10, 20, 110, 220), name="alice", score=0.87)
 
-    assert detection.bbox.center.position.x == 60.0
-    assert detection.bbox.center.position.y == 120.0
+    assert detection.bbox.center.x == 60.0
+    assert detection.bbox.center.y == 120.0
     assert detection.bbox.size_x == 100.0
     assert detection.bbox.size_y == 200.0
 
 
-def test_build_detection_clips_bbox_to_image_and_sets_id():
+def test_build_detection_clips_bbox_to_image_and_sets_header():
     from std_msgs.msg import Header
 
     header = Header()
@@ -33,9 +33,9 @@ def test_build_detection_clips_bbox_to_image_and_sets_id():
     )
 
     assert detection.header.frame_id == "camera_color_optical_frame"
-    assert detection.id == ""  # reservado a rastreio; o nome vai em class_id
-    assert detection.bbox.center.position.x == 320.0
-    assert detection.bbox.center.position.y == 240.0
+    assert detection.tracking_id == ""  # reservado a rastreio; o nome vai em results[0].id
+    assert detection.bbox.center.x == 320.0
+    assert detection.bbox.center.y == 240.0
     assert detection.bbox.size_x == 640.0
     assert detection.bbox.size_y == 480.0
 

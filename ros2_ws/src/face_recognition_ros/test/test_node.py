@@ -59,7 +59,7 @@ def test_published_array_carries_header_of_measured_frame(node, monkeypatch):
     det = published[1].detections[0]
     assert det.header.frame_id == "f2"
     assert (det.bbox.size_x, det.bbox.size_y) == (640.0, 480.0)  # recortada à imagem
-    assert det.results[0].hypothesis.class_id == "desconhecido"
+    assert det.results[0].id == "desconhecido"
 
 
 def test_boxes_fully_outside_are_dropped_and_engine_errors_do_not_kill_node(node, monkeypatch):

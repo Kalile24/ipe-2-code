@@ -1,7 +1,7 @@
 # Nó ROS2 via Docker — guia detalhado
 
 Este guia cobre o passo a passo completo para buildar, rodar e depurar o nó
-`face_recognition_node` num ambiente ROS2 Humble local, sem precisar de
+`face_recognition_node` num ambiente ROS2 Foxy local (o mesmo do robô), sem precisar de
 acesso ao robô Unitree G1. Para o resumo rápido ("só quero rodar"), veja o
 [README](../../README.md#nó-ros2-docker).
 
@@ -35,7 +35,7 @@ precisar de rebuild.
 
 ```bash
 docker run --rm -v "$(pwd)":/workspace -w /workspace face-recognition-ros2:local \
-  bash -lc "source /opt/ros/humble/setup.bash && pip install -e .[cpu] && python3 -c 'import cv2, rclpy, cv_bridge, vision_msgs; print(\"OK\", cv2.__version__)'"
+  bash -lc "source /opt/ros/foxy/setup.bash && pip install --no-deps -e . && python3 -c 'import cv2, rclpy, cv_bridge, vision_msgs; print(\"OK\", cv2.__version__)'"
 ```
 
 Espera-se `OK <versão>`. Isso confirma que `numpy`/`opencv-python`/`onnxruntime`
@@ -51,7 +51,7 @@ docker run --rm -it --device=/dev/video0 --group-add video \
 Dentro do container:
 
 ```bash
-pip install -e .[cpu]
+pip install --no-deps -e .   # dependências já estão na imagem
 cd ros2_ws
 colcon build --symlink-install
 colcon test
@@ -82,12 +82,12 @@ ros2 launch face_recognition_ros face_recognition.launch.py
 ```bash
 docker ps                              # anota o CONTAINER ID/NAME
 docker exec -it <container> bash
-source /opt/ros/humble/setup.bash
+source /opt/ros/foxy/setup.bash
 cd /workspace/ros2_ws && source install/setup.bash
 ros2 topic echo /face_recognition/detections
 ```
 
-Com alguém na frente da câmera, aparece `class_id: desconhecido` (ninguém
+Com alguém na frente da câmera, aparece `id: desconhecido` (ninguém
 cadastrado) ou o nome da pessoa, se cadastrada (próxima seção). Sem ninguém
 na frente, o array `detections` vem vazio — não é erro, é o sinal de que o
 nó está "vivo".
@@ -134,6 +134,13 @@ ros2 launch face_recognition_ros face_recognition.launch.py model_name:=buffalo_
 
 ## Problemas comuns (já corrigidos no repo, contexto pra quem for mexer)
 
+- **`KeyError: 16` ao converter frame no `cv_bridge`** — o `insightface 0.7.3` puxa o
+  `albumentations`, que instala o `opencv-python-headless` mais novo (5.0). O OpenCV 5 mudou os
+  códigos de tipo (`CV_8UC3`: 16 → 64) e o `cv_bridge` do apt, compilado contra o OpenCV 4,
+  quebra. Por isso `docker/requirements-ros2.txt` fixa `opencv-python-headless==4.10.0.84` e o
+  `pip install` dentro do container é sempre `--no-deps` (sem ele, o `pyproject.toml` puxaria o
+  `opencv-python` mais novo de volta). Confira com `python3 -c "import cv2; print(cv2.CV_8UC3)"`
+  → `16`.
 - **`ModuleNotFoundError: No module named 'core'` mesmo com `pip install -e .`
   "funcionando"** — se o `pip install -e .` reclamar de "missing the
   build_editable hook... PEP 660", é porque o `setuptools` do container (fixado
@@ -153,8 +160,8 @@ ros2 launch face_recognition_ros face_recognition.launch.py model_name:=buffalo_
   versões (`pyproject.toml` só tem limites inferiores, e o pip escolhe o que
   tem build pro Python em uso). O container precisa de `numpy` 1.x, porque o
   `cv_bridge` do apt foi compilado contra numpy 1. Por isso
-  `docker/requirements-ros2.txt` fixa versões específicas pro Python 3.10 do
-  Ubuntu 22.04/ROS2 Humble.
+  `docker/requirements-ros2.txt` fixa versões específicas pro Python 3.8 do
+  Ubuntu 20.04/ROS2 Foxy (o mesmo par do robô).
 - **`docker run ... face-recognition-ros2` reclama de "pull access denied"**
   — faltou a tag: use `face-recognition-ros2:local`, exatamente como no
   `docker build`.

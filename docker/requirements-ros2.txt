@@ -1,9 +1,14 @@
-# Container ROS2 Humble (Ubuntu 22.04, Python 3.10). numpy fica em 1.x DE PROPÓSITO: o cv_bridge
-# instalado pelo apt foi compilado contra numpy 1 e quebra com numpy 2. Por isso este arquivo
-# difere do venv local (pyproject.toml, sem pins, numpy 2.x).
+# Container ROS2 Foxy (Ubuntu 20.04, Python 3.8) — o mesmo par do PC2 do robô (JetPack 5.1.1).
+# insightface 0.7.3: o 2.0 exige Python >= 3.10. numpy 1.24.4: última para 3.8 e a mínima que a
+# wheel onnxruntime-gpu da Jetson aceita. onnxruntime 1.16.0 = mesma versão da wheel GPU do
+# robô; lá, troque `onnxruntime` por ela.
+# OpenCV: só o pacote headless, fixado em 4.x. O insightface 0.7.3 puxa o albumentations, que pede
+# o `opencv-python-headless` mais novo (5.0) — e o OpenCV 5 mudou os códigos de tipo (CV_8UC3
+# 16 → 64), o que quebra o cv_bridge do ROS (KeyError ao converter frame). Fixando o headless
+# aqui, ele é o único dono do módulo `cv2`.
 setuptools==58.2.0
-numpy==1.26.4
-opencv-python==4.10.0.84
-onnxruntime==1.23.2
-insightface==2.0
+numpy==1.24.4
+opencv-python-headless==4.10.0.84
+onnxruntime==1.16.0
+insightface==0.7.3
 pytest==7.4.4

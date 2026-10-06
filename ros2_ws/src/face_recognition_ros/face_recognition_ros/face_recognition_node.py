@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import rclpy
 from cv_bridge import CvBridge, CvBridgeError
-from rcl_interfaces.msg import ParameterDescriptor
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Image
@@ -34,10 +33,9 @@ class FaceRecognitionNode(Node):
         self.declare_parameter("image_topic", "/camera/color/image_raw")
         self.declare_parameter("detections_topic", "/face_recognition/detections")
         self.declare_parameter("image_qos", "sensor_data")
-        # dynamic_typing: aceita `similarity_threshold:=1` (int) sem abortar na inicialização
-        self.declare_parameter(
-            "similarity_threshold", SIMILARITY_THRESHOLD, ParameterDescriptor(dynamic_typing=True)
-        )
+        # No Foxy os parâmetros não têm tipo fixo: `similarity_threshold:=1` chega como int e o
+        # float() abaixo resolve.
+        self.declare_parameter("similarity_threshold", SIMILARITY_THRESHOLD)
         self.declare_parameter("db_path", DB_PATH)
         self.declare_parameter("model_name", MODEL_NAME)
         self.declare_parameter("model_root", MODEL_ROOT or "")

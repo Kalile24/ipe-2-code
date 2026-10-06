@@ -26,7 +26,7 @@ completas:
 - **Compute:** NVIDIA Jetson Orin NX (100–157 TOPS conforme variante) + CPU 8 núcleos.
 - **Câmera:** Intel RealSense D435i (RGB + profundidade + IMU).
 - **LiDAR:** Livox MID-360.
-- **SDK oficial:** ROS2 (testado/recomendado em Ubuntu 22.04 + ROS2 Humble).
+- **Computador de desenvolvimento (PC2):** JetPack 5.1.1 (Ubuntu 20.04, Python 3.8). Exemplos ROS2 oficiais em Foxy.
 
 Referências:
 - [Página oficial do produto (unitree.com/g1)](https://www.unitree.com/g1/)
@@ -74,7 +74,7 @@ docker run --rm -it --device=/dev/video0 --group-add video \
   -v "$(pwd)":/workspace -w /workspace face-recognition-ros2:local bash
 
 # dentro do container:
-pip install -e .[cpu]
+pip install --no-deps -e .   # dependências já estão na imagem
 cd ros2_ws
 colcon build --symlink-install
 source install/setup.bash
@@ -85,7 +85,7 @@ Em outro terminal, pra ver as detecções chegando:
 
 ```bash
 docker exec -it <container_id> bash -lc \
-  "source /opt/ros/humble/setup.bash && ros2 topic echo /face_recognition/detections"
+  "source /opt/ros/foxy/setup.bash && ros2 topic echo /face_recognition/detections"
 ```
 
 Guia completo (build, testes, troubleshooting, cadastro de pessoas):
