@@ -201,6 +201,10 @@ deve mostrar `#!/home/unitree/ipe-2-code/.venv/bin/python3`.
 
 ## 7. Rodar (três terminais, todos com os `source` do passo 6)
 
+**Atalho:** `~/ipe-2-code/scripts/robo_tmux.sh` abre a sessão tmux `face` com os três terminais
+abaixo já rodando (ambiente Foxy + CycloneDDS + venv, sem o prompt do fishros); entre com
+`tmux attach -t face`. Os passos manuais seguem abaixo.
+
 **Terminal A — câmera:**
 
 ```bash
