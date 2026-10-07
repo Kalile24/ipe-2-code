@@ -123,10 +123,16 @@ cd ~/ipe-2-code
 
 ## 4. Ambiente Python (venv)
 
+O venv fica dentro do repositório (`.venv`, já no `.gitignore`): tudo o que é nosso no robô
+fica em `~/ipe-2-code`. Responda `1` ao prompt do fishros e **não carregue o
+`~/ros2_ws/install/setup.bash`** — é um workspace de outra pessoa com um `realsense-ros`
+compilado do fonte, que passaria por cima do instalado pelo `apt` (e mudaria o tópico da câmera).
+
 ```bash
+cd ~/ipe-2-code
 source /opt/ros/foxy/setup.bash
-python3 -m venv --system-site-packages ~/face-venv   # enxerga rclpy, cv_bridge etc. do ROS
-source ~/face-venv/bin/activate
+python3 -m venv --system-site-packages .venv         # enxerga rclpy, cv_bridge etc. do ROS
+source .venv/bin/activate
 pip install --upgrade pip                            # o pip 20.0 do Ubuntu 20.04 não acha wheels novas
 pip install "setuptools==58.2.0"                     # o colcon do Foxy quebra com setuptools novo
 pip install "numpy==1.24.4" "opencv-python-headless==4.10.0.84" insightface==0.7.3
@@ -182,7 +188,7 @@ scp data/identity_db_buffalo_l.* unitree@192.168.123.164:ipe-2-code/data/
 
 ```bash
 source /opt/ros/foxy/setup.bash
-source ~/face-venv/bin/activate
+source ~/ipe-2-code/.venv/bin/activate
 cd ~/ipe-2-code/ros2_ws
 python3 -m colcon build --symlink-install
 source install/setup.bash
@@ -191,7 +197,7 @@ source install/setup.bash
 **Use `python3 -m colcon`, não `colcon`.** Com o `colcon` puro, o executável do nó sai
 apontando para o Python do sistema (`/usr/bin/python3`), que não enxerga o `insightface` nem a
 wheel GPU do venv. Confira: `head -1 install/face_recognition_ros/lib/face_recognition_ros/face_recognition_node`
-deve mostrar `#!/home/unitree/face-venv/bin/python3`.
+deve mostrar `#!/home/unitree/ipe-2-code/.venv/bin/python3`.
 
 ## 7. Rodar (três terminais, todos com os `source` do passo 6)
 
@@ -279,6 +285,12 @@ Falta [robô]:
 - **Erros estranhos de import do ROS** — o terminal carregou o Noetic (resposta `2` no prompt do
   fishros). Abra outro terminal e responda `1`.
 - **`No matching distribution found` no pip** — pip antigo: `pip install --upgrade pip`.
+- **`Unable to locate package ros-foxy-...` mesmo depois do `apt update`** — a lista do
+  repositório do ROS em cache ficou vazia (`ls -la /var/lib/apt/lists/ | grep packages.ros.org`
+  mostra o `..._Packages` com 0 bytes), de um `apt update` feito sem internet. Como o Foxy não
+  muda mais, o `apt update` acha que está em dia e não baixa de novo. Apague o cache e baixe
+  tudo: `sudo rm -rf /var/lib/apt/lists/* && sudo apt update` (só índices; nenhum pacote
+  instalado é afetado). Aconteceu neste robô em 2026-10-07.
 - **`apt update` reclama de chave GPG do ROS** — baixe de novo a chave (comando `curl` do
   passo 2, seção do robô restaurado).
 - **Câmera não abre / "device busy"** — só um processo pode usar a D435i por vez:
