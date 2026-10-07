@@ -4,60 +4,115 @@ Passo a passo para rodar o `face_recognition_ros` no computador de desenvolvimen
 (**PC2**), com a câmera RealSense D435i e a GPU da Jetson. Decisões e motivos: spec
 [`2026-09-18-jetson-gpu-migration-design.md`](../superpowers/specs/2026-09-18-jetson-gpu-migration-design.md).
 
-**Estado deste guia (2026-10-06): ainda não executado no robô.** O que já foi verificado:
-- todo o fluxo de Python/ROS (venv, versões, `colcon`, testes) num container x86 com o mesmo
-  Ubuntu 20.04 / Python 3.8 / ROS2 Foxy do PC2 (`docker/ros2.Dockerfile`);
-- os pacotes `ros-foxy-*` usados aqui existem para ARM64 no repositório oficial do ROS;
-- a wheel `onnxruntime-gpu` da Jetson (tag `cp38-cp38-linux_aarch64`, com providers CUDA e TensorRT).
+**Estado deste guia:** o PC2 do robô do IME foi inspecionado em **2026-10-07** (só leitura —
+seção "Estado do robô"); a instalação dos passos 2 em diante **ainda não foi executada**. Além
+disso, todo o fluxo de Python/ROS (venv, versões, `colcon`, testes) foi verificado num container
+x86 com o mesmo Ubuntu 20.04 / Python 3.8 / ROS2 Foxy (`docker/ros2.Dockerfile`). O que só se
+confirma rodando no robô está marcado com **[robô]**.
 
-O que só o robô confirma está marcado com **[dia 1]**.
-
-## Visão geral
+## Estado do robô (inspeção de 2026-10-07)
 
 | | |
 |---|---|
-| PC2 | Jetson Orin NX, JetPack 5.1.1 (Ubuntu 20.04, Python 3.8), `192.168.123.164`, usuário `unitree` / senha `123` |
-| ROS | ROS2 **Foxy**, instalado por nós (não vem no robô) |
-| Python | venv `~/face-venv`, enxergando o ROS do sistema |
-| Inferência | `insightface 0.7.3` + `onnxruntime-gpu 1.16.0` (wheel NVIDIA) |
-| Câmera | `realsense2_camera` (D435i na USB do PC2), lançado à parte |
+| Acesso | SSH `unitree@192.168.123.164` (senha padrão `123`, também a do `sudo`); hostname `ubuntu` |
+| Sistema | JetPack 5.1.1 (`R35 REVISION: 3.1`), Ubuntu 20.04.6, kernel 5.10.104-tegra, Python 3.8.10 |
+| GPU | CUDA (`/usr/local/cuda`) e TensorRT 8.5.2 instalados |
+| Recursos | 15 GB de RAM (12 livres em repouso), disco de 1,9 TB (3% usado) |
+| Câmera | D435i na USB (`8086:0b3a`), `/dev/video0`–`5`; **livre** (nenhum processo com ela aberta) |
+| Rede | `eth0` = 192.168.123.164 (conexão `unitree1`, rede interna do robô); `wlan0` presente, desconectado |
+| ROS | **Foxy e Noetic já instalados** em `/opt/ros` (pelo instalador comunitário fishros); repositório apt do ROS configurado e com chave válida |
+| Python global | `numpy 1.24.4`, `opencv-python 4.13`, `torch 2.4.1`, `unitree_sdk2py 1.0.1`, `cyclonedds 0.10.2`, `pyrealsense2 2.55.1` |
+| Outros | Docker 24; desktop Ubuntu (GNOME) com **NoMachine** 8.9.1 ativo na porta 4000 |
 
-Os comandos abaixo rodam **no PC2**, via SSH (`ssh unitree@192.168.123.164`) a partir de um
-computador na rede do robô (`192.168.123.x`). O PC2 precisa de internet (Wi-Fi) para `apt` e
-`pip`.
+Pacotes ROS do nosso nó: `ros-foxy-ros-base`, `ros-foxy-cv-bridge`, `ros-foxy-rmw-cyclonedds-cpp`,
+`python3-colcon-common-extensions` e `python3-dev` **já instalados**; faltam
+`ros-foxy-vision-msgs`, `ros-foxy-realsense2-camera`, `ros-foxy-librealsense2` e `python3-venv`
+(passo 2).
 
-## 1. Conferir o sistema [dia 1]
+### Outro projeto que já roda neste robô (`~/hhhh`) — regras de convivência
+
+- O serviço `unitree-start-joystick.service` sobe no boot, conversa com o robô por DDS na
+  `eth0` e espera o botão **START** do controle. O START dispara `~/hhhh/iniciar_robo.sh`, que
+  liga uma caixa Bluetooth, servidores de voz (Piper/Whisper), um assistente de voz
+  (`assistente.py`) e o `movimentos_militares.py` — sentido, descansar, apresentação e
+  **continência (`F1 + B`)**, com poses gravadas em `~/hhhh/poses/`.
+- Nada desse projeto usa a câmera.
+- **Não desative nem edite esse serviço** sem falar com quem o mantém.
+- **Nunca rode `pip install` fora do nosso venv** (nem com `sudo`): esses scripts usam o
+  Python global (`/usr/bin/python3`), e trocar o numpy/OpenCV de lá pode quebrá-los.
+- **Fase 2:** a continência já existe; o reconhecimento vai precisar *dispará-la*, combinado com
+  o autor — dois programas comandando o braço ao mesmo tempo é perigoso.
+
+### O prompt do fishros
+
+A cada login, o terminal pergunta `ros:foxy(1) noetic(2) ?`. **Responda sempre `1`.** Carregar o
+Noetic (ROS 1) no mesmo terminal do nosso ambiente mistura ROS 1 e ROS 2. Não altere o
+`~/.bashrc`: o robô é compartilhado e alguém pode usar o Noetic.
+
+## 0. Acesso ao robô
+
+**SSH pelo cabo:** ligue seu computador na rede do robô (IP fixo na faixa `192.168.123.x`, ex.:
+`.99`) e `ssh unitree@192.168.123.164`.
+
+**Wi-Fi (para dispensar o cabo)** — método da FAQ oficial do G1, rodado no PC2 ainda pelo cabo:
 
 ```bash
-cat /etc/nv_tegra_release         # esperado: R35 (REVISION: 3.1) = JetPack 5.1.1
-python3 -V                        # esperado: 3.8.x
-ls /opt/ros 2>/dev/null           # esperado: vazio (o ROS não vem instalado)
-ls /usr/local/cuda/bin/nvcc && dpkg -l | grep -i -E "tensorrt|libnvinfer" | head -3
-free -h                           # 16 GB compartilhados CPU/GPU
+sudo nmcli radio wifi on
+nmcli device wifi list
+sudo nmcli device wifi connect "NOME_DA_REDE" password "SENHA"
+ip -br addr show wlan0          # o IP que o robô pegou; use-o no ssh
 ```
 
-Se o JetPack não for o 5.1.1, a wheel do passo 4 muda — ver a tabela do Jetson Zoo nas
-referências.
+A conexão fica salva e volta sozinha no boot. Não mexa na conexão da `eth0`: é por ela que o
+PC2 fala com o computador de controle do robô. Redes de campus costumam bloquear a comunicação
+entre aparelhos ou exigir login institucional (WPA2-Enterprise); nesses casos use um roteador
+próprio ou o hotspot de um celular (o log do robô mostra que já foi usado assim). O IP do Wi-Fi
+pode mudar a cada boot.
 
-## 2. Instalar o ROS2 Foxy
+**Área de trabalho remota (NoMachine):** instale o cliente no seu computador
+(https://www.nomachine.com/download) e conecte em `192.168.123.164` (ou no IP do Wi-Fi), porta
+`4000`, protocolo NX, usuário `unitree`. Sem monitor no robô, escolha criar uma área de trabalho
+virtual. Útil para ver a câmera (`rqt_image_view`); feche a sessão quando não estiver usando,
+porque consome memória e GPU.
 
-Mesmo procedimento do guia oficial do Foxy, que a documentação ROS2 do G1 indica:
+## 1. Conferir o sistema
+
+Já conferido em 2026-10-07 (tabela acima). Para repetir (ex.: depois de uma restauração de
+fábrica):
 
 ```bash
-sudo apt update && sudo apt install -y curl software-properties-common
-sudo add-apt-repository universe
+cat /etc/nv_tegra_release         # esperado: R35 (release), REVISION: 3.1 = JetPack 5.1.1
+python3 -V                        # esperado: 3.8.x
+ls /opt/ros                       # neste robô: foxy noetic
+lsusb | grep -i intel             # a D435i
+fuser -v /dev/video*              # vazio = câmera livre
+```
+
+## 2. Instalar o que falta
+
+```bash
+sudo apt update
+sudo apt install -y ros-foxy-vision-msgs ros-foxy-realsense2-camera ros-foxy-librealsense2 python3-venv
+```
+
+Não rode `sudo apt upgrade` no sistema todo: ele atualizaria também os pacotes da NVIDIA
+(`nvidia-l4t-*`: kernel, drivers, bootloader) que formam a base validada pela Unitree.
+
+**Robô restaurado de fábrica (sem `/opt/ros`):** a imagem oficial não traz ROS. Instale o Foxy
+pelo procedimento do guia oficial (o que a documentação ROS2 do G1 indica) e depois os pacotes
+acima:
+
+```bash
+sudo apt install -y curl software-properties-common && sudo add-apt-repository universe
 sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
   -o /usr/share/keyrings/ros-archive-keyring.gpg
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] \
 http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" \
   | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
 sudo apt update
-sudo apt install -y ros-foxy-ros-base python3-colcon-common-extensions \
-  ros-foxy-cv-bridge ros-foxy-vision-msgs ros-foxy-realsense2-camera ros-foxy-rmw-cyclonedds-cpp \
-  python3-venv python3-dev
+sudo apt install -y ros-foxy-ros-base python3-colcon-common-extensions ros-foxy-cv-bridge \
+  ros-foxy-rmw-cyclonedds-cpp python3-dev
 ```
-
-`python3-dev` é para o `insightface 0.7.3`, que compila uma extensão C++ na instalação.
 
 ## 3. Baixar o código
 
@@ -81,10 +136,12 @@ pip install /tmp/onnxruntime_gpu-1.16.0-cp38-cp38-linux_aarch64.whl
 pip install --no-deps -e .                           # o pacote core/ deste repositório
 ```
 
-O nome do arquivo `.whl` importa: o pip recusa a wheel se o nome não tiver as tags
-`cp38-cp38-linux_aarch64`.
+Neste robô o `numpy 1.24.4` global já é a versão certa (o pip vai dizer "already satisfied"). O
+OpenCV 4.10 instalado no venv tem prioridade sobre o 4.13 global; ele é necessário porque, sem a
+versão fixa, o `insightface` puxa o OpenCV 5, que quebra o `cv_bridge`. O nome do arquivo `.whl`
+importa: o pip recusa a wheel se o nome não tiver `cp38-cp38-linux_aarch64`.
 
-Conferir [dia 1]:
+Conferir [robô]:
 
 ```bash
 python3 -c "import onnxruntime as o; print(o.__version__, o.get_available_providers())"
@@ -94,8 +151,8 @@ python3 -c "import rclpy, cv_bridge, vision_msgs, insightface; print('ok')"
 ```
 
 **Regra do venv:** nunca `pip install onnxruntime` (pacote de CPU: sobrescreve o módulo da
-wheel GPU sem erro) e nada que puxe o OpenCV 5 (quebra o `cv_bridge`). Para instalar algo
-novo, prefira `pip install --no-deps <pacote>` e rode a conferência acima depois.
+wheel GPU sem erro) e nada que puxe o OpenCV 5. Para instalar algo novo, prefira
+`pip install --no-deps <pacote>` e rode a conferência acima depois.
 
 ## 5. Modelos e cadastro
 
@@ -144,7 +201,7 @@ deve mostrar `#!/home/unitree/face-venv/bin/python3`.
 ros2 launch realsense2_camera rs_launch.py
 ```
 
-**Terminal B — confirmar o tópico da imagem [dia 1]:**
+**Terminal B — confirmar o tópico da imagem [robô]:**
 
 ```bash
 ros2 topic list | grep image_raw
@@ -178,27 +235,31 @@ precisa existir — passo 5).
 ## 8. Falar com o robô (Fase 2)
 
 Para o reconhecimento sozinho não é preciso. Quando o nó for conversar com o robô (movimento,
-estado), use o CycloneDDS na interface da rede do robô, como no `unitree_ros2` oficial:
+estado), use o CycloneDDS na interface da rede do robô — neste PC2, `eth0` (a mesma que o
+serviço do joystick usa) —, como no `unitree_ros2` oficial:
 
 ```bash
-ip -br addr          # [dia 1] descobrir o nome da interface na rede 192.168.123.x (ex: eth0)
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export CYCLONEDDS_URI='<CycloneDDS><Domain><General><Interfaces>
   <NetworkInterface name="eth0" priority="default" multicast="default" />
 </Interfaces></General></Domain></CycloneDDS>'
 ```
 
-## Checklist do dia 1
+## Checklist
 
-1. Sistema conferido (passo 1).
+Já confirmado em 2026-10-07: JetPack 5.1.1 / Python 3.8; CUDA e TensorRT; D435i visível e
+livre; memória e disco; interface `eth0`; ROS2 Foxy instalado.
+
+Falta [robô]:
+
+1. Pacotes do passo 2 instalados.
 2. Providers GPU disponíveis no venv e `cv2.CV_8UC3 == 16` (passo 4).
 3. Shebang do nó aponta para o venv (passo 6).
-4. `rs-enumerate-devices` mostra a D435i, e nenhum outro processo está com a câmera aberta.
-5. Tópico real da imagem (passo 7).
-6. Log com `TensorrtExecutionProvider`/`CUDAExecutionProvider` ativos.
-7. Latência por frame: GPU vs. CPU (`onnx_providers:=CPUExecutionProvider`), com `buffalo_l` e
+4. Tópico real da imagem (passo 7).
+5. Log com `TensorrtExecutionProvider`/`CUDAExecutionProvider` ativos.
+6. Latência por frame: GPU vs. CPU (`onnx_providers:=CPUExecutionProvider`), com `buffalo_l` e
    `buffalo_sc`.
-8. Memória livre com tudo rodando (`free -h`, `tegrastats`).
+7. Memória livre com tudo rodando (`free -h`, `tegrastats`).
 
 ## Problemas comuns
 
@@ -206,7 +267,7 @@ export CYCLONEDDS_URI='<CycloneDDS><Domain><General><Interfaces>
   compilado com `colcon` puro. Refaça o passo 6 com `python3 -m colcon build`, com o venv ativo.
 - **`KeyError: 16` ao converter frame** — o OpenCV 5 entrou no venv (o OpenCV 5 mudou o código
   `CV_8UC3` de 16 para 64 e o `cv_bridge` espera 16). Corrija com
-  `pip install --no-deps "opencv-python-headless==4.10.0.84"` e remova outros `opencv-*`
+  `pip install --no-deps "opencv-python-headless==4.10.0.84"` e remova outros `opencv-*` do venv
   (`pip list | grep -i opencv`).
 - **`providers ativos` só com CPU** — confira `pip list | grep -i onnxruntime`: deve haver só
   `onnxruntime-gpu 1.16.0`. Se aparecer `onnxruntime` (CPU), desinstale os dois e reinstale a
@@ -215,18 +276,21 @@ export CYCLONEDDS_URI='<CycloneDDS><Domain><General><Interfaces>
 - **`AttributeError: _ARRAY_API not found` / `numpy.core.multiarray failed to import`** — entrou
   numpy 2. A wheel GPU e o `cv_bridge` foram compilados contra numpy 1:
   `pip install "numpy==1.24.4"`.
+- **Erros estranhos de import do ROS** — o terminal carregou o Noetic (resposta `2` no prompt do
+  fishros). Abra outro terminal e responda `1`.
 - **`No matching distribution found` no pip** — pip antigo: `pip install --upgrade pip`.
-- **`apt update` reclama de chave GPG do ROS** — baixe de novo a chave (o `curl` do passo 2).
-- **Câmera não abre / "device busy"** — só um processo pode usar a D435i por vez. Feche outros
-  usos (`ps aux | grep -i realsense`) antes de subir o `realsense2_camera`.
+- **`apt update` reclama de chave GPG do ROS** — baixe de novo a chave (comando `curl` do
+  passo 2, seção do robô restaurado).
+- **Câmera não abre / "device busy"** — só um processo pode usar a D435i por vez:
+  `fuser -v /dev/video*` mostra quem está com ela.
 
 ## Referências
 
-- Documentação oficial do G1: [FAQ (imagem de fábrica do PC2)](https://support.unitree.com/home/en/G1_developer/FAQ) ·
+- Documentação oficial do G1: [FAQ (imagem de fábrica do PC2, Wi-Fi)](https://support.unitree.com/home/en/G1_developer/FAQ) ·
   [ROS2 Communication Routine](https://support.unitree.com/home/en/G1_developer/ros2_communication_routine) ·
   [About G1 (PC1/PC2)](https://support.unitree.com/home/en/G1_developer/about_G1)
 - [Instalação do ROS2 Foxy (Debian)](https://docs.ros.org/en/foxy/Installation/Ubuntu-Install-Debians.html)
 - [unitree_ros2](https://github.com/unitreerobotics/unitree_ros2) · [unitree_sdk2_python](https://github.com/unitreerobotics/unitree_sdk2_python)
 - [Jetson Zoo — wheels do ONNX Runtime por JetPack](https://elinux.org/Jetson_Zoo#ONNX_Runtime) ·
   [TensorRT Execution Provider](https://onnxruntime.ai/docs/execution-providers/TensorRT-ExecutionProvider.html)
-- [realsense-ros](https://github.com/IntelRealSense/realsense-ros)
+- [realsense-ros](https://github.com/IntelRealSense/realsense-ros) · [NoMachine](https://www.nomachine.com/download)

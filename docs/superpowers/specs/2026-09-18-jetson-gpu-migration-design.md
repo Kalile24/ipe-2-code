@@ -29,6 +29,14 @@ provado (ver "Validado sem hardware"); o resto vira checklist do dia 1.
   · https://github.com/unitreerobotics/unitree_ros2
 - **O controle do robô também pode ser feito sem ROS**, pelo `unitree_sdk2` (C++) ou
   `unitree_sdk2_python` — a via recomendada pela Unitree. Relevante para a Fase 2.
+
+**Inspeção do robô do IME (2026-10-07, só leitura):** confirmados JetPack 5.1.1, Python 3.8.10,
+CUDA e TensorRT 8.5.2, D435i livre. Diferente da imagem de fábrica, **este PC2 já tem ROS2 Foxy
+e ROS 1 Noetic** (instalados pelo fishros), com o repositório apt do ROS configurado — faltam só
+`vision_msgs`, `realsense2_camera`/`librealsense2` e `python3-venv`. Também já roda nele outro
+projeto (`~/hhhh`: assistente de voz e `movimentos_militares.py`, que **já implementa a
+continência** com poses gravadas), no Python global do sistema — por isso o nosso ambiente fica
+num venv. Detalhes e regras de convivência: [guia de instalação](../../guides/jetson-deployment.md#estado-do-robô-inspeção-de-2026-10-07).
 - **Tópico atual do `realsense-ros`:** `/camera/camera/color/image_raw` (namespace duplicado),
   diferente do default do nó (`/camera/color/image_raw`) — o parâmetro `image_topic` cobre.
 
