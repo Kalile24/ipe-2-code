@@ -3,6 +3,9 @@
 Projeto institucional do IME (Instituto Militar de Engenharia), disciplina
 **IPE II — Introdução a Projetos de Engenharia**.
 
+Vai colaborar? Comece pelo [`CONTRIBUTING.md`](CONTRIBUTING.md) (ferramentas de IA, memória
+compartilhada, fluxo de specs e convenções).
+
 ## Objetivo
 
 Reconhecer pessoas em vídeo ao vivo a partir de poucas fotos de referência,
