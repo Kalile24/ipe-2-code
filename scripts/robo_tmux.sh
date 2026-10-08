@@ -38,6 +38,6 @@ rodar() { tmux send-keys -t "$SESSAO:$1" "$AMBIENTE" C-m "$2" C-m; }
 rodar camera "$CMD_CAMERA"
 rodar reconhecimento "sleep 5; ros2 launch face_recognition_ros face_recognition.launch.py camera:=none \
 image_topic:=$TOPICO onnx_providers:=TensorrtExecutionProvider,CUDAExecutionProvider,CPUExecutionProvider"
-rodar deteccoes "sleep 15; python3 $REPO/scripts/watch_detections.py"
+rodar deteccoes "python3 $REPO/scripts/watch_detections.py"
 
 echo "Sessão '$SESSAO' aberta. Entre com: tmux attach -t $SESSAO   (Ctrl+b e 0/1/2 troca de janela)"
