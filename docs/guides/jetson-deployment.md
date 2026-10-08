@@ -201,9 +201,10 @@ deve mostrar `#!/home/unitree/ipe-2-code/.venv/bin/python3`.
 
 ## 7. Rodar (três terminais, todos com os `source` do passo 6)
 
-**Atalho:** `~/ipe-2-code/scripts/robo_tmux.sh` abre a sessão tmux `face` com os três terminais
+**Atalho:** `~/ipe-2-code/scripts/robo_tmux.sh [realsense|usb]` abre a sessão tmux `face` com os três terminais
 abaixo já rodando (ambiente Foxy + CycloneDDS + venv, sem o prompt do fishros); entre com
-`tmux attach -t face`. Os passos manuais seguem abaixo.
+`tmux attach -t face`. Com `usb`, a câmera é uma webcam USB extra via `v4l2_camera` (instalar antes:
+`sudo apt install -y ros-foxy-v4l2-camera`). Os passos manuais seguem abaixo.
 
 **Terminal A — câmera:**
 
