@@ -12,12 +12,12 @@ apropriada (ex: reconhecer o general, se aproximar e prestar continência).
 
 ## Estado atual
 
-Protótipo local (webcam comum) validado em hardware real, **e** nó ROS2
-(`face_recognition_node`) validado ponta a ponta em Docker (câmera →
-detecção → reconhecimento → publicação em tópico), sem precisar de acesso ao
-robô. O ambiente local (ROS2 Foxy, Ubuntu 20.04, Python 3.8) é o mesmo do computador do
-robô. Próximo passo: instalação no Jetson Orin NX do Unitree G1 EDU, com GPU — guia pronto,
-ainda não executado no robô. Specs completas:
+**Fase 1 (reconhecimento) implantada no robô (2026-10-09):** nó ROS2
+(`face_recognition_node`) rodando no Jetson Orin NX do Unitree G1 EDU com GPU (TensorRT,
+~42 ms por frame), a partir de uma webcam USB presa no alto da cabeça do robô — a D435i de
+fábrica olha para o chão. Também roda localmente, em Docker com o mesmo ROS2 Foxy / Ubuntu
+20.04 / Python 3.8 do robô, e como protótipo standalone. Próximo passo (Fase 2): disparar a
+interação (aproximação + continência) a partir do reconhecimento. Specs completas:
 
 - [`docs/superpowers/specs/2026-09-10-facial-recognition-design.md`](docs/superpowers/specs/2026-09-10-facial-recognition-design.md) — protótipo standalone
 - [`docs/superpowers/specs/2026-09-12-ros2-node-migration-design.md`](docs/superpowers/specs/2026-09-12-ros2-node-migration-design.md) — migração para nó ROS2
@@ -26,7 +26,8 @@ ainda não executado no robô. Specs completas:
 ## Sobre o robô — Unitree G1 EDU
 
 - **Compute:** NVIDIA Jetson Orin NX (100–157 TOPS conforme variante) + CPU 8 núcleos.
-- **Câmera:** Intel RealSense D435i (RGB + profundidade + IMU).
+- **Câmera:** Intel RealSense D435i (RGB + profundidade + IMU), fixa e inclinada 47,6° para
+  baixo. Para rostos de pessoas em pé, este projeto usa uma webcam USB extra na cabeça.
 - **LiDAR:** Livox MID-360.
 - **Computador de desenvolvimento (PC2):** JetPack 5.1.1 (Ubuntu 20.04, Python 3.8). Exemplos ROS2 oficiais em Foxy.
 
@@ -37,8 +38,8 @@ Referências:
 ## Stack
 
 Python + [InsightFace](https://github.com/deepinsight/insightface)
-(detecção RetinaFace + embeddings ArcFace) via ONNX Runtime, com portagem
-futura planejada para a Jetson Orin NX do robô.
+(detecção RetinaFace + embeddings ArcFace) via ONNX Runtime — TensorRT na Jetson do robô,
+CPU no desenvolvimento.
 
 ## Como rodar
 
@@ -95,5 +96,9 @@ Guia completo (build, testes, troubleshooting, cadastro de pessoas):
 
 ### No robô (Jetson Orin NX do G1)
 
-Instalação nativa (ROS2 Foxy + venv Python 3.8 + `onnxruntime-gpu`), câmera RealSense e
-checklist do primeiro dia: [`docs/guides/jetson-deployment.md`](docs/guides/jetson-deployment.md).
+```bash
+~/ipe-2-code/scripts/robo_tmux.sh && tmux attach -t face    # webcam + reconhecimento + detecções
+```
+
+Instalação nativa (ROS2 Foxy + venv Python 3.8 + `onnxruntime-gpu`), convivência com os outros
+projetos do robô e problemas comuns: [`docs/guides/jetson-deployment.md`](docs/guides/jetson-deployment.md).

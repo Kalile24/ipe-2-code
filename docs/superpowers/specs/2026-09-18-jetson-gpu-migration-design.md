@@ -1,7 +1,7 @@
 # Portagem do nó ROS2 pro Jetson Orin NX (Unitree G1 EDU) — Design
 
 Data: 2026-09-18 · **revisado em 2026-10-06** após revisão da documentação oficial da
-Unitree e do código. A versão original assumia Ubuntu 22.04 + ROS2 Humble no robô, o que não
+Unitree e do código · **implantado em 2026-10-07/09** (seção "Implantação no robô"). A versão original assumia Ubuntu 22.04 + ROS2 Humble no robô, o que não
 se confirma; o projeto passa a mirar **ROS2 Foxy** em todos os ambientes (ver "Decisão").
 
 Contexto: o nó ROS2 `face_recognition_ros` (spec anterior:
@@ -9,8 +9,8 @@ Contexto: o nó ROS2 `face_recognition_ros` (spec anterior:
 `v4l2_camera`, em CPU. Este documento cobre o próximo passo: rodar esse pacote no computador
 de bordo do robô, com a câmera real (Intel RealSense D435i) e a GPU da Jetson.
 
-**Sem acesso físico ao robô no momento da escrita.** O que dá pra provar sem hardware está
-provado (ver "Validado sem hardware"); o resto vira checklist do dia 1.
+Escrito sem acesso ao robô: o que dava para provar sem hardware ficou em "Validado sem
+hardware"; o resultado no robô está em "Implantação no robô".
 
 ## Fatos do robô (documentação oficial da Unitree)
 
@@ -117,17 +117,56 @@ sistema do PC2 — que é o procedimento que a própria documentação do G1 ind
   executável do nó só aponta para o Python do venv se o build for `python3 -m colcon build`
   (o `colcon` puro gera `#!/usr/bin/python3`, que não enxerga a wheel GPU nem o `insightface`).
 
+## Implantação no robô (2026-10-07 a 09)
+
+Instalado e funcionando conforme o guia. O que a implantação mudou ou descobriu:
+
+- **Câmera: webcam USB na cabeça, não a D435i.** A D435i é fixa com 47,6° de inclinação para
+  baixo (URDF `d435_joint`) e campo vertical de 42°: só vê rostos de quem está agachado a ~1 m.
+  Não há ajuste previsto, e mexer no suporte afeta o equipamento e os outros usuários. A solução
+  foi uma webcam USB presa no alto da cabeça, aberta pelo `v4l2_camera` que o launch já suportava
+  (`camera:=v4l2`). A D435i segue como opção (`camera:=none` + `realsense2_camera`).
+- **Um launch só sobe câmera + reconhecimento** (`camera:=v4l2 video_device:=...`), e o
+  `scripts/robo_tmux.sh` abre esse launch e o `watch_detections.py` numa sessão tmux, já com o
+  ambiente de DDS do robô (CycloneDDS 0.10 na `eth0`, de `~/cyclonedds_ws`). Sem esse ambiente,
+  o ROS2 cai no Fast-DDS e os nós morrem com `bad_alloc`.
+- **A premissa "PC2 sem serviços" não vale neste robô.** Além do `~/hhhh` (voz e movimentos),
+  outro projeto mantém dois serviços que ocupam a D435i no boot (`realsense-camera.service`,
+  com a librealsense 2.58 compilada em `/usr/local`, e `realsense-mjpeg-bridge.service`, que o
+  religa via `Requires=`). Eles só funcionam com Wi-Fi, por isso a inspeção de 07/10 não os viu.
+  A librealsense deles tira a D435i do driver `uvcvideo` e não devolve; a nossa (2.51, do apt)
+  passa a não achar a câmera. A webcam USB evita o conflito.
+- **Desempenho:** `buffalo_l` com TensorRT, 640x480: ~42 ms por frame (~24/s), com os serviços
+  dos outros projetos rodando. Comparação com CPU ainda não medida.
+- **Cache de engines do TensorRT ligado** (`FaceEngine` passa `trt_engine_cache_enable` ao
+  provider; cache em `<model_root ou ~/.insightface>/trt_cache/<modelo>/`). Sem ele, cada
+  execução ficava ~2 min sem processar na primeira imagem, e de novo (~1 min) quando aparecia o
+  primeiro rosto — pausas que pareciam travamento.
+- **Sinal de vida no nó:** a cada 10 s, `N imagens processadas ... M rostos`, ou um aviso de
+  `nenhuma imagem`. Motivo: câmera parada, nó travado e "ninguém na frente" pareciam iguais no
+  watcher.
+
 ## Riscos abertos
 
-1. **Pacotes `ros-foxy-*` saírem do repositório** (Foxy fora de suporte). Em 2026-10-06 todos
-   os usados estão disponíveis para ARM64; se sumirem → plano B (container L4T Foxy) ou
-   compilar do fonte.
-2. **numpy/OpenCV do pip × `cv_bridge` do apt** (compilado contra o numpy 1.17 e o OpenCV 4 do
-   Ubuntu 20.04): funciona com numpy 1.24.4 e OpenCV 4.10 no container x86; falta confirmar no
-   robô, onde o JetPack traz OpenCV próprio.
-3. **Ganho real da GPU não medido** — se o TensorRT EP não bastar, ver "Otimizações futuras".
-4. **Primeiro uso do TensorRT EP é lento** (constrói o engine na hora); considerar o cache de
-   engines do ORT (`trt_engine_cache_enable`) se o arranque incomodar.
+1. **Nó para de receber imagens sem erro (sem causa encontrada).** Visto uma vez (2026-10-09):
+   o nó publicou 3 resultados e ficou parado em `rclpy.spin` esperando imagens, com a câmera
+   publicando ~23/s e a assinatura dele ainda casada ao publisher. Descartados por teste: QoS
+   best-effort com fila 1, bloqueio longo no primeiro frame, o TensorRT em si (1360 frames
+   seguidos num script com o mesmo pipeline) e os serviços dos outros projetos. Uma segunda
+   instância do mesmo nó não travou (só pausou ~1 min, explicado pelo engine do TensorRT). Com o
+   sinal de vida, a próxima ocorrência fica visível; investigar com `py-spy dump` e pelo teste
+   longo do checklist do guia.
+2. **Webcam desconecta do USB** (duas vezes em 5 min, 2026-10-09): o `/dev/videoN` muda e o
+   `v4l2_camera` fica preso ao dispositivo antigo. Causa física (cabo, porta ou energia);
+   decisão: tratar no hardware (cabo preso, hub com fonte) e documentar, sem recuperação
+   automática no software.
+3. **Pacotes `ros-foxy-*` saírem do repositório** (Foxy fora de suporte). Se sumirem → plano B
+   (container L4T Foxy) ou compilar do fonte.
+4. **Engine do TensorRT em cache depende da versão do TensorRT e da GPU:** depois de atualizar
+   o JetPack, apagar `trt_cache/`.
+
+Resolvidos na implantação: numpy/OpenCV do pip × `cv_bridge` do apt (funciona no robô com numpy
+1.24.4 e OpenCV 4.10); demora do primeiro uso do TensorRT (cache).
 
 ## Otimizações futuras (documentadas, não implementadas)
 
