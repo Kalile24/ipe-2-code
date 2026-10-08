@@ -86,6 +86,20 @@ def test_published_array_carries_header_of_measured_frame(node, monkeypatch):
     assert det.results[0].id == "desconhecido"
 
 
+def test_heartbeat_reports_processed_frames_then_resets(node, monkeypatch):
+    logs = []
+    monkeypatch.setattr(node, "get_logger", lambda: type("L", (), {
+        "info": lambda self, m: logs.append(("info", m)), "warn": lambda self, m: logs.append(("warn", m)),
+    })())
+    _FakeEngine.faces = [_Face((10, 10, 100, 100))]
+    node._on_image(_image("f1"))
+    node._on_image(_image("f2"))
+    node._heartbeat()
+    node._heartbeat()  # nada chegou desde o último: tem que avisar
+    assert logs[0][0] == "info" and logs[0][1].startswith("2 imagens processadas") and "2 rostos" in logs[0][1]
+    assert logs[1][0] == "warn" and logs[1][1].startswith("nenhuma imagem")
+
+
 def test_boxes_fully_outside_are_dropped_and_engine_errors_do_not_kill_node(node, monkeypatch):
     published = []
     monkeypatch.setattr(node._publisher, "publish", published.append)

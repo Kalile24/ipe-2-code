@@ -55,10 +55,17 @@ def test_providers_are_forwarded_only_when_given(monkeypatch):
     monkeypatch.setattr(fe, "FaceAnalysis", FakeFaceAnalysis)
     FaceEngine(providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
     assert seen["providers"] == ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    assert seen["provider_options"] == [{}, {}]
+
+    seen.clear()
+    FaceEngine(providers=["TensorrtExecutionProvider", "CPUExecutionProvider"], model_root="/m")
+    trt, cpu = seen["provider_options"]
+    assert trt == {"trt_engine_cache_enable": "True", "trt_engine_cache_path": "/m/trt_cache/buffalo_l"}
+    assert cpu == {}
 
     seen.clear()
     FaceEngine()
-    assert "providers" not in seen  # sem lista, vale o default do InsightFace
+    assert "providers" not in seen and "provider_options" not in seen  # sem lista, vale o default do InsightFace
 
 
 def test_unavailable_gpu_provider_falls_back_to_cpu_and_is_reported():

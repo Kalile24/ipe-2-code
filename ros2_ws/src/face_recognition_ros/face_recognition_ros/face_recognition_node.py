@@ -24,6 +24,7 @@ _IMAGE_QOS = {
     "sensor_data": QoSProfile(reliability=ReliabilityPolicy.BEST_EFFORT, history=HistoryPolicy.KEEP_LAST, depth=1),
     "default": QoSProfile(reliability=ReliabilityPolicy.RELIABLE, history=HistoryPolicy.KEEP_LAST, depth=1),
 }
+HEARTBEAT_S = 10.0
 
 
 class FaceRecognitionNode(Node):
@@ -85,8 +86,27 @@ class FaceRecognitionNode(Node):
             f"assinando {image_topic} (qos={image_qos_name}), publicando em {detections_topic}, "
             f"limiar={self._threshold}, modelo={model_name}"
         )
+        # Sinal de vida: sem ele, câmera parada e nó travado parecem iguais a "ninguém na frente".
+        # Se nem esta linha aparecer, o nó está preso dentro de um frame (o timer roda na mesma thread).
+        self._frames = 0
+        self._faces = 0
+        self.create_timer(HEARTBEAT_S, self._heartbeat)
+
+    def _heartbeat(self) -> None:
+        if self._frames:
+            self.get_logger().info(
+                f"{self._frames} imagens processadas em {HEARTBEAT_S:.0f} s ({self._frames / HEARTBEAT_S:.1f}/s), "
+                f"{self._faces} rostos"
+            )
+        else:
+            self.get_logger().warn(
+                f"nenhuma imagem em {HEARTBEAT_S:.0f} s: câmera parada, tópico errado ou "
+                "TensorRT montando o engine (só na primeira execução)"
+            )
+        self._frames = self._faces = 0
 
     def _on_image(self, msg: Image) -> None:
+        self._frames += 1
         try:
             frame = self._bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
         except CvBridgeError as exc:
@@ -102,6 +122,7 @@ class FaceRecognitionNode(Node):
                     continue  # caixa totalmente fora do enquadramento
                 name, score = self._store.match(face.embedding, self._threshold)
                 detections.append((bbox, name, score))
+            self._faces += len(detections)
         except Exception as exc:  # um frame ruim não pode derrubar o nó
             self.get_logger().error(f"Falha no reconhecimento deste frame: {exc!r}")
             return

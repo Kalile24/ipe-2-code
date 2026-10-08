@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
 import numpy as np
@@ -31,6 +32,11 @@ class FaceEngine:
         # avisa e segue com o próximo — por isso existe active_providers().
         if providers:
             kwargs["providers"] = providers
+            # O TensorRT monta um engine otimizado na primeira inferência de cada modelo (~1-2 min
+            # na Jetson, com o nó parado). Com cache, isso acontece uma vez e fica em disco.
+            cache = os.path.join(os.path.expanduser(model_root or "~/.insightface"), "trt_cache", model_name)
+            trt = {"trt_engine_cache_enable": "True", "trt_engine_cache_path": cache}
+            kwargs["provider_options"] = [trt if p == "TensorrtExecutionProvider" else {} for p in providers]
         self._app = FaceAnalysis(name=model_name, allowed_modules=["detection", "recognition"], **kwargs)
         self._app.prepare(ctx_id=0, det_size=det_size)
 

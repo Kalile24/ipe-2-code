@@ -39,10 +39,18 @@ def generate_launch_description() -> LaunchDescription:
         description="Pasta raiz dos modelos do InsightFace ('' = ~/.insightface). Na imagem Docker: /opt/insightface",
     )
 
+    video_device_arg = DeclareLaunchArgument(
+        "video_device",
+        default_value="/dev/video0",
+        description="Dispositivo da webcam (camera:=v4l2). No robô, prefira o caminho estável "
+        "/dev/v4l/by-id/...-video-index0: o número do /dev/videoN muda quando o USB reconecta",
+    )
+
     v4l2_camera_node = Node(
         package="v4l2_camera",
         executable="v4l2_camera_node",
         name="v4l2_camera_node",
+        parameters=[{"video_device": LaunchConfiguration("video_device"), "image_size": [640, 480]}],
         remappings=[("/image_raw", LaunchConfiguration("image_topic"))],
         condition=IfCondition(PythonExpression(["'", LaunchConfiguration("camera"), "' == 'v4l2'"])),
     )
@@ -68,6 +76,7 @@ def generate_launch_description() -> LaunchDescription:
             model_root_arg,
             onnx_providers_arg,
             camera_arg,
+            video_device_arg,
             image_topic_arg,
             image_qos_arg,
             v4l2_camera_node,
