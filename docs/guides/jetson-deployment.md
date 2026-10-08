@@ -206,15 +206,21 @@ scp -r ~/.insightface/models/buffalo_l ~/.insightface/models/buffalo_sc \
 Fotos de cadastro: uma pasta por pessoa em `data/known_faces/<nome>/`. Em 2026-10-09 o banco
 do robô tinha **uma foto por pessoa**, e a nota variou muito com o ângulo: entre 0.27 e 0.44
 (abaixo do limiar de 0.45) com o rosto visto de cima pela D435i, 0.62 de frente. **Cadastre 3 a 5
-fotos por pessoa, incluindo algumas tiradas pela própria câmera que vai reconhecer.** Depois, no
-PC2 com o venv ativo:
+fotos por pessoa, incluindo algumas tiradas pela própria câmera que vai reconhecer.**
+
+**Cadastre no notebook e copie só o banco.** As fotos ficam no notebook (`data/known_faces/` é
+ignorado pelo git e não está no robô), e o enroll **refaz o banco a partir da pasta inteira**:
+rodá-lo no robô apagaria quem não tem foto lá. Os embeddings dependem só do modelo, não da
+máquina.
 
 ```bash
-cd ~/ipe-2-code && python3 -m apps.enroll --model buffalo_l
+# no notebook, na raiz do repositório
+mkdir -p data/known_faces/<nome> && cp <foto>.jpg data/known_faces/<nome>/
+for m in buffalo_l buffalo_sc; do .venv/bin/python -m apps.enroll --model $m; done
+scp data/identity_db_buffalo_l.* data/identity_db_buffalo_sc.* unitree@IP_DO_ROBO:ipe-2-code/data/
 ```
 
-O enroll refaz o banco (`data/identity_db_<modelo>.npz/.json`) a partir da pasta inteira. O nó
-só lê o banco ao subir: reinicie-o depois.
+O nó só lê o banco ao subir: reinicie-o depois (janela 0 do tmux, `Ctrl+C` e seta para cima).
 
 ## 6. Compilar o pacote ROS2
 
