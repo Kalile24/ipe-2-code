@@ -7,6 +7,7 @@ SOURCE_DIRS = [
     REPO_ROOT / "apps",
     REPO_ROOT / "scripts",
     REPO_ROOT / "ros2_ws" / "src" / "face_recognition_ros" / "face_recognition_ros",
+    REPO_ROOT / "ros2_ws" / "src" / "robot_reaction_ros" / "robot_reaction_ros",
 ]
 
 

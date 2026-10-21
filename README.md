@@ -19,12 +19,14 @@ apropriada (ex: reconhecer o general, se aproximar e prestar continência).
 (`face_recognition_node`) rodando no Jetson Orin NX do Unitree G1 EDU com GPU (TensorRT,
 ~42 ms por frame), a partir de uma webcam USB presa no alto da cabeça do robô — a D435i de
 fábrica olha para o chão. Também roda localmente, em Docker com o mesmo ROS2 Foxy / Ubuntu
-20.04 / Python 3.8 do robô, e como protótipo standalone. Próximo passo (Fase 2): disparar a
-interação (aproximação + continência) a partir do reconhecimento. Specs completas:
+20.04 / Python 3.8 do robô, e como protótipo standalone. Fase 2 em andamento: o robô reage com um gesto do
+firmware quando reconhece uma pessoa do mapa (`robot_reaction_ros`, desarmado por padrão);
+áudio/TTS fica para depois. Specs completas:
 
 - [`docs/superpowers/specs/2026-09-10-facial-recognition-design.md`](docs/superpowers/specs/2026-09-10-facial-recognition-design.md) — protótipo standalone
 - [`docs/superpowers/specs/2026-09-12-ros2-node-migration-design.md`](docs/superpowers/specs/2026-09-12-ros2-node-migration-design.md) — migração para nó ROS2
 - [`docs/superpowers/specs/2026-09-18-jetson-gpu-migration-design.md`](docs/superpowers/specs/2026-09-18-jetson-gpu-migration-design.md) — portagem para o robô (Foxy + GPU)
+- [`docs/superpowers/specs/2026-10-21-robot-reaction-design.md`](docs/superpowers/specs/2026-10-21-robot-reaction-design.md) — reação a uma pessoa (gestos)
 
 ## Sobre o robô — Unitree G1 EDU
 
@@ -100,7 +102,7 @@ Guia completo (build, testes, troubleshooting, cadastro de pessoas):
 ### No robô (Jetson Orin NX do G1)
 
 ```bash
-~/ipe-2-code/scripts/robo_tmux.sh && tmux attach -t face    # webcam + reconhecimento + detecções
+~/ipe-2-code/scripts/robo_tmux.sh && tmux attach -t face    # webcam + reconhecimento + reação (gesto desarmado)
 ```
 
 Instalação nativa (ROS2 Foxy + venv Python 3.8 + `onnxruntime-gpu`), convivência com os outros

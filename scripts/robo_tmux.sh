@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Abre no robô a sessão tmux "face" (passo 7 do guia da Jetson), já com o ambiente
 # ROS2 Foxy + CycloneDDS + venv:
-#   janela 0 "reconhecimento": um único launch com câmera + reconhecimento (log com sinal de vida a cada 10 s)
+#   janela 0 "reconhecimento": um único launch com câmera + reconhecimento + reação + gesto
+#            (gesto DESARMADO: só loga; armar com o serviço /gesture_node/set_armed)
 #   janela 1 "deteccoes": watch_detections.py
-#   janela 2 "camera": só com realsense, que roda o driver da D435i à parte
+#   janela 2 "gestos": eventos do gesture_node (/reaction/gesture_status)
+#   janela "camera": só com realsense, que roda o driver da D435i à parte
 # Uso: ~/ipe-2-code/scripts/robo_tmux.sh [usb|realsense]   e depois: tmux attach -t face
 #   usb (padrão): webcam USB na cabeça do robô (VIDEO=/dev/videoN troca o dispositivo).
 #   realsense: D435i do robô (inclinada 47,6° para baixo: só vê quem está agachado).
@@ -35,13 +37,15 @@ fi
 rodar() { tmux send-keys -t "$SESSAO:$1" "$AMBIENTE" C-m "$2" C-m; }
 tmux new-session -d -s "$SESSAO" -n reconhecimento "bash --norc"
 tmux new-window -t "$SESSAO" -n deteccoes "bash --norc"
+tmux new-window -t "$SESSAO" -n gestos "bash --norc"
 if [ "$CAMERA" = realsense ]; then
     tmux new-window -t "$SESSAO" -n camera "bash --norc"
     rodar camera "ros2 launch realsense2_camera rs_launch.py"
 fi
-rodar reconhecimento "ros2 launch face_recognition_ros face_recognition.launch.py $ARGS_CAMERA \
+rodar reconhecimento "ros2 launch robot_reaction_ros robo.launch.py $ARGS_CAMERA \
 onnx_providers:=TensorrtExecutionProvider,CUDAExecutionProvider,CPUExecutionProvider"
 rodar deteccoes "python3 $REPO/scripts/watch_detections.py"
+rodar gestos "ros2 topic echo /reaction/gesture_status"
 tmux select-window -t "$SESSAO:reconhecimento"
 
-echo "Sessão '$SESSAO' aberta. Entre com: tmux attach -t $SESSAO   (Ctrl+b e 0/1 troca de janela)"
+echo "Sessão '$SESSAO' aberta. Entre com: tmux attach -t $SESSAO   (Ctrl+b e 0/1/2 troca de janela)"
