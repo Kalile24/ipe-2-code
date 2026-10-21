@@ -1,0 +1,6 @@
+# Quem dispara reação e qual. Nome = o mesmo do cadastro (pasta em data/known_faces/<nome>/).
+# Gestos válidos: GESTOS em core/reaction_policy.py (ex.: high wave, face wave, shake hand, clap).
+gil:
+  gesto: high wave
+marcos:
+  gesto: shake hand
