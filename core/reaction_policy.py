@@ -57,3 +57,53 @@ def load_reactions(raw: object) -> dict[str, str]:
             raise ReactionConfigError(f"{nome}: gesto desconhecido {gesto!r}; válidos: {sorted(GESTOS)}")
         reactions[nome] = gesto
     return reactions
+
+
+class ReactionPolicy:
+    """Recebe os nomes vistos em cada frame e diz quando reagir.
+
+    - Confirmação: a pessoa precisa estar em `confirm_frames` frames seguidos; um frame sem ela
+      (inclusive vazio) zera a contagem.
+    - Cooldowns contados do disparo: `person_cooldown_s` para a mesma pessoa e `global_cooldown_s`
+      entre quaisquer duas reações.
+    - Várias confirmadas no mesmo frame: só a de maior score; as outras continuam contando.
+    """
+
+    def __init__(
+        self,
+        reactions: dict[str, str],
+        confirm_frames: int = 5,
+        person_cooldown_s: float = 60.0,
+        global_cooldown_s: float = 10.0,
+    ) -> None:
+        if confirm_frames < 1:
+            raise ValueError(f"confirm_frames tem que ser >= 1, veio {confirm_frames}")
+        self._reactions = reactions
+        self._confirm_frames = confirm_frames
+        self._person_cooldown_s = person_cooldown_s
+        self._global_cooldown_s = global_cooldown_s
+        self._streak: dict[str, int] = {}
+        self._last_fired: dict[str, float] = {}
+        self._last_any: float | None = None
+
+    def update(self, seen: list[tuple[str, float]], now: float) -> tuple[str, str] | None:
+        best: dict[str, float] = {}
+        for nome, score in seen:
+            if nome in self._reactions:  # `desconhecido` e quem não está no mapa ficam fora
+                best[nome] = max(score, best.get(nome, score))
+        self._streak = {nome: self._streak.get(nome, 0) + 1 for nome in best}
+
+        if self._last_any is not None and now - self._last_any < self._global_cooldown_s:
+            return None
+        prontos = [
+            nome
+            for nome in best
+            if self._streak[nome] >= self._confirm_frames
+            and (nome not in self._last_fired or now - self._last_fired[nome] >= self._person_cooldown_s)
+        ]
+        if not prontos:
+            return None
+        nome = max(prontos, key=lambda n: best[n])
+        self._last_fired[nome] = now
+        self._last_any = now
+        return nome, self._reactions[nome]
