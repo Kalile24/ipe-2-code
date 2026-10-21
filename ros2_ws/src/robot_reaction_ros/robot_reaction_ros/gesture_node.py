@@ -5,6 +5,7 @@ import time
 from typing import Callable
 
 import rclpy
+from rcl_interfaces.msg import SetParametersResult
 from rclpy.node import Node
 from std_msgs.msg import String
 from std_srvs.srv import SetBool
@@ -54,6 +55,9 @@ class GestureNode(Node):
         # `is True`: um "true"/"false" que chegasse como string seria verdadeiro e armaria o braço.
         if self.get_parameter("armed").value is True:
             self._set_armed(True)
+        # `armed` só vale na partida; depois, só pelo serviço. Sem isto, `ros2 param set armed false`
+        # responderia sucesso e o braço continuaria armado.
+        self.add_on_set_parameters_callback(self._on_set_parameters)
 
     def _publish(self, text: str) -> None:
         self.get_logger().info(text)
@@ -69,6 +73,11 @@ class GestureNode(Node):
         self._armed = armed
         self._publish("armed" if armed else "disarmed")
         return True, "armed" if armed else "disarmed"
+
+    def _on_set_parameters(self, params: list) -> SetParametersResult:
+        if any(p.name == "armed" for p in params):
+            return SetParametersResult(successful=False, reason="use o serviço ~/set_armed")
+        return SetParametersResult(successful=True)
 
     def _on_set_armed(self, request: SetBool.Request, response: SetBool.Response) -> SetBool.Response:
         response.success, response.message = self._set_armed(request.data)

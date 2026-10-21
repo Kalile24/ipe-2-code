@@ -45,6 +45,8 @@ def load_reactions(raw: object) -> dict[str, str]:
     for nome, reacao in raw.items():
         if not isinstance(nome, str) or not nome:
             raise ReactionConfigError(f"nome de pessoa inválido: {nome!r}")
+        if nome == DESCONHECIDO:
+            raise ReactionConfigError(f"{DESCONHECIDO!r} não pode estar no mapa: o robô reagiria a qualquer estranho")
         if not isinstance(reacao, dict):
             raise ReactionConfigError(f"{nome}: esperado um mapa com 'gesto', veio {reacao!r}")
         extras = sorted(set(reacao) - _CHAVES_PESSOA)

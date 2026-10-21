@@ -28,6 +28,7 @@ def test_valid_map_returns_name_to_gesture():
         ({"gil": {"gesto": "high wave", "fala": "oi"}}, "fala"),
         ({"gil": {"gesto": "continencia"}}, "continencia"),
         ({1: {"gesto": "high wave"}}, "1"),
+        ({"desconhecido": {"gesto": "high wave"}}, "desconhecido"),  # reagiria a qualquer estranho
     ],
 )
 def test_invalid_maps_fail_naming_the_problem(raw, trecho):

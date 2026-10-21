@@ -3,6 +3,7 @@ import threading
 
 import pytest
 import rclpy
+from rclpy.parameter import Parameter
 from std_msgs.msg import String
 from std_srvs.srv import SetBool
 
@@ -162,3 +163,13 @@ def test_second_command_while_busy_is_rejected_and_ctrl_c_releases(make_node):
     n._worker.join(5)
     assert "rejected busy" in status
     assert client.calls.count(RELEASE) == 2  # o do Ctrl+C e o do fim do gesto
+
+
+def test_param_set_armed_is_refused_so_only_the_service_changes_it(make_node):
+    make, status, _ = make_node
+    client = _FakeClient()
+    n = make(client=client, armed=True)
+    [result] = n.set_parameters([Parameter("armed", Parameter.Type.BOOL, False)])
+    assert not result.successful and "set_armed" in result.reason
+    _send(n, "high wave")
+    assert status[-1] == "done high wave"  # continua armado: o param set não mentiu
