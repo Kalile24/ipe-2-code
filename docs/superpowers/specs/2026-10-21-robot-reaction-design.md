@@ -121,7 +121,7 @@ máximo uma pessoa a quem reagir; o nó publica o `gesto` dela em `/reaction/ges
   network_interface)`, `G1ArmActionClient`, `SetTimeout`, `Init`). Se falhar, publica
   `failed init <erro>` e continua desarmado.
 - **Comando recebido:**
-  1. gesto fora de `GESTOS` → `rejected unknown <nome>`; já há um gesto em andamento →
+  1. gesto fora de `GESTOS` → `rejected unknown '<nome>'` (nome entre aspas, para ver espaço ou string vazia); já há um gesto em andamento →
      `rejected busy` (sem fila);
   2. senão, numa thread de trabalho (o `ExecuteAction` bloqueia e não pode travar o executor do
      ROS): `started <gesto>` → `ExecuteAction(id)` → espera `hold_s` → `ExecuteAction(99)` →
@@ -135,7 +135,7 @@ máximo uma pessoa a quem reagir; o nó publica o `gesto` dela em `/reaction/ges
 
 **Status** (`/reaction/gesture_status`, `std_msgs/String`, uma linha por evento): `armed`,
 `disarmed`, `dry_run <gesto>`, `started <gesto>`, `done <gesto>`, `rejected busy`,
-`rejected unknown <nome>`, `failed <gesto> code=<n>`, `failed init <erro>`. Só para observação e
+`rejected unknown '<nome>'`, `failed <gesto> code=<n>`, `failed init <erro>`. Só para observação e
 debug — nenhum nó depende dele.
 
 ### Áudio no futuro
