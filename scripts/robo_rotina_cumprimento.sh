@@ -5,6 +5,7 @@
 #   sem --armado: fala de verdade, posturas só no log (teste seguro).
 #   --armado: o robô vai para damp, levanta e fica em equilíbrio (como o F1+UP) — NO SUPORTE.
 # Depois: tmux attach -t rotina. Ctrl+C na janela "rotina" devolve os braços e encerra.
+# Armado, a janela "emergencia" fica pronta: Enter = damp na hora (scripts/robo_emergencia.py).
 # Cumprimentar de novo antes dos 5 min: scripts/robo_liberar_cumprimento.sh [nome]
 set -e
 REPO=$(cd "$(dirname "$0")/.." && pwd)
@@ -78,6 +79,11 @@ rodar() { tmux send-keys -t "$SESSAO:$1" "$AMBIENTE" C-m "$2" C-m; }
 tmux new-session -d -s "$SESSAO" -n rotina "bash --norc"
 tmux new-window -t "$SESSAO:" -n status "bash --norc"
 tmux new-window -t "$SESSAO:" -n deteccoes "bash --norc"
+if [ "$ARMADO" = true ]; then
+    # Parada de emergência já conectada: Enter nesta janela = damp na hora.
+    tmux new-window -t "$SESSAO:" -n emergencia "bash --norc"
+    tmux send-keys -t "$SESSAO:emergencia" "$REPO/.venv/bin/python $REPO/scripts/robo_emergencia.py" C-m
+fi
 if [ "$CAMERA" = realsense ]; then
     tmux new-window -t "$SESSAO:" -n camera "bash --norc"
     rodar camera "ros2 launch realsense2_camera rs_launch.py"
@@ -92,3 +98,4 @@ echo
 echo "Pronto ($([ "$ARMADO" = true ] && echo ARMADO || echo desarmado: só fala)). Entre com: tmux attach -t $SESSAO"
 echo "  Ctrl+b e 0/1/2 troca de janela; Ctrl+C na janela 'rotina' devolve os braços e encerra."
 echo "  Cumprimentar de novo: $REPO/scripts/robo_liberar_cumprimento.sh [nome]"
+[ "$ARMADO" = true ] && echo "  EMERGÊNCIA: Enter na janela 'emergencia' (ou robo_emergencia.py --agora) = damp na hora."
