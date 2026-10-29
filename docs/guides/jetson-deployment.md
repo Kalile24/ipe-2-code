@@ -319,6 +319,10 @@ fazem a rotina militar da seção 9.
 O ambiente obrigatório (prompt do fishros) já põe o CycloneDDS na `eth0`, a interface da rede
 do robô — a mesma que o `gesture_node` usa para o SDK da Unitree.
 
+**Atenção:** armar o `gesture_node` falha com `channel factory init error`: o rclpy e o SDK da
+Unitree não convivem no mesmo processo (testado em 2026-10-29). A rotina da seção 9 resolve isso
+com um processo à parte (`body_worker`); o `gesture_node` ainda não foi corrigido.
+
 **O nó de gesto nasce desarmado:** ele só publica `dry_run <gesto>` na janela `gestos`. Para mexer
 o braço de verdade — robô em pé pelo controle, alguém perto, autor do `~/hhhh` avisado e **sem
 apertar os combos do joystick dele** enquanto o nosso estiver armado:

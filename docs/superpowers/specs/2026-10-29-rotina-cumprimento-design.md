@@ -1,6 +1,7 @@
 # Rotina de cumprimento: posturas militares + fala — Design
 
-Data: 2026-10-29. Continua a Fase 2 (`2026-10-21-robot-reaction-design.md`).
+Data: 2026-10-29. Implantado e testado armado no robô em 2026-10-30.
+Contexto: continua a Fase 2 (`2026-10-21-robot-reaction-design.md`).
 
 Objetivo: rodando um script à mão (não no boot — o robô é usado por outras pessoas), o robô fica
 em equilíbrio esperando; ao reconhecer o Gil: **sentido → continência → "Olá, aspirante a oficial
@@ -44,3 +45,33 @@ caminho que o código do ~/hhhh já faz (F1+B → F1+A → F1+X).
 - **Emergência pelo computador** (`scripts/robo_emergencia.py`): damp e mata o worker; testado
   com o robô em pé no suporte em 2026-10-30.
 - **Nome escrito como soa**: "Nichinica" (o Piper lê "Nixinica" como "ksi").
+
+## Descartado
+
+- **Gestos do firmware na rotina:** não fazem sentido/continência/descansar; o `gesture_node` e o
+  modo antigo (`robo_tmux.sh`) continuam no repositório.
+- **Alto-falante da cabeça:** `AudioClient` responde 3104 (o `vui_service` cai, ver a spec de
+  2026-10-21); a caixa Bluetooth do ~/hhhh funciona.
+- **Subir no boot:** o robô é compartilhado; a rotina roda só quando alguém executa o script.
+- **Repetir por tempo fixo (60 s):** cumprimentava de novo quem ficasse parado na frente.
+
+## Validado sem hardware
+
+- `tests/test_reaction_policy.py`: mapa com `passos`, regra 5 min + saída, `release`.
+- `tests/test_routine.py`: ordem, pausas (0,5 s automática; `pausa` explícita a substitui),
+  falha de postura solta os braços, fala que falha não para o movimento, parada no meio.
+- `tests/test_piper_voice.py`: POST ao servidor Piper (falso) e erros.
+- `ros2_ws/src/robot_reaction_ros/test/test_body_node.py`, `test_body_worker.py`,
+  `test_reaction_node.py`: com dublês do corpo e da voz (precisam de rclpy: rodam no robô ou no
+  Docker; o `ambiente_robo.sh` é obrigatório — sem CycloneDDS o rclpy trava com `bad_alloc`).
+
+## Implantação no robô (2026-10-29/30)
+
+- Desarmado: reconheceu o gil, falou pela caixa, posturas só no log; parado na frente não
+  repetiu; `robo_liberar_cumprimento.sh gil` liberou na hora.
+- Armado, primeira tentativa: `channel factory init error` (rclpy + SDK no mesmo processo);
+  nenhum comando chegou ao robô → `body_worker`.
+- Emergência: com o robô em pé (FSM 801), `robo_emergencia.py` → damp confirmado (FSM 1).
+- Rotina armada completa (sequência final, pausa 0,5 s): ~41 s do reconhecimento ao fim
+  (sentido 1,3 s; continência 1,1 s; fala 5,1 s; desc arma 1,3 s; descansar 5,9 s; 15 s;
+  à vontade 11 s). Inicialização (damp → em pé → equilíbrio): ~16 s.
