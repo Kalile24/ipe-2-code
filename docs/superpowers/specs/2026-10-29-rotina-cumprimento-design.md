@@ -3,9 +3,10 @@
 Data: 2026-10-29. Continua a Fase 2 (`2026-10-21-robot-reaction-design.md`).
 
 Objetivo: rodando um script à mão (não no boot — o robô é usado por outras pessoas), o robô fica
-em equilíbrio esperando; ao reconhecer o Gil: **sentido → "Olá, aspirante a oficial da reserva
-Gil, sou o Tenente Nichinica" → descansar → à vontade → "Bom ver o senhor"**, como um gesto
-militar, sem repetir à toa.
+em equilíbrio esperando; ao reconhecer o Gil: **sentido → continência → "Olá, aspirante a oficial
+da reserva Gil, sou o Tenente Nichinica" → descansar arma → descansar → 15 s → à vontade**, como
+um gesto militar, sem repetir à toa. O descansar arma entre a continência e o descansar é o
+caminho que o código do ~/hhhh já faz (F1+B → F1+A → F1+X).
 
 ## Fatos (inspeção de 2026-10-29)
 
@@ -30,11 +31,16 @@ militar, sem repetir à toa.
 - **`body_node`**: único dono do braço e da voz. Desarmado por padrão (fala, posturas no log);
   `armed` só na partida, e armar inicializa o robô (damp → em pé → equilíbrio, no suporte).
   Ctrl+C espera o passo atual e devolve os braços.
-- **YAML**: cada pessoa tem `gesto` (firmware, `gesture_node`) ou `passos` (`postura`/`fala`).
+- **YAML**: cada pessoa tem `gesto` (firmware, `gesture_node`) ou `passos` (`postura`/`fala`/`pausa`).
   Rotina que mexe o braço tem que terminar a última postura em `a_vontade`.
 - **Repetição**: a mesma pessoa só de novo depois de 5 min **e** de ter saído da frente por 5 s
   seguidos (ficar parado na frente nunca repete; rosto virado não conta como saída). Comando
   manual de teste: `ros2 param set /reaction_node liberar <nome|todos>`
   (`scripts/robo_liberar_cumprimento.sh`).
 - **Fala que falha não para o movimento; postura que falha encerra e tenta `a_vontade`.**
+- **Processo à parte para o braço**: rclpy e o SDK da Unitree no mesmo processo falham
+  (`channel factory init error`, CycloneDDS com duas configurações). O body_node abre o
+  `body_worker` (sem ROS), dono do G1ArmController. O mesmo vale para o gesture_node, nunca armado.
+- **Emergência pelo computador** (`scripts/robo_emergencia.py`): damp e mata o worker; testado
+  com o robô em pé no suporte em 2026-10-30.
 - **Nome escrito como soa**: "Nichinica" (o Piper lê "Nixinica" como "ksi").

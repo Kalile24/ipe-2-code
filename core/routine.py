@@ -22,7 +22,8 @@ def run_routine(
 ) -> bool:
     """Roda os passos em ordem; True se todos deram certo.
 
-    - Depois de cada postura (menos a do último passo), espera `pausa_s`: o gesto fica legível.
+    - Depois de cada postura espera `pausa_s` (o gesto fica legível), menos no último passo e
+      quando o próximo passo é uma `pausa` explícita (aí vale só ela: "15 s em descansar").
     - Fala que falha só é registrada: o movimento não depende do som.
     - Postura que falha encerra a rotina e tenta `a_vontade`, para não deixar o braço preso
       numa pose intermediária (o mesmo que o operador faria com F1+RIGHT).
@@ -32,6 +33,10 @@ def run_routine(
         if deve_parar():
             log("rotina interrompida")
             return False
+        if "pausa" in passo:
+            log(f"pausa: {passo['pausa']} s")
+            sleep(float(passo["pausa"]))
+            continue
         if "fala" in passo:
             texto = passo["fala"]
             log(f"fala: {texto}")
@@ -48,7 +53,7 @@ def run_routine(
                 log(f"tentando {A_VONTADE} para soltar os braços")
                 _tentar(postura, A_VONTADE, log)
             return False
-        if i < len(passos) - 1:
+        if i < len(passos) - 1 and "pausa" not in passos[i + 1]:
             sleep(pausa_s)
     return True
 

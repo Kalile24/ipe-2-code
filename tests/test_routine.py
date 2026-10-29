@@ -93,3 +93,36 @@ def test_stop_request_is_checked_before_each_step():
     feitos = []
     assert r.rodar(deve_parar=lambda: len(feitos) > 0 or feitos.append(1)) is False
     assert r.eventos == [("postura", "sentido"), ("pausa", 2.0)]
+
+
+def test_explicit_pause_replaces_the_automatic_one():
+    r = _Robo()
+    passos = [{"postura": "descansar"}, {"pausa": 15}, {"postura": "a_vontade"}]
+    assert r.rodar(passos) is True
+    assert r.eventos == [("postura", "descansar"), ("pausa", 15.0), ("postura", "a_vontade")]
+
+
+def test_new_order_salute_then_speech_then_rest_for_15_s():
+    r = _Robo()
+    passos = [
+        {"postura": "sentido"},
+        {"postura": "continencia"},
+        {"fala": "Olá, aspirante"},
+        {"postura": "desc_arma"},
+        {"postura": "descansar"},
+        {"pausa": 15},
+        {"postura": "a_vontade"},
+    ]
+    assert r.rodar(passos) is True
+    assert r.eventos == [
+        ("postura", "sentido"),
+        ("pausa", 2.0),
+        ("postura", "continencia"),
+        ("pausa", 2.0),
+        ("fala", "Olá, aspirante"),
+        ("postura", "desc_arma"),
+        ("pausa", 2.0),
+        ("postura", "descansar"),
+        ("pausa", 15.0),
+        ("postura", "a_vontade"),
+    ]

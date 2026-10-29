@@ -35,7 +35,7 @@ _CHAVES_PESSOA = {"gesto", "passos"}
 # Posturas do ~/hhhh (movimentos_militares.py) que o body_node sabe executar.
 POSTURAS = {"sentido", "descansar", "continencia", "desc_arma", "a_vontade"}
 A_VONTADE = "a_vontade"  # braços de volta ao equilíbrio e arm_sdk liberado
-_TIPOS_PASSO = {"postura", "fala"}
+_TIPOS_PASSO = {"postura", "fala", "pausa"}
 
 
 class ReactionConfigError(ValueError):
@@ -43,7 +43,8 @@ class ReactionConfigError(ValueError):
 
 
 def validate_steps(nome: str, passos: object) -> list[dict[str, str]]:
-    """Valida a lista `passos` de uma rotina: cada passo é `{postura: <nome>}` ou `{fala: <texto>}`.
+    """Valida a lista `passos` de uma rotina: cada passo é `{postura: <nome>}`, `{fala: <texto>}`
+    ou `{pausa: <segundos>}` (espera extra, ex.: ficar 15 s em descansar).
 
     Se a rotina mexe os braços, a última postura tem que ser `a_vontade`: é ela que devolve os
     braços ao equilíbrio e solta o arm_sdk; sem isso o braço ficaria preso na última pose.
@@ -53,7 +54,7 @@ def validate_steps(nome: str, passos: object) -> list[dict[str, str]]:
     validos = []
     for i, passo in enumerate(passos, start=1):
         if not isinstance(passo, dict) or len(passo) != 1:
-            raise ReactionConfigError(f"{nome}: passo {i} tem que ter uma chave só (postura ou fala), veio {passo!r}")
+            raise ReactionConfigError(f"{nome}: passo {i} tem que ter uma chave só (postura, fala ou pausa), veio {passo!r}")
         ((tipo, valor),) = passo.items()
         if tipo not in _TIPOS_PASSO:
             raise ReactionConfigError(f"{nome}: passo {i} com chave desconhecida {tipo!r}; válidas: {sorted(_TIPOS_PASSO)}")
@@ -61,6 +62,9 @@ def validate_steps(nome: str, passos: object) -> list[dict[str, str]]:
             raise ReactionConfigError(f"{nome}: passo {i}: postura desconhecida {valor!r}; válidas: {sorted(POSTURAS)}")
         if tipo == "fala" and (not isinstance(valor, str) or not valor.strip()):
             raise ReactionConfigError(f"{nome}: passo {i}: fala vazia ou não é texto: {valor!r}")
+        # bool é int em Python: `pausa: true` não pode virar 1 s
+        if tipo == "pausa" and (isinstance(valor, bool) or not isinstance(valor, (int, float)) or not 0 < valor <= 120):
+            raise ReactionConfigError(f"{nome}: passo {i}: pausa tem que ser um número de segundos entre 0 e 120, veio {valor!r}")
         validos.append({tipo: valor})
     posturas = [p["postura"] for p in validos if "postura" in p]
     if posturas and posturas[-1] != A_VONTADE:

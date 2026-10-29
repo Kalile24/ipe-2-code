@@ -58,6 +58,10 @@ def test_routine_map_returns_the_steps_in_order():
     assert load_reactions(raw) == {"gil": ROTINA_GIL, "marcos": "shake hand"}
 
 
+def test_pause_step_accepts_seconds():
+    assert validate_steps("gil", [{"pausa": 15}, {"pausa": 0.5}]) == [{"pausa": 15}, {"pausa": 0.5}]
+
+
 def test_routine_with_only_speech_needs_no_a_vontade():
     assert validate_steps("gil", [{"fala": "oi"}]) == [{"fala": "oi"}]
 
@@ -71,6 +75,11 @@ def test_routine_with_only_speech_needs_no_a_vontade():
         ([{"gesto": "high wave"}], "gesto"),
         ([{"postura": "pular"}], "pular"),
         ([{"fala": "  "}], "vazia"),
+        ([{"pausa": 0}], "pausa"),
+        ([{"pausa": -3}], "pausa"),
+        ([{"pausa": 500}], "pausa"),
+        ([{"pausa": "15"}], "pausa"),
+        ([{"pausa": True}], "pausa"),
         ([{"postura": "sentido"}], "a_vontade"),  # braço ficaria preso no sentido
         ([{"postura": "a_vontade"}, {"postura": "sentido"}], "a_vontade"),
     ],

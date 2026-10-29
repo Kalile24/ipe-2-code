@@ -337,8 +337,9 @@ firmware recusando (por exemplo, robô fora do modo em pé). Para mudar quem dis
 ## 9. Rotina de cumprimento (posturas do `~/hhhh` + fala)
 
 Spec: [`2026-10-29-rotina-cumprimento-design.md`](../superpowers/specs/2026-10-29-rotina-cumprimento-design.md).
-Quem tem `passos` no `reactions.yaml` faz a rotina em ordem — ex. do `gil`: sentido → fala →
-descansar → à vontade → fala, com 2 s depois de cada postura. As posturas são as do
+Quem tem `passos` no `reactions.yaml` faz a rotina em ordem — ex. do `gil`: sentido → continência
+→ fala → descansar arma → descansar → 15 s → à vontade, com 2 s depois de cada postura (um passo
+`pausa` substitui esses 2 s). As posturas são as do
 `movimentos_militares.py` (mesmo código, poses e velocidades; nada no `~/hhhh` é editado) e a fala
 sai pela caixa Bluetooth pelo Piper do `~/hhhh` (o alto-falante da cabeça não responde: RPC 3104).
 
