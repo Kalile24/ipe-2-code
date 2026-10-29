@@ -15,7 +15,7 @@ def run_routine(
     passos: list[dict[str, str]],
     postura: Callable[[str], bool],
     falar: Callable[[str], None],
-    pausa_s: float = 2.0,
+    pausa_s: float = 0.5,
     log: Callable[[str], None] = print,
     deve_parar: Callable[[], bool] = lambda: False,
     sleep: Callable[[float], None] = time.sleep,

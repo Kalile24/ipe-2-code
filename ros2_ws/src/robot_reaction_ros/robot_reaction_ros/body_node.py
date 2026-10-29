@@ -86,7 +86,7 @@ class BodyNode(Node):
         self.declare_parameter("armed", False)
         self.declare_parameter("hhhh_dir", "/home/unitree/hhhh")
         self.declare_parameter("network_interface", "eth0")
-        self.declare_parameter("pausa_s", 2.0)
+        self.declare_parameter("pausa_s", 0.5)
         self.declare_parameter("tts_url", DEFAULT_URL)
         self.declare_parameter("tts_timeout_s", 60.0)
         self._pausa_s = float(self.get_parameter("pausa_s").value)

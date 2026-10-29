@@ -4,7 +4,7 @@
 #          core/reaction_policy.py (ex.: high wave, face wave, shake hand, clap).
 #   passos: rotina militar (body_node; launch rotina.launch.py), em ordem. Cada passo é
 #          `postura: <sentido|descansar|continencia|desc_arma|a_vontade>`, `fala: <texto>` ou
-#          `pausa: <segundos>` (espera extra; substitui os 2 s automáticos depois da postura).
+#          `pausa: <segundos>` (espera extra; substitui os 0,5 s automáticos depois da postura).
 #          A última postura tem que ser a_vontade (devolve os braços e solta o arm_sdk).
 #          Fala: escreva como deve SOAR no Piper ("Nichinica", não "Nixinica").
 gil:

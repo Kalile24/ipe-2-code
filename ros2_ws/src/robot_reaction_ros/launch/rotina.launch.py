@@ -28,7 +28,7 @@ def generate_launch_description() -> LaunchDescription:
         description="Mapa pessoa -> reação ('' = config/reactions.yaml do pacote)",
     )
     pausa_arg = DeclareLaunchArgument(
-        "pausa_s", default_value="2.0", description="Pausa depois de cada postura da rotina (s)"
+        "pausa_s", default_value="0.5", description="Pausa depois de cada postura da rotina (s)"
     )
     reaction_node = Node(
         package="robot_reaction_ros",
