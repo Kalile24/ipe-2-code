@@ -312,7 +312,9 @@ Num pipe (`| grep`, `| tail`), o `ros2 topic hz` não imprime nada até terminar
 
 Spec: [`2026-10-21-robot-reaction-design.md`](../superpowers/specs/2026-10-21-robot-reaction-design.md).
 Quem aparece em `robot_reaction_ros/config/reactions.yaml` por 5 frames seguidos faz o robô
-executar o gesto do firmware associado (cooldown de 60 s por pessoa e 10 s entre reações).
+executar o gesto do firmware associado (10 s entre reações; a mesma pessoa só de novo depois de
+5 min **e** de ter saído da frente da câmera por 5 s). Pessoas com `passos` no lugar de `gesto`
+fazem a rotina militar da seção 9.
 
 O ambiente obrigatório (prompt do fishros) já põe o CycloneDDS na `eth0`, a interface da rede
 do robô — a mesma que o `gesture_node` usa para o SDK da Unitree.
@@ -331,6 +333,29 @@ Desarmar não interrompe um gesto em andamento. `failed <gesto> code=<n>` na jan
 firmware recusando (por exemplo, robô fora do modo em pé). Para mudar quem dispara o quê, edite o
 `reactions.yaml` (gestos válidos: `GESTOS` em `core/reaction_policy.py`), rode
 `python3 -m colcon build --symlink-install` e reinicie a janela 0.
+
+## 9. Rotina de cumprimento (posturas do `~/hhhh` + fala)
+
+Spec: [`2026-10-29-rotina-cumprimento-design.md`](../superpowers/specs/2026-10-29-rotina-cumprimento-design.md).
+Quem tem `passos` no `reactions.yaml` faz a rotina em ordem — ex. do `gil`: sentido → fala →
+descansar → à vontade → fala, com 2 s depois de cada postura. As posturas são as do
+`movimentos_militares.py` (mesmo código, poses e velocidades; nada no `~/hhhh` é editado) e a fala
+sai pela caixa Bluetooth pelo Piper do `~/hhhh` (o alto-falante da cabeça não responde: RPC 3104).
+
+```bash
+~/ipe-2-code/scripts/robo_rotina_cumprimento.sh            # desarmado: fala, posturas só no log
+~/ipe-2-code/scripts/robo_rotina_cumprimento.sh --armado   # robô NO SUPORTE: damp → em pé → equilíbrio
+tmux attach -t rotina                                      # janelas: rotina, status, deteccoes
+~/ipe-2-code/scripts/robo_liberar_cumprimento.sh [nome]    # cumprimentar de novo já (teste)
+```
+
+- O script conecta a caixa, sobe o contêiner do Piper (`~/hhhh/start_tts_stt.sh`) e se recusa a
+  rodar se o `movimentos_militares.py` ou o `assistente.py` estiverem de pé (alguém apertou START):
+  seriam dois donos do braço/da caixa. Não aperte START nem os combos F1+… durante a rotina.
+- **Ctrl+C na janela `rotina`** espera o passo atual, devolve os braços ao equilíbrio e solta o
+  arm_sdk (como o F1+RIGHT); o robô continua em pé. Para soltá-lo, use o controle (damp).
+- O descansar do `~/hhhh` dá um impulso curto de caminhada para frente (0,12 m/s por ~1 s).
+- Nome na fala: escreva como deve soar no Piper ("Nichinica"; "Nixinica" sai "ksi").
 
 ## Checklist
 

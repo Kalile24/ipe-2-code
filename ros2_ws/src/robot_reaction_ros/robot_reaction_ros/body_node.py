@@ -1,0 +1,226 @@
+from __future__ import annotations
+
+import functools
+import json
+import signal
+import sys
+import threading
+import time
+from types import SimpleNamespace
+from typing import Callable
+
+import rclpy
+from rcl_interfaces.msg import SetParametersResult
+from rclpy.node import Node
+from std_msgs.msg import String
+
+from core.piper_voice import DEFAULT_URL, say
+from core.reaction_policy import ReactionConfigError, validate_steps
+from core.routine import run_routine
+
+
+class HhhhBody:
+    """As posturas do ~/hhhh, chamadas como o movimentos_militares.py chama (F1+...).
+
+    Importa o G1ArmController de ~/hhhh/g1_arm_calibration_gui_v29.py SEM editar nada lá, com as
+    mesmas velocidades e a mesma espera do FSM 4 do movimentos_militares.py. O movimentos_militares.py
+    não pode estar rodando junto: seriam dois processos publicando em rt/arm_sdk.
+    """
+
+    def __init__(self, hhhh_dir: str, network_interface: str) -> None:
+        if hhhh_dir not in sys.path:
+            sys.path.insert(0, hhhh_dir)
+        # Import tardio: desarmado, o nó roda sem o ~/hhhh nem o SDK (notebook, Docker).
+        from g1_arm_calibration_gui_v29 import DESC_ARMA_MAX_JOINT_SPEED, G1ArmController
+        from movimentos_militares import MovimentosMilitares
+
+        self.robot = G1ArmController(iface=network_interface, kp=35.0, kd=1.2, max_joint_speed=0.35)
+        # A espera do FSM 4 mais tolerante do movimentos_militares.py (a que o F1+UP usa hoje).
+        casca = SimpleNamespace(robot=self.robot)
+        self.robot.wait_fsm4_transition_complete = functools.partial(
+            MovimentosMilitares.wait_fsm4_transition_complete, casca
+        )
+        time.sleep(3.0)  # mesma espera do MovimentosMilitares: DDS e LocoClient estabilizarem
+        # Postura -> (velocidade máxima das juntas ou None = a da própria rotina, função).
+        self._posturas = {
+            "sentido": (0.7, self.robot.move_to_attention),
+            "descansar": (None, self.robot.move_to_rest),
+            "continencia": (2.0, self.robot.move_to_saved_salute),
+            "desc_arma": (DESC_ARMA_MAX_JOINT_SPEED, self.robot.lower_salute_to_attention),
+            "a_vontade": (None, self.robot.return_to_balance_and_release),
+        }
+
+    def initialize(self) -> bool:
+        """F1+UP: damp → em pé (FSM 4) → equilíbrio (FSM 801). Robô no suporte."""
+        return bool(self.robot.initialize_to_balance())
+
+    def posture(self, nome: str) -> bool:
+        velocidade, funcao = self._posturas[nome]
+        if velocidade is None:
+            return bool(funcao())
+        anterior = self.robot.max_joint_speed
+        try:
+            self.robot.max_joint_speed = velocidade
+            return bool(funcao())
+        finally:
+            self.robot.max_joint_speed = anterior
+
+    def shutdown(self) -> None:
+        """Braços de volta ao equilíbrio e arm_sdk solto; o robô continua em pé (FSM 801)."""
+        if self.robot.arm_enabled:
+            self.robot.return_to_balance_and_release()
+        self.robot.shutdown()
+
+
+class BodyNode(Node):
+    """Único dono dos braços e da voz: executa as rotinas que chegam em /reaction/rotina.
+
+    Desarmado (padrão): fala de verdade, mas as posturas só aparecem no log (dry-run).
+    Armado (`armed:=true`, só na partida): ao subir faz a inicialização do F1+UP e depois executa
+    as posturas. Status em /reaction/rotina_status. Ctrl+C: espera o passo atual, devolve os braços
+    ao equilíbrio e solta o arm_sdk.
+    """
+
+    def __init__(
+        self,
+        body_factory: Callable[[str, str], object] = HhhhBody,
+        speak: Callable[..., None] = say,
+    ) -> None:
+        super().__init__("body_node")
+        self.declare_parameter("armed", False)
+        self.declare_parameter("hhhh_dir", "/home/unitree/hhhh")
+        self.declare_parameter("network_interface", "eth0")
+        self.declare_parameter("pausa_s", 2.0)
+        self.declare_parameter("tts_url", DEFAULT_URL)
+        self.declare_parameter("tts_timeout_s", 60.0)
+        self._pausa_s = float(self.get_parameter("pausa_s").value)
+        self._speak = functools.partial(
+            speak,
+            url=self.get_parameter("tts_url").value,
+            timeout_s=float(self.get_parameter("tts_timeout_s").value),
+        )
+
+        self._body = None
+        self._ready = False  # inicializado (FSM 801): só então as posturas mexem o braço
+        self._stop = threading.Event()
+        self._busy = threading.Lock()
+        self._worker: threading.Thread | None = None
+
+        self._status_pub = self.create_publisher(String, "/reaction/rotina_status", 10)
+        self._subscription = self.create_subscription(String, "/reaction/rotina", self._on_routine, 10)
+        # `armed` só vale na partida: armar no meio faria o robô cair em damp sem aviso.
+        self.add_on_set_parameters_callback(self._on_set_parameters)
+
+        # `is True`: um "true" que chegasse como string seria verdadeiro e armaria o braço.
+        if self.get_parameter("armed").value is True:
+            hhhh_dir = self.get_parameter("hhhh_dir").value
+            network_interface = self.get_parameter("network_interface").value
+            self._busy.acquire()  # nenhuma rotina enquanto inicializa
+            self._worker = threading.Thread(
+                target=self._initialize, args=(body_factory, hhhh_dir, network_interface), daemon=True
+            )
+            self._worker.start()
+        else:
+            self._publish("desarmado: posturas só no log, fala de verdade")
+
+    def _publish(self, text: str) -> None:
+        self.get_logger().info(text)
+        try:
+            self._status_pub.publish(String(data=text))
+        except Exception:  # depois do Ctrl+C o contexto ROS já fechou; o log basta
+            pass
+
+    def _on_set_parameters(self, params: list) -> SetParametersResult:
+        if any(p.name == "armed" for p in params):
+            return SetParametersResult(successful=False, reason="armed só vale na partida (reinicie o nó)")
+        return SetParametersResult(successful=True)
+
+    def _initialize(self, body_factory: Callable[[str, str], object], hhhh_dir: str, network_interface: str) -> None:
+        try:
+            self._publish("inicializando: damp → em pé → equilíbrio (robô no suporte)")
+            try:
+                self._body = body_factory(hhhh_dir, network_interface)
+                self._ready = self._body.initialize()
+            except Exception as exc:  # sem SDK, sem ~/hhhh ou sem DDS
+                self._publish(f"falha na inicialização: {exc!r}")
+                return
+            if self._ready:
+                self._publish("pronto: em equilíbrio, esperando reconhecimento")
+            else:
+                self._publish("falha na inicialização (veja o log do G1ArmController); posturas só no log")
+        finally:
+            self._busy.release()
+
+    def _on_routine(self, msg: String) -> None:
+        try:
+            dados = json.loads(msg.data)
+            pessoa = str(dados["pessoa"])
+            passos = validate_steps(pessoa, dados["passos"])
+        except (ValueError, KeyError, TypeError, ReactionConfigError) as exc:
+            self._publish(f"rotina rejeitada (mensagem inválida): {exc}")
+            return
+        if self._stop.is_set():
+            return
+        if not self._busy.acquire(blocking=False):
+            self._publish(f"rotina de {pessoa} rejeitada: ocupado")
+            return
+        self._worker = threading.Thread(target=self._run, args=(pessoa, passos), daemon=True)
+        self._worker.start()
+
+    def _run(self, pessoa: str, passos: list[dict[str, str]]) -> None:
+        try:
+            self._publish(f"rotina de {pessoa}: início")
+            ok = run_routine(
+                passos,
+                postura=self._posture,
+                falar=self._speak,
+                pausa_s=self._pausa_s,
+                log=self._publish,
+                deve_parar=self._stop.is_set,
+            )
+            self._publish(f"rotina de {pessoa}: {'fim' if ok else 'falhou'}")
+        finally:
+            self._busy.release()
+
+    def _posture(self, nome: str) -> bool:
+        if not self._ready:
+            self._publish(f"dry_run postura {nome}")
+            return True
+        return self._body.posture(nome)
+
+    def shutdown(self, timeout_s: float = 90.0) -> None:
+        """Ctrl+C: espera o passo em andamento terminar e solta os braços."""
+        self._stop.set()
+        log = self.get_logger()
+        if self._worker is not None and self._worker.is_alive():
+            log.info("esperando o passo atual terminar antes de soltar os braços...")
+            self._worker.join(timeout_s)
+        if self._body is not None:
+            log.info("devolvendo os braços ao equilíbrio e soltando o arm_sdk...")
+            try:
+                self._body.shutdown()
+            except Exception as exc:
+                log.error(f"falha ao soltar os braços: {exc!r}; use F1+RIGHT no controle")
+
+
+def main(args: list[str] | None = None) -> None:
+    rclpy.init(args=args)
+    node = None
+    try:
+        node = BodyNode()
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        # O `ros2 launch` repassa o Ctrl+C como um segundo SIGINT: sem isto ele interromperia a
+        # devolução dos braços no meio.
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        if node is not None:
+            node.shutdown()
+            node.destroy_node()
+        if rclpy.ok():  # o Ctrl+C já pode ter desligado o contexto
+            rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()
