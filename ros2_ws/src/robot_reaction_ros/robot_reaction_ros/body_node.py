@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import functools
 import json
+import select
 import signal
+import subprocess
 import sys
 import threading
-import time
-from types import SimpleNamespace
 from typing import Callable
 
 import rclpy
@@ -19,61 +19,57 @@ from core.reaction_policy import ReactionConfigError, validate_steps
 from core.routine import run_routine
 
 
-class HhhhBody:
-    """As posturas do ~/hhhh, chamadas como o movimentos_militares.py chama (F1+...).
+class SubprocessBody:
+    """O corpo num processo sem ROS (body_worker): rclpy e SDK da Unitree não convivem.
 
-    Importa o G1ArmController de ~/hhhh/g1_arm_calibration_gui_v29.py SEM editar nada lá, com as
-    mesmas velocidades e a mesma espera do FSM 4 do movimentos_militares.py. O movimentos_militares.py
-    não pode estar rodando junto: seriam dois processos publicando em rt/arm_sdk.
+    Mesma interface que o body_node espera (initialize/posture/shutdown); cada chamada é uma
+    linha JSON para o body_worker e espera a resposta dele.
     """
 
-    def __init__(self, hhhh_dir: str, network_interface: str) -> None:
-        if hhhh_dir not in sys.path:
-            sys.path.insert(0, hhhh_dir)
-        # Import tardio: desarmado, o nó roda sem o ~/hhhh nem o SDK (notebook, Docker).
-        from g1_arm_calibration_gui_v29 import DESC_ARMA_MAX_JOINT_SPEED, G1ArmController
-        from movimentos_militares import MovimentosMilitares
+    def __init__(self, hhhh_dir: str, network_interface: str, command: list[str] | None = None) -> None:
+        command = command or [sys.executable, "-m", "robot_reaction_ros.body_worker", hhhh_dir, network_interface]
+        # stderr herdado: o log do G1ArmController aparece junto com o do launch.
+        self._proc = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)
+        hello = self._read(timeout_s=60.0)
+        if not hello.get("ok"):
+            self._proc.kill()
+            raise RuntimeError(f"body_worker não subiu: {hello.get('erro', hello)}")
 
-        self.robot = G1ArmController(iface=network_interface, kp=35.0, kd=1.2, max_joint_speed=0.35)
-        # A espera do FSM 4 mais tolerante do movimentos_militares.py (a que o F1+UP usa hoje).
-        casca = SimpleNamespace(robot=self.robot)
-        self.robot.wait_fsm4_transition_complete = functools.partial(
-            MovimentosMilitares.wait_fsm4_transition_complete, casca
-        )
-        time.sleep(3.0)  # mesma espera do MovimentosMilitares: DDS e LocoClient estabilizarem
-        # Postura -> (velocidade máxima das juntas ou None = a da própria rotina, função).
-        self._posturas = {
-            "sentido": (0.7, self.robot.move_to_attention),
-            "descansar": (None, self.robot.move_to_rest),
-            "continencia": (2.0, self.robot.move_to_saved_salute),
-            "desc_arma": (DESC_ARMA_MAX_JOINT_SPEED, self.robot.lower_salute_to_attention),
-            "a_vontade": (None, self.robot.return_to_balance_and_release),
-        }
+    def _read(self, timeout_s: float) -> dict:
+        prontos, _, _ = select.select([self._proc.stdout], [], [], timeout_s)
+        line = self._proc.stdout.readline() if prontos else ""
+        if not line:
+            return {"ok": False, "erro": f"sem resposta do body_worker em {timeout_s:.0f} s"}
+        return json.loads(line)
+
+    def _call(self, ordem: dict, timeout_s: float) -> bool:
+        if self._proc.poll() is not None:
+            return False
+        self._proc.stdin.write(json.dumps(ordem) + "\n")
+        self._proc.stdin.flush()
+        return bool(self._read(timeout_s).get("ok"))
 
     def initialize(self) -> bool:
-        """F1+UP: damp → em pé (FSM 4) → equilíbrio (FSM 801). Robô no suporte."""
-        return bool(self.robot.initialize_to_balance())
+        return self._call({"cmd": "initialize"}, timeout_s=120.0)
 
     def posture(self, nome: str) -> bool:
-        velocidade, funcao = self._posturas[nome]
-        if velocidade is None:
-            return bool(funcao())
-        anterior = self.robot.max_joint_speed
-        try:
-            self.robot.max_joint_speed = velocidade
-            return bool(funcao())
-        finally:
-            self.robot.max_joint_speed = anterior
+        return self._call({"cmd": "posture", "nome": nome}, timeout_s=120.0)
 
     def shutdown(self) -> None:
-        """Braços de volta ao equilíbrio e arm_sdk solto; o robô continua em pé (FSM 801)."""
-        if self.robot.arm_enabled:
-            self.robot.return_to_balance_and_release()
-        self.robot.shutdown()
+        try:
+            self._call({"cmd": "shutdown"}, timeout_s=60.0)
+        finally:
+            if self._proc.poll() is None:
+                try:
+                    self._proc.wait(10.0)
+                except subprocess.TimeoutExpired:
+                    self._proc.kill()
 
 
 class BodyNode(Node):
     """Único dono dos braços e da voz: executa as rotinas que chegam em /reaction/rotina.
+
+    Os braços são comandados pelo body_worker (processo sem ROS, ver body_worker.py).
 
     Desarmado (padrão): fala de verdade, mas as posturas só aparecem no log (dry-run).
     Armado (`armed:=true`, só na partida): ao subir faz a inicialização do F1+UP e depois executa
@@ -83,7 +79,7 @@ class BodyNode(Node):
 
     def __init__(
         self,
-        body_factory: Callable[[str, str], object] = HhhhBody,
+        body_factory: Callable[[str, str], object] = SubprocessBody,
         speak: Callable[..., None] = say,
     ) -> None:
         super().__init__("body_node")

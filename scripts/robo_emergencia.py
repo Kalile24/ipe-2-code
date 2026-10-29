@@ -1,4 +1,4 @@
-"""Parada de emergência pelo computador: mata o body_node e põe o robô em damp (motores soltos).
+"""Parada de emergência pelo computador: põe o robô em damp (motores soltos) e mata o corpo.
 
 Com o robô no suporte, damp é o estado mais seguro: ele fica pendurado, sem torque.
 Uso, no robô (venv do projeto, sem ROS):
@@ -43,9 +43,12 @@ def fsm_id(loco: object) -> int | None:
 def emergency(loco: object) -> bool:
     print("EMERGÊNCIA: damp", flush=True)
     print(f"SetFsmId(1): {loco.SetFsmId(DAMP)}", flush=True)
-    # O body_node publica no arm_sdk a 50 Hz; morto, ninguém mais comanda os braços.
+    # O body_worker publica no arm_sdk a 50 Hz; morto, ninguém mais comanda os braços. Ele
+    # primeiro: se o body_node morresse antes, o worker veria a entrada fechar e devolveria os
+    # braços ao equilíbrio (movimento) em vez de ficar parado em damp.
+    subprocess.run(["pkill", "-9", "-f", "robot_reaction_ros.body_worker"], check=False)
     subprocess.run(["pkill", "-9", "-f", "robot_reaction_ros/body_node"], check=False)
-    print("body_node encerrado (se estava rodando)", flush=True)
+    print("body_worker e body_node encerrados (se estavam rodando)", flush=True)
     for _ in range(10):
         atual = fsm_id(loco)
         if atual == DAMP:
