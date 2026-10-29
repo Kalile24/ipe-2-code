@@ -76,10 +76,10 @@ echo "[3/3] Reconhecimento + reação + corpo (sessão tmux '$SESSAO')..."
 AMBIENTE="source $REPO/scripts/ambiente_robo.sh"
 rodar() { tmux send-keys -t "$SESSAO:$1" "$AMBIENTE" C-m "$2" C-m; }
 tmux new-session -d -s "$SESSAO" -n rotina "bash --norc"
-tmux new-window -t "$SESSAO" -n status "bash --norc"
-tmux new-window -t "$SESSAO" -n deteccoes "bash --norc"
+tmux new-window -t "$SESSAO:" -n status "bash --norc"
+tmux new-window -t "$SESSAO:" -n deteccoes "bash --norc"
 if [ "$CAMERA" = realsense ]; then
-    tmux new-window -t "$SESSAO" -n camera "bash --norc"
+    tmux new-window -t "$SESSAO:" -n camera "bash --norc"
     rodar camera "ros2 launch realsense2_camera rs_launch.py"
 fi
 rodar rotina "ros2 launch robot_reaction_ros rotina.launch.py armed:=$ARMADO $ARGS_CAMERA \
