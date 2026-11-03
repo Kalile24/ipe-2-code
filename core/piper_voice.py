@@ -1,6 +1,6 @@
-"""Fala pela caixa Bluetooth do robô usando o servidor Piper do ~/hhhh.
+"""Fala pela caixa Bluetooth do robô usando um servidor Piper local.
 
-O servidor (contêiner `openvoice-piper`, subido por ~/hhhh/start_tts_stt.sh) recebe
+O servidor (contêiner `ipe-piper`, subido por scripts/robo_voz.sh) recebe
 `POST /synthesize {"text": ...}`, gera o áudio com a voz pt_BR-faber-medium e toca com `paplay`
 na saída padrão do PulseAudio (a caixa). Ele só responde depois de tocar: `say()` bloqueia até o
 fim da frase. O alto-falante da cabeça do G1 não responde (RPC 3104), por isso a caixa.
@@ -27,5 +27,5 @@ def say(text: str, url: str = DEFAULT_URL, timeout_s: float = 60.0) -> None:
             response.read()  # o WAV que ele tocou; não precisamos dele
     except (urllib.error.URLError, OSError) as exc:
         raise RuntimeError(
-            f"servidor Piper não respondeu em {url} ({exc}); ele está de pé? ~/hhhh/start_tts_stt.sh"
+            f"servidor Piper não respondeu em {url} ({exc}); ele está de pé? scripts/robo_voz.sh"
         ) from exc

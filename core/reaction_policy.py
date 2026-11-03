@@ -1,7 +1,7 @@
 """Decide a quem o robô reage: mapa pessoa → reação, confirmação por frames seguidos e cooldowns.
 
 Reação = um gesto pronto do firmware (`gesto`, executado pelo gesture_node) ou uma rotina de
-posturas militares e falas (`passos`, executada pelo body_node com o código do ~/hhhh).
+posturas militares e falas (`passos`, executada pelo body_node com robot_reaction_ros/g1_arm_controller.py).
 
 Puro (sem ROS, sem SDK da Unitree): os nós de `robot_reaction_ros` são cascas em volta disto.
 Spec: docs/superpowers/specs/2026-10-21-robot-reaction-design.md
@@ -32,7 +32,7 @@ GESTOS = {
 RELEASE_ARM = "release arm"
 DESCONHECIDO = "desconhecido"  # nome que o face_recognition_node usa abaixo do limiar
 _CHAVES_PESSOA = {"gesto", "passos"}
-# Posturas do ~/hhhh (movimentos_militares.py) que o body_node sabe executar.
+# Posturas militares (as do ~/hhhh/movimentos_militares.py) que o body_node sabe executar.
 POSTURAS = {"sentido", "descansar", "continencia", "desc_arma", "a_vontade"}
 A_VONTADE = "a_vontade"  # braços de volta ao equilíbrio e arm_sdk liberado
 _TIPOS_PASSO = {"postura", "fala", "pausa"}

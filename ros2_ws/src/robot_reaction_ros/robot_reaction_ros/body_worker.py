@@ -1,4 +1,4 @@
-"""Processo SEM ROS que fala com o robô pelo G1ArmController do ~/hhhh.
+"""Processo SEM ROS que fala com o robô pelo G1ArmController (g1_arm_controller.py).
 
 Por que um processo à parte: o rclpy e o SDK da Unitree usam o CycloneDDS com configurações
 diferentes, e no mesmo processo o `ChannelFactoryInitialize` falha ("channel factory init
@@ -13,36 +13,30 @@ Entrada fechada (o body_node morreu) = shutdown: braços de volta ao equilíbrio
 """
 from __future__ import annotations
 
-import functools
 import json
 import os
 import signal
 import sys
 import time
-from types import SimpleNamespace
 from typing import IO
 
 
-class HhhhBody:
-    """As posturas do ~/hhhh, chamadas como o movimentos_militares.py chama (F1+...).
+class G1Body:
+    """As posturas militares, chamadas como o ~/hhhh/movimentos_militares.py chama (F1+...).
 
-    Importa o G1ArmController de ~/hhhh/g1_arm_calibration_gui_v29.py SEM editar nada lá, com as
-    mesmas velocidades e a mesma espera do FSM 4 do movimentos_militares.py. O movimentos_militares.py
-    não pode estar rodando junto: seriam dois processos publicando em rt/arm_sdk.
+    Usa a nossa cópia do G1ArmController (g1_arm_controller.py, com as poses do pacote), com as
+    mesmas velocidades do movimentos_militares.py; nada do ~/hhhh é importado. O
+    movimentos_militares.py não pode estar rodando junto: seriam dois processos publicando em
+    rt/arm_sdk.
     """
 
-    def __init__(self, hhhh_dir: str, network_interface: str) -> None:
-        if hhhh_dir not in sys.path:
-            sys.path.insert(0, hhhh_dir)
-        from g1_arm_calibration_gui_v29 import DESC_ARMA_MAX_JOINT_SPEED, G1ArmController
-        from movimentos_militares import MovimentosMilitares
+    def __init__(self, poses_dir: str, network_interface: str) -> None:
+        # As constantes das poses são lidas na importação: G1_POSE_DIR tem que vir antes.
+        if poses_dir:
+            os.environ["G1_POSE_DIR"] = poses_dir
+        from robot_reaction_ros.g1_arm_controller import DESC_ARMA_MAX_JOINT_SPEED, G1ArmController
 
         self.robot = G1ArmController(iface=network_interface, kp=35.0, kd=1.2, max_joint_speed=0.35)
-        # A espera do FSM 4 mais tolerante do movimentos_militares.py (a que o F1+UP usa hoje).
-        casca = SimpleNamespace(robot=self.robot)
-        self.robot.wait_fsm4_transition_complete = functools.partial(
-            MovimentosMilitares.wait_fsm4_transition_complete, casca
-        )
         time.sleep(3.0)  # mesma espera do MovimentosMilitares: DDS e LocoClient estabilizarem
         # Postura -> (velocidade máxima das juntas ou None = a da própria rotina, função).
         self._posturas = {
@@ -103,7 +97,7 @@ def serve(body: object, inp: IO[str], out: IO[str]) -> None:
 
 
 def main() -> int:
-    hhhh_dir, network_interface = sys.argv[1], sys.argv[2]
+    poses_dir, network_interface = sys.argv[1], sys.argv[2]
     # O Ctrl+C do terminal chega a todo o grupo de processos; quem decide o encerramento é o
     # body_node (ele manda `shutdown` na hora certa).
     signal.signal(signal.SIGINT, signal.SIG_IGN)
@@ -112,7 +106,7 @@ def main() -> int:
     protocolo = os.fdopen(os.dup(sys.stdout.fileno()), "w")
     os.dup2(sys.stderr.fileno(), sys.stdout.fileno())
     try:
-        body = HhhhBody(hhhh_dir, network_interface)
+        body = G1Body(poses_dir, network_interface)
     except Exception as exc:
         protocolo.write(json.dumps({"ok": False, "erro": repr(exc)}) + "\n")
         protocolo.flush()

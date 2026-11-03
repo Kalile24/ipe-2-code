@@ -1,0 +1,83 @@
+--- a/iniciar_robo.sh
++++ b/iniciar_robo.sh
+@@ -30,8 +30,8 @@
+     CONTADOR=$((CONTADOR + 1))
+ 
+     if [ "$CONTADOR" -ge 120 ]; then
+-        echo "ERRO: PulseAudio não ficou disponível após 120 segundos."
+-        exit 1
++        echo "AVISO: PulseAudio indisponivel apos 120 s; seguindo sem audio."
++        break
+     fi
+ 
+     /bin/sleep 1
+@@ -88,8 +88,9 @@
+ 
+     if [ "$CONECTADO" -ne 1 ]; then
+ 
+-        echo "ERRO: não foi possível conectar à caixa Bluetooth."
+-        exit 1
++
++        echo "AVISO: caixa Bluetooth nao conectou; seguindo SEM audio Bluetooth."
++        BT_FALHOU=1
+ 
+     fi
+ 
+@@ -128,45 +129,47 @@
+ echo "[2/5] Iniciando TTS e STT..."
+ 
+ if ! "$BASE/start_tts_stt.sh"; then
+-    echo "ERRO: não foi possível iniciar TTS/STT."
+-    exit 1
++    echo "AVISO: TTS/STT nao iniciou; seguindo sem voz."
++    TTS_FALHOU=1
+ fi
+ 
+ echo "Aguardando servidor Piper..."
+ 
+ CONTADOR=0
+ 
+-while ! /usr/bin/curl -fsS http://127.0.0.1:5005/health >/dev/null 2>&1; do
++while [ "${TTS_FALHOU:-0}" != 1 ] && ! /usr/bin/curl -fsS http://127.0.0.1:5005/health >/dev/null 2>&1; do
+ 
+     CONTADOR=$((CONTADOR + 1))
+ 
+     if [ "$CONTADOR" -ge 60 ]; then
+-        echo "ERRO: Piper não respondeu após 60 segundos."
+-        exit 1
++        echo "AVISO: Piper nao respondeu apos 60 s; seguindo sem voz."
++        PIPER_FALHOU=1
++        break
+     fi
+ 
+     /bin/sleep 1
+ done
+ 
+-echo "Piper pronto."
++[ "${TTS_FALHOU:-0}${PIPER_FALHOU:-0}" = 00 ] && echo "Piper pronto."
+ 
+ echo "Aguardando servidor Whisper..."
+ 
+ CONTADOR=0
+ 
+-while ! /usr/bin/curl -fsS http://127.0.0.1:5006/health >/dev/null 2>&1; do
++while [ "${TTS_FALHOU:-0}" != 1 ] && ! /usr/bin/curl -fsS http://127.0.0.1:5006/health >/dev/null 2>&1; do
+ 
+     CONTADOR=$((CONTADOR + 1))
+ 
+     if [ "$CONTADOR" -ge 120 ]; then
+-        echo "ERRO: Whisper não respondeu após 120 segundos."
+-        exit 1
++        echo "AVISO: Whisper nao respondeu apos 120 s; seguindo sem reconhecimento de voz."
++        WHISPER_FALHOU=1
++        break
+     fi
+ 
+     /bin/sleep 1
+ done
+ 
+-echo "Whisper pronto."
++[ "${TTS_FALHOU:-0}${WHISPER_FALHOU:-0}" = 00 ] && echo "Whisper pronto."
+ 
+ # ------------------------------------------------------------
+ # 4. ASSISTENTE

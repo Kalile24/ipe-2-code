@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Rotina de cumprimento: o robô reconhece quem está no config/reactions.yaml e executa os passos
-# (posturas militares do ~/hhhh + fala pela caixa Bluetooth). Roda à mão, no robô:
+# (posturas militares + fala pela caixa Bluetooth). Tudo vem deste repositório: o ~/hhhh não
+# precisa existir. Roda à mão, no robô:
 #   ~/ipe-2-code/scripts/robo_rotina_cumprimento.sh [--armado] [usb|realsense]
 #   sem --armado: fala de verdade, posturas só no log (teste seguro).
 #   --armado: o robô vai para damp, levanta e fica em equilíbrio (como o F1+UP) — NO SUPORTE.
@@ -10,8 +11,8 @@
 set -e
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 SESSAO=rotina
-HHHH=$HOME/hhhh
-CAIXA=A8:AA:CD:C6:5C:A3  # caixa Bluetooth KD-833 (a mesma do ~/hhhh/iniciar_robo.sh)
+HHHH=$HOME/hhhh  # só para checar se o START do outro projeto está de pé
+CAIXA=A8:AA:CD:C6:5C:A3  # caixa Bluetooth KD-833 do robô
 ARMADO=false
 CAMERA=usb
 for arg in "$@"; do
@@ -59,12 +60,7 @@ done
 pactl set-default-sink "$SINK"
 
 echo "[2/3] Servidor de voz (Piper)..."
-"$HHHH/start_tts_stt.sh" >/dev/null
-for i in $(seq 1 60); do
-    curl -fsS http://127.0.0.1:5005/health >/dev/null 2>&1 && break
-    [ "$i" = 60 ] && { echo "ERRO: Piper não respondeu em 60 s (docker logs openvoice-piper)"; exit 1; }
-    sleep 1
-done
+"$REPO/scripts/robo_voz.sh"
 
 if [ "$ARMADO" = true ]; then
     echo

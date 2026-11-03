@@ -1,0 +1,23 @@
+{
+    "robot": "Unitree G1",
+    "created_at": "1970-03-22 07:07:51",
+    "left_arm": {
+        "LeftShoulderPitch": 1.0143,
+        "LeftShoulderRoll": 0.36,
+        "LeftShoulderYaw": 0.0905,
+        "LeftElbow": 0.7762,
+        "LeftWristRoll": 1.2,
+        "LeftWristPitch": -0.3651,
+        "LeftWristYaw": 0.073
+    },
+    "right_arm": {
+        "RightShoulderPitch": 0.4714,
+        "RightShoulderRoll": -0.7333,
+        "RightShoulderYaw": 0.9381,
+        "RightElbow": 0.8238,
+        "RightWristRoll": -0.8114,
+        "RightWristPitch": -0.0984,
+        "RightWristYaw": 0.0794
+    },
+    "description": "Pose dos dois braços"
+}

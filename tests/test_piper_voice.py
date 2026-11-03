@@ -45,5 +45,5 @@ def test_http_error_raises_runtime_error(servidor):
 
 
 def test_server_down_raises_runtime_error_with_hint():
-    with pytest.raises(RuntimeError, match="start_tts_stt"):
+    with pytest.raises(RuntimeError, match="robo_voz"):
         say("oi", url="http://127.0.0.1:9/synthesize", timeout_s=2.0)

@@ -1,4 +1,4 @@
-"""Testes do body_node sem robô: o corpo (G1ArmController do ~/hhhh) e a voz são dublês."""
+"""Testes do body_node sem robô: o corpo (G1ArmController) e a voz são dublês."""
 import json
 import threading
 
@@ -50,7 +50,7 @@ def make_node(monkeypatch):
         spoken.append(text)
 
     def make(body=None, armed=False, factory_error=None):
-        def factory(hhhh_dir, network_interface):
+        def factory(poses_dir, network_interface):
             if factory_error is not None:
                 raise factory_error
             return body
@@ -108,8 +108,8 @@ def test_failed_initialization_falls_back_to_dry_run(make_node):
 
 def test_factory_error_is_reported_and_node_stays_up(make_node):
     make, status, _ = make_node
-    n = make(armed=True, factory_error=ImportError("sem ~/hhhh"))
-    assert any(s.startswith("falha na inicialização") and "sem ~/hhhh" in s for s in status)
+    n = make(armed=True, factory_error=ImportError("sem poses"))
+    assert any(s.startswith("falha na inicialização") and "sem poses" in s for s in status)
     _send(n, ROTINA)
     assert status[-1] == "rotina de gil: fim"
 

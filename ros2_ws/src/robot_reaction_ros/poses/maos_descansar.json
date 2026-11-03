@@ -1,0 +1,22 @@
+{
+    "robot": "Unitree G1",
+    "created_at": "1970-03-23 08:50:09",
+    "left_hand": {
+        "little": 373,
+        "ring": 575,
+        "middle": 614,
+        "index": 649,
+        "thumb_bend": 383,
+        "thumb_rotation": 1000
+    },
+    "right_hand": {
+        "little": 0,
+        "ring": 0,
+        "middle": 0,
+        "index": 0,
+        "thumb_bend": 0,
+        "thumb_rotation": 380
+    },
+    "hand_value_convention": "hardware: 0=closed, 1000=open",
+    "description": "Pose das duas mãos"
+}

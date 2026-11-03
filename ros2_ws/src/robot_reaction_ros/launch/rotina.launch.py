@@ -9,7 +9,7 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description() -> LaunchDescription:
-    # Câmera + reconhecimento + reação + corpo (posturas do ~/hhhh e fala). Sem o gesture_node:
+    # Câmera + reconhecimento + reação + corpo (posturas militares e fala). Sem o gesture_node:
     # o body_node é o único dono dos braços. Usado por scripts/robo_rotina_cumprimento.sh.
     recognition = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(

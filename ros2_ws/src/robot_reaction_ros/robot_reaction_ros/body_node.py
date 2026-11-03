@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import functools
 import json
+import os
 import select
 import signal
 import subprocess
@@ -10,6 +11,7 @@ import threading
 from typing import Callable
 
 import rclpy
+from ament_index_python.packages import get_package_share_directory
 from rcl_interfaces.msg import SetParametersResult
 from rclpy.node import Node
 from std_msgs.msg import String
@@ -26,8 +28,8 @@ class SubprocessBody:
     linha JSON para o body_worker e espera a resposta dele.
     """
 
-    def __init__(self, hhhh_dir: str, network_interface: str, command: list[str] | None = None) -> None:
-        command = command or [sys.executable, "-m", "robot_reaction_ros.body_worker", hhhh_dir, network_interface]
+    def __init__(self, poses_dir: str, network_interface: str, command: list[str] | None = None) -> None:
+        command = command or [sys.executable, "-m", "robot_reaction_ros.body_worker", poses_dir, network_interface]
         # stderr herdado: o log do G1ArmController aparece junto com o do launch.
         self._proc = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)
         hello = self._read(timeout_s=60.0)
@@ -84,7 +86,8 @@ class BodyNode(Node):
     ) -> None:
         super().__init__("body_node")
         self.declare_parameter("armed", False)
-        self.declare_parameter("hhhh_dir", "/home/unitree/hhhh")
+        # "" = as poses instaladas com o pacote (share/robot_reaction_ros/poses)
+        self.declare_parameter("poses_dir", "")
         self.declare_parameter("network_interface", "eth0")
         self.declare_parameter("pausa_s", 0.5)
         self.declare_parameter("tts_url", DEFAULT_URL)
@@ -109,11 +112,13 @@ class BodyNode(Node):
 
         # `is True`: um "true" que chegasse como string seria verdadeiro e armaria o braço.
         if self.get_parameter("armed").value is True:
-            hhhh_dir = self.get_parameter("hhhh_dir").value
+            poses_dir = self.get_parameter("poses_dir").value or os.path.join(
+                get_package_share_directory("robot_reaction_ros"), "poses"
+            )
             network_interface = self.get_parameter("network_interface").value
             self._busy.acquire()  # nenhuma rotina enquanto inicializa
             self._worker = threading.Thread(
-                target=self._initialize, args=(body_factory, hhhh_dir, network_interface), daemon=True
+                target=self._initialize, args=(body_factory, poses_dir, network_interface), daemon=True
             )
             self._worker.start()
         else:
@@ -131,13 +136,13 @@ class BodyNode(Node):
             return SetParametersResult(successful=False, reason="armed só vale na partida (reinicie o nó)")
         return SetParametersResult(successful=True)
 
-    def _initialize(self, body_factory: Callable[[str, str], object], hhhh_dir: str, network_interface: str) -> None:
+    def _initialize(self, body_factory: Callable[[str, str], object], poses_dir: str, network_interface: str) -> None:
         try:
             self._publish("inicializando: damp → em pé → equilíbrio (robô no suporte)")
             try:
-                self._body = body_factory(hhhh_dir, network_interface)
+                self._body = body_factory(poses_dir, network_interface)
                 self._ready = self._body.initialize()
-            except Exception as exc:  # sem SDK, sem ~/hhhh ou sem DDS
+            except Exception as exc:  # sem SDK, sem poses ou sem DDS
                 self._publish(f"falha na inicialização: {exc!r}")
                 return
             if self._ready:

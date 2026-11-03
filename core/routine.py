@@ -1,6 +1,6 @@
 """Executa a rotina de uma pessoa: posturas militares e falas, na ordem do reactions.yaml.
 
-Puro: o corpo (posturas) e a voz chegam como funções. No robô são o G1ArmController do ~/hhhh e o
+Puro: o corpo (posturas) e a voz chegam como funções. No robô são o G1ArmController (g1_arm_controller.py) e o
 servidor Piper (body_node); nos testes, dublês. Quem chama garante que só uma rotina roda por vez.
 """
 from __future__ import annotations

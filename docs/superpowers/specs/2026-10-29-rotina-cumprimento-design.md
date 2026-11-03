@@ -26,8 +26,11 @@ caminho que o código do ~/hhhh já faz (F1+B → F1+A → F1+X).
 
 ## Decisões
 
-- **Reaproveitar o `G1ArmController` do `~/hhhh` sem editá-lo** (import por `sys.path`), com as
-  mesmas velocidades e a espera do FSM 4 do `movimentos_militares.py`. Gestos do firmware não
+- **Mesmo movimento do `~/hhhh`, com o código copiado para cá** (2026-11-03; até então era
+  importado por `sys.path`): `robot_reaction_ros/g1_arm_controller.py` é o `G1ArmController` sem a
+  GUI, com a espera do FSM 4 do `movimentos_militares.py`, e as poses ficam em
+  `robot_reaction_ros/poses/`. Mesmas velocidades dos combos. Detalhes e o que mudou:
+  `docs/hhhh/README.md`. Gestos do firmware não
   fazem sentido/descansar. O `movimentos_militares.py` não sobe junto (um dono do braço).
 - **`body_node`**: único dono do braço e da voz. Desarmado por padrão (fala, posturas no log);
   `armed` só na partida, e armar inicializa o robô (damp → em pé → equilíbrio, no suporte).
@@ -51,7 +54,7 @@ caminho que o código do ~/hhhh já faz (F1+B → F1+A → F1+X).
 - **Gestos do firmware na rotina:** não fazem sentido/continência/descansar; o `gesture_node` e o
   modo antigo (`robo_tmux.sh`) continuam no repositório.
 - **Alto-falante da cabeça:** `AudioClient` responde 3104 (o `vui_service` cai, ver a spec de
-  2026-10-21); a caixa Bluetooth do ~/hhhh funciona.
+  2026-10-21); a caixa Bluetooth funciona.
 - **Subir no boot:** o robô é compartilhado; a rotina roda só quando alguém executa o script.
 - **Repetir por tempo fixo (60 s):** cumprimentava de novo quem ficasse parado na frente.
 
@@ -75,3 +78,19 @@ caminho que o código do ~/hhhh já faz (F1+B → F1+A → F1+X).
 - Rotina armada completa (sequência final, pausa 0,5 s): ~41 s do reconhecimento ao fim
   (sentido 1,3 s; continência 1,1 s; fala 5,1 s; desc arma 1,3 s; descansar 5,9 s; 15 s;
   à vontade 11 s). Inicialização (damp → em pé → equilíbrio): ~16 s.
+
+## Independência do ~/hhhh (2026-11-03)
+
+A rotina rodava importando o `G1ArmController` e as poses de `~/hhhh` e subindo o Piper pelo
+`~/hhhh/start_tts_stt.sh`. Agora tudo vem do repositório:
+
+- `g1_arm_controller.py`: cópia do controlador (sem tkinter; `[ipe-2-code]` marca as mudanças).
+- `poses/`: as 13 poses que ele lê, instaladas em `share/robot_reaction_ros/poses`; o parâmetro
+  `poses_dir` do body_node (no lugar de `hhhh_dir`) troca a pasta.
+- `scripts/robo_voz.sh`: contêiner `ipe-piper` com a mesma imagem Docker, só o Piper, sem montar
+  o `~/hhhh`. Reaproveita quem já responde na porta 5005.
+- `tests/test_g1_poses.py` (CI): toda pose que o controlador lê está no repositório.
+
+A alteração feita no `~/hhhh/iniciar_robo.sh` (o START não aborta mais sem áudio) está registrada
+em `docs/hhhh/`. O movimento é o mesmo testado em 2026-10-30, mas a cópia ainda não rodou armada
+no robô.
