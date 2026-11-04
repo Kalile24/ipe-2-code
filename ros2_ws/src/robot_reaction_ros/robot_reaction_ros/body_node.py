@@ -40,6 +40,7 @@ class SubprocessBody:
     Mesma interface que o body_node espera (initialize/posture/shutdown); cada chamada é uma
     linha JSON com um `id` para o body_worker, e só a resposta com esse `id` vale. Uma chamada
     por vez (lock): o shutdown do Ctrl+C espera a postura em andamento em vez de se misturar a ela.
+    velocity/stop não têm resposta nem esperam esse lock: só escrevem a linha.
     """
 
     def __init__(
@@ -55,7 +56,8 @@ class SubprocessBody:
             "com_passo" if rest_forward_pulse else "sem_passo",
         ]
         self._posture_timeout_s = posture_timeout_s
-        self._lock = threading.Lock()
+        self._lock = threading.Lock()  # uma chamada com resposta por vez
+        self._escrita = threading.Lock()  # só a escrita da linha: velocity/stop não esperam postura
         self._next_id = 0
         # Binário sem buffer: o readline não lê adiantado, então o select nunca perde uma linha
         # que já chegou. stderr herdado: o log do G1ArmController aparece junto com o do launch.
@@ -84,14 +86,29 @@ class SubprocessBody:
                 return False
             self._next_id += 1
             ordem = {"id": self._next_id, **ordem}
+            if not self._write(ordem):
+                return False
+            return bool(self._read(timeout_s, ordem["id"]).get("ok"))
+
+    def _write(self, ordem: dict) -> bool:
+        with self._escrita:
             try:
                 self._proc.stdin.write((json.dumps(ordem) + "\n").encode())
             except BrokenPipeError:
                 return False
-            return bool(self._read(timeout_s, ordem["id"]).get("ok"))
+        return True
 
-    def initialize(self) -> bool:
-        return self._call({"cmd": "initialize"}, timeout_s=INICIALIZACAO_TIMEOUT_S)
+    def initialize(self, so_equilibrio: bool = False) -> bool:
+        return self._call(
+            {"cmd": "initialize", "so_equilibrio": so_equilibrio}, timeout_s=INICIALIZACAO_TIMEOUT_S
+        )
+
+    def velocity(self, vx: float, vyaw: float) -> None:
+        """Sem resposta: o body_worker atende na hora, mesmo com uma postura em andamento."""
+        self._write({"cmd": "velocidade", "vx": vx, "vyaw": vyaw})
+
+    def stop(self) -> None:
+        self._write({"cmd": "parar"})
 
     def posture(self, nome: str) -> bool:
         return self._call({"cmd": "posture", "nome": nome}, timeout_s=self._posture_timeout_s)

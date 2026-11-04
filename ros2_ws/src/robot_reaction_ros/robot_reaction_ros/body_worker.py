@@ -12,13 +12,20 @@ A resposta repete o `id` da ordem: se o body_node desistiu de esperar uma postur
 atrasada dela não é confundida com a da ordem seguinte.
 Ao subir, ele cria o controlador e responde uma vez ({"ok": ...}, sem id) antes de qualquer ordem.
 Entrada fechada (o body_node morreu) = shutdown: braços de volta ao equilíbrio.
+`{"id": 7, "cmd": "initialize", "so_equilibrio": true}`: só começa se o robô já está em
+equilíbrio (FSM 801), sem damp.
+
+Andar não espera postura e não tem resposta (nem `id`):
+    → {"cmd": "velocidade", "vx": 0.1, "vyaw": -0.2} | {"cmd": "parar"}
 """
 from __future__ import annotations
 
 import json
 import os
+import queue
 import signal
 import sys
+import threading
 import time
 from typing import IO
 
@@ -54,16 +61,22 @@ class G1Body:
             "a_vontade": (None, self.robot.return_to_balance_and_release),
         }
 
-    def initialize(self) -> bool:
+    def initialize(self, so_equilibrio: bool = False) -> bool:
         """F1+UP: damp → em pé (FSM 4) → equilíbrio (FSM 801). Robô no suporte.
 
         O damp solta todos os motores: só começa por ele se o robô já está mole (FSM 0 ou 1).
         Já em equilíbrio (FSM 801, rodada anterior) aproveita sem passar pelo damp; em pé em
         qualquer outro modo, recusa — o damp derrubaria o robô fora do suporte.
+        `so_equilibrio` (partida pelo controle, robô fora do suporte): só aceita FSM 801.
         """
         fsm_id, fsm_mode = self.robot.state("Antes de inicializar")
         if fsm_id == 801 and fsm_mode == 0:
             self.robot.initialized_801 = True  # o initialize_to_balance só captura a postura
+        elif so_equilibrio:
+            self.robot.log(
+                f"ERRO: robô em FSM_ID={fsm_id}: pelo controle só começo em equilíbrio (FSM 801)"
+            )
+            return False
         elif fsm_id not in SEM_TORQUE_OU_DAMP:
             self.robot.log(
                 f"ERRO: robô em FSM_ID={fsm_id}, FSM_MODE={fsm_mode}: não inicializo (o damp o derrubaria). "
@@ -83,44 +96,81 @@ class G1Body:
         finally:
             self.robot.max_joint_speed = anterior
 
+    def velocity(self, vx: float, vyaw: float) -> None:
+        self.robot.loco.SetVelocity(vx, 0.0, vyaw, 0.5)
+
+    def stop(self) -> None:
+        self.robot.loco.StopMove()
+
     def shutdown(self) -> None:
         """Braços de volta ao equilíbrio e arm_sdk solto; o robô continua em pé (FSM 801)."""
         self.robot.shutdown()
 
 
 def serve(body: object, inp: IO[str], out: IO[str]) -> None:
-    """Atende ordens até `shutdown` ou até a entrada fechar (que também vira shutdown)."""
+    """Atende ordens até `shutdown` ou até a entrada fechar (que também vira shutdown).
+
+    Esta thread lê a entrada e atende `velocidade`/`parar` na hora; as outras ordens vão para
+    uma fila, atendidas uma por vez pela thread executora (a única que chama
+    initialize/posture/shutdown do corpo).
+    """
+    escrita = threading.Lock()
 
     def reply(ordem: dict, ok: bool, erro: str = "") -> None:
         resposta = {"id": ordem["id"]} if "id" in ordem else {}
         resposta["ok"] = ok
         if erro:
             resposta["erro"] = erro
-        out.write(json.dumps(resposta) + "\n")
-        out.flush()
+        with escrita:
+            out.write(json.dumps(resposta) + "\n")
+            out.flush()
 
-    ordem: dict = {}  # entrada fechada sem ordem de shutdown: a resposta final vai sem id
+    fila: queue.Queue = queue.Queue()
+
+    def executar() -> None:
+        while True:
+            ordem = fila.get()
+            if ordem is None:
+                return
+            try:
+                cmd = ordem["cmd"]
+                if cmd == "initialize":
+                    reply(ordem, bool(body.initialize(bool(ordem.get("so_equilibrio", False)))))
+                elif cmd == "posture":
+                    reply(ordem, bool(body.posture(ordem["nome"])))
+                else:
+                    reply(ordem, False, f"ordem desconhecida {cmd!r}")
+            except Exception as exc:  # erro do SDK numa ordem não derruba o processo
+                reply(ordem, False, repr(exc))
+
+    executora = threading.Thread(target=executar, daemon=True)
+    executora.start()
+    final: dict = {}  # entrada fechada sem ordem de shutdown: a resposta final vai sem id
     for line in inp:
-        ordem = {}
+        ordem: object = {}
         try:
             ordem = json.loads(line)
             cmd = ordem["cmd"]
-            if cmd == "initialize":
-                reply(ordem, bool(body.initialize()))
-            elif cmd == "posture":
-                reply(ordem, bool(body.posture(ordem["nome"])))
+            if cmd == "velocidade":
+                body.velocity(float(ordem["vx"]), float(ordem["vyaw"]))
+            elif cmd == "parar":
+                body.stop()
             elif cmd == "shutdown":
+                final = ordem
                 break
             else:
-                reply(ordem, False, f"ordem desconhecida {cmd!r}")
-        except Exception as exc:  # erro do SDK numa ordem não derruba o processo
-            reply(ordem if isinstance(ordem, dict) else {}, False, repr(exc))
-    else:
-        ordem = {}
+                fila.put(ordem)
+        except Exception as exc:
+            if isinstance(ordem, dict) and ordem.get("cmd") in ("velocidade", "parar"):
+                print(f"body_worker: {ordem['cmd']} falhou: {exc!r}", file=sys.stderr)  # sem resposta
+            else:
+                reply(ordem if isinstance(ordem, dict) else {}, False, repr(exc))
+    fila.put(None)
+    executora.join()
     try:
         body.shutdown()
     finally:
-        reply(ordem, True)
+        reply(final, True)
 
 
 def main() -> int:

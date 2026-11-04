@@ -3,8 +3,11 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import sys
 import textwrap
+import threading
+import time
 
 import pytest
 
@@ -16,16 +19,25 @@ class _FakeBody:
     def __init__(self, erro_em=None):
         self.calls = []
         self.erro_em = erro_em
+        self.solta_lenta = threading.Event()
 
-    def initialize(self):
+    def initialize(self, so_equilibrio=False):
         self.calls.append("initialize")
         return True
 
     def posture(self, nome):
         self.calls.append(nome)
+        if nome == "lenta":
+            self.solta_lenta.wait(5.0)
         if nome == self.erro_em:
             raise RuntimeError("SDK caiu")
         return nome != "falha"
+
+    def velocity(self, vx, vyaw):
+        self.calls.append(("velocidade", vx, vyaw))
+
+    def stop(self):
+        self.calls.append("parar")
 
     def shutdown(self):
         self.calls.append("shutdown")
@@ -71,12 +83,42 @@ def test_failures_and_errors_are_answers_not_crashes():
     assert respostas[3] == {"ok": True}
 
 
+def test_velocity_and_stop_are_served_while_a_posture_runs():
+    body = _FakeBody()
+    r, w = os.pipe()
+    inp, entrada = os.fdopen(r), os.fdopen(w, "w")
+    out = io.StringIO()
+    worker = threading.Thread(target=serve, args=(body, inp, out), daemon=True)
+    worker.start()
+
+    def manda(ordem, chamadas):
+        entrada.write(json.dumps(ordem) + "\n")
+        entrada.flush()
+        fim = time.monotonic() + 2.0
+        while len(body.calls) < chamadas and time.monotonic() < fim:
+            time.sleep(0.01)
+
+    manda({"id": 1, "cmd": "posture", "nome": "lenta"}, 1)  # a executora fica presa nela
+    manda({"cmd": "velocidade", "vx": 0.1, "vyaw": -0.2}, 2)
+    manda({"cmd": "parar"}, 3)
+    assert body.calls[:3] == ["lenta", ("velocidade", 0.1, -0.2), "parar"]  # antes da postura acabar
+    body.solta_lenta.set()
+    entrada.write(json.dumps({"id": 2, "cmd": "shutdown"}) + "\n")
+    entrada.close()
+    worker.join(5.0)
+    respostas = [json.loads(line) for line in out.getvalue().splitlines()]
+    assert respostas == [{"id": 1, "ok": True}, {"id": 2, "ok": True}]  # velocidade/parar não respondem
+    assert body.calls[-1] == "shutdown"
+
+
 FAKE_WORKER = textwrap.dedent(
     """
     import json, sys, time
     from robot_reaction_ros.body_worker import serve
     class Body:
-        def initialize(self): return True
+        def initialize(self, so_equilibrio=False): return True
+        def velocity(self, vx, vyaw): print("velocidade", vx, vyaw, file=sys.stderr)
+        def stop(self): print("parar", file=sys.stderr)
         def posture(self, nome):
             if nome == "lenta":
                 time.sleep(1.0)
@@ -120,12 +162,39 @@ def test_late_reply_is_not_taken_as_the_next_answer():
     assert body._proc.returncode == 0
 
 
+def test_subprocess_body_sends_velocity_without_waiting():
+    body = SubprocessBody("", "", command=[sys.executable, "-c", FAKE_WORKER])
+    postura = threading.Thread(target=body.posture, args=("lenta",))
+    postura.start()
+    time.sleep(0.2)  # a postura lenta já está com o lock das chamadas
+    inicio = time.monotonic()
+    body.velocity(0.1, -0.2)
+    body.stop()
+    assert time.monotonic() - inicio < 0.1
+    postura.join(5.0)
+    assert body.initialize(so_equilibrio=True) is True
+    body.shutdown()
+    assert body._proc.returncode == 0
+
+
+class _Loco:
+    def __init__(self):
+        self.calls = []
+
+    def SetVelocity(self, vx, vy, vyaw, duracao):
+        self.calls.append(("SetVelocity", vx, vy, vyaw, duracao))
+
+    def StopMove(self):
+        self.calls.append("StopMove")
+
+
 class _FakeController:
     def __init__(self, fsm):
         self.fsm = fsm
         self.initialized_801 = False
         self.inicializou = False
         self.logs = []
+        self.loco = _Loco()
 
     def state(self, label):
         return self.fsm
@@ -163,3 +232,22 @@ def test_initialize_refuses_when_standing_otherwise(fsm):
     assert body.initialize() is False
     assert not body.robot.inicializou
     assert "derrubaria" in body.robot.logs[-1]
+
+
+def test_initialize_balance_only_refuses_limp_robot():
+    body = _g1_body((1, 0))
+    assert body.initialize(so_equilibrio=True) is False
+    assert not body.robot.inicializou and "equilíbrio" in body.robot.logs[-1]
+
+
+def test_initialize_balance_only_accepts_801():
+    body = _g1_body((801, 0))
+    assert body.initialize(so_equilibrio=True) is True
+    assert body.robot.initialized_801
+
+
+def test_velocity_and_stop_drive_the_loco_client():
+    body = _g1_body((801, 0))
+    body.velocity(0.1, -0.2)
+    body.stop()
+    assert body.robot.loco.calls == [("SetVelocity", 0.1, 0.0, -0.2, 0.5), "StopMove"]
