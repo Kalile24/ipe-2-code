@@ -135,6 +135,17 @@ class ReactionPolicy:
             return True
         return self._left[nome] and now - self._last_fired[nome] >= self._person_cooldown_s
 
+    def now(self, seen: list[tuple[str, float]], agora: float) -> tuple[str, list[dict[str, str]]] | None:
+        """Cumprimentar agora (comando do operador): a pessoa do mapa de maior nota em `seen`, sem
+        confirmação nem cooldown. Conta como cumprimentada, como um disparo normal."""
+        mapeados = [(score, nome) for nome, score in seen if nome in self._reactions]
+        if not mapeados:
+            return None
+        _, nome = max(mapeados)
+        self._last_fired[nome] = self._last_seen[nome] = self._last_any = agora
+        self._left[nome] = False
+        return nome, self._reactions[nome]
+
     def forget(self, nome: str) -> None:
         """A reação a `nome` não aconteceu (ninguém para executar, rotina recusada): ele volta a
         poder ser cumprimentado sem esperar o cooldown nem sair da frente. O cooldown global

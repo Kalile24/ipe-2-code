@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import functools
 import json
 import os
+import threading
 import time
 
 import rclpy
@@ -13,11 +15,13 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile
 from vision_msgs.msg import Detection2DArray
 
+from core.piper_voice import DEFAULT_URL, say
 from core.reaction_policy import ReactionPolicy, load_reactions
 from robot_reaction_interfaces.action import Rotina
 
 
 TODOS = "todos"
+DETECCAO_RECENTE_S = 1.0  # cumprimentar_agora só usa detecções com até isto de idade
 
 
 class ReactionNode(Node):
@@ -27,6 +31,9 @@ class ReactionNode(Node):
     de pé ou recusa a rotina, a pessoa não conta como cumprimentada (ReactionPolicy.forget).
     Comando manual de teste: `ros2 param set /reaction_node liberar <nome|todos>`
     (scripts/robo_liberar_cumprimento.sh).
+    Operador (combos do controle, scripts/robo_controle.py): `automatico` liga/desliga os
+    cumprimentos sozinhos (desligado, só acompanha quem está na frente); escrever qualquer valor em
+    `cumprimentar_agora` cumprimenta já a pessoa do mapa que está sendo reconhecida.
     """
 
     def __init__(self) -> None:
@@ -38,6 +45,16 @@ class ReactionNode(Node):
         self.declare_parameter("global_cooldown_s", 10.0)
         self.declare_parameter("absence_s", 5.0)
         self.declare_parameter("liberar", "")
+        self.declare_parameter("automatico", True)
+        self.declare_parameter("cumprimentar_agora", "")
+        self.declare_parameter("tts_url", DEFAULT_URL)
+        self.declare_parameter("tts_timeout_s", 60.0)
+        self._automatico = self.get_parameter("automatico").value is True
+        self._say = functools.partial(
+            say, url=self.get_parameter("tts_url").value, timeout_s=float(self.get_parameter("tts_timeout_s").value)
+        )
+        self._visto: list[tuple[str, float]] = []  # última detecção (nome, nota) e quando chegou
+        self._visto_em = float("-inf")
 
         path = self.get_parameter("reactions_file").value or os.path.join(
             get_package_share_directory("robot_reaction_ros"), "config", "reactions.yaml"
@@ -62,8 +79,35 @@ class ReactionNode(Node):
         self.add_on_set_parameters_callback(self._on_set_parameters)
         self.get_logger().info(f"mapa {path}: {reactions}; assinando {detections_topic}")
 
+    def _falar(self, texto: str) -> None:
+        """Confirmação para o operador pela caixa, sem segurar o callback; sem caixa, só o log."""
+        self.get_logger().info(f"fala: {texto}")
+
+        def falar() -> None:
+            try:
+                self._say(texto)
+            except Exception as exc:
+                self.get_logger().warn(f"fala falhou: {exc!r}")
+
+        threading.Thread(target=falar, daemon=True).start()
+
     def _on_set_parameters(self, params: list) -> SetParametersResult:
         for p in params:
+            if p.name == "automatico":
+                self._automatico = p.value is True
+                self._falar(f"Reações automáticas {'ligadas' if self._automatico else 'desligadas'}.")
+                continue
+            if p.name == "cumprimentar_agora":
+                if self._em_andamento is not None:
+                    return SetParametersResult(successful=False, reason=f"rotina em andamento ({self._em_andamento})")
+                agora = time.monotonic()
+                seen = self._visto if agora - self._visto_em <= DETECCAO_RECENTE_S else []
+                hit = self._policy.now(seen, agora)
+                if hit is None:
+                    self._falar("Não reconheço ninguém.")
+                else:
+                    self._enviar(*hit)
+                continue
             if p.name != "liberar":
                 continue
             nome = str(p.value).strip()
@@ -76,14 +120,17 @@ class ReactionNode(Node):
 
     def _on_detections(self, msg: Detection2DArray) -> None:
         seen = [(d.results[0].id, d.results[0].score) for d in msg.detections if d.results]
+        self._visto, self._visto_em = seen, time.monotonic()
         if self._em_andamento is not None and not self._rotina.server_is_ready():
             # body_node morreu no meio: o resultado nunca vai chegar
             self.get_logger().warn(f"rotina de {self._em_andamento}: o body_node sumiu")
             self._em_andamento = None
-        hit = self._policy.update(seen, time.monotonic(), allow_fire=self._em_andamento is None)
-        if hit is None:
-            return
-        nome, reacao = hit
+        livre = self._automatico and self._em_andamento is None
+        hit = self._policy.update(seen, time.monotonic(), allow_fire=livre)
+        if hit is not None:
+            self._enviar(*hit)
+
+    def _enviar(self, nome: str, reacao: list[dict[str, str]]) -> None:
         log = self.get_logger()
         if not self._rotina.server_is_ready():
             log.warn(f"{nome}: o body_node não está de pé; não cumprimentado")

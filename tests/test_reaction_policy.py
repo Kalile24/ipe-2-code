@@ -190,3 +190,14 @@ def test_two_confirmed_in_same_frame_highest_score_wins_and_other_waits():
 def test_confirm_frames_must_be_positive():
     with pytest.raises(ValueError):
         ReactionPolicy(REACOES, confirm_frames=0)
+
+
+def test_now_greets_the_best_mapped_person_ignoring_cooldowns():
+    p = _policy()
+    assert _feed(p, [GIL] * 3)[-1] == ("gil", "rotina gil")
+    assert p.now([("desconhecido", 0.9), ("gil", 0.5), ("marcos", 0.7)], 3.0) == ("marcos", "rotina marcos")
+    assert p.now(GIL, 4.0) == ("gil", "rotina gil")  # mesmo dentro dos 5 min
+
+
+def test_now_with_nobody_mapped_returns_none():
+    assert _policy().now([("desconhecido", 0.9)], 0.0) is None
