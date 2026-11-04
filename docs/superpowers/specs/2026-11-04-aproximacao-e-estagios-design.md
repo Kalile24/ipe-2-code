@@ -94,8 +94,8 @@ tamanho da caixa): tudo em pixels da imagem.
 | `largura_imagem` | 640 | largura em pixels da imagem das detecções |
 | `altura_caixa_alvo_px` | 90 | para de andar quando a caixa do rosto fica desta altura (escolher no teste, desarmado) |
 | `inverter_giro` | false | troca o sinal do giro se ele for para o lado errado |
-| `centro_ok` | 0,05 | desvio aceito como "de frente" (fração da meia largura) |
-| `centro_para_andar` | 0,15 | só anda para frente com desvio menor que este |
+| `centro_ok` | 0,15 | desvio aceito como "de frente" (fração da meia largura) |
+| `centro_para_andar` | 0,30 | só anda para frente com desvio menor que este |
 | `vyaw_max` | 0,3 rad/s | giro máximo |
 | `vx` | 0,2 m/s | velocidade para frente (constante) |
 | `kp_giro` | 0,6 | ganho do giro (rad/s por desvio 1,0) |
