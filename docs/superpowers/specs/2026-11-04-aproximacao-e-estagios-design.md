@@ -57,24 +57,27 @@ Quatro, ligados ou desligados independentemente: **`virar`**, **`aproximar`**, *
 - Ordem: virar/aproximar primeiro, depois a rotina filtrada.
 - Desarmado: o robô não se mexe, então virar/aproximar nunca terminariam. **Decisão minha
   (builder):** desarmado, virar/aproximar só medem e registram por ~2 s (erro de direção, distância
-  estimada e as velocidades que mandaria) e dão o estágio como feito; a rotina segue normal, com as
-  posturas só no log e a fala de verdade. Assim o modo de teste continua útil e serve para
-  calibrar `campo_horizontal_graus` e `altura_rosto_m` sem o robô andar.
+  da caixa do rosto e as velocidades que mandaria) e dão o estágio como feito; a rotina segue normal,
+  com as posturas só no log e a fala de verdade. Assim o modo de teste continua útil e serve para
+  escolher `altura_caixa_alvo_px`: a pessoa fica na distância desejada e o operador lê a altura da
+  caixa no status.
 
 ### Virar e aproximar (a partir da caixa do rosto)
 
 A pessoa alvo é a que o `reaction_node` mandou cumprimentar; o body_node segue as detecções com
 esse nome (se houver mais de uma caixa com o nome, a maior). Laço a ~10 Hz:
 
-- **Erro de direção:** `erro = (center.x − largura/2) / largura × campo_horizontal`. Rosto à
-  direita da imagem → virar para a direita. O sinal fica num parâmetro (`inverter_giro`) para
-  corrigir no teste, sem mexer no código.
-- **Distância estimada:** `d = f × altura_rosto_m / size_y`, com
-  `f = (largura/2) / tan(campo_horizontal/2)`. `altura_rosto_m` é calibração (padrão 0,20 m).
-- **Comando:** `vyaw = clamp(kp_giro × erro, ±vyaw_max)`; anda para frente só quando
-  `|erro| < angulo_para_andar`, com `vx = clamp(kp_avanco × (d − distancia_alvo_m), 0, vx_max)`.
-  Nunca anda para trás nem para os lados (`vy = 0`). Pronto quando `|erro| < angulo_ok` e
-  (sem `aproximar`, ou `d ≤ distancia_alvo_m`).
+Sem estimar distância nem ângulo (decisão do usuário, 2026-11-04: o operador escolhe só o
+tamanho da caixa): tudo em pixels da imagem.
+
+- **Desvio:** `desvio = (center.x − largura/2) / (largura/2)`, de −1 (borda esquerda) a +1 (borda
+  direita). Rosto à direita → virar para a direita. O sinal fica num parâmetro (`inverter_giro`)
+  para corrigir no teste, sem mexer no código.
+- **Giro:** `vyaw = clamp(kp_giro × desvio, ±vyaw_max)` enquanto `|desvio| > centro_ok`.
+- **Avanço** (só com `aproximar`): anda para frente a `vx` constante enquanto
+  `size_y < altura_caixa_alvo_px` e `|desvio| < centro_para_andar`; senão `vx = 0`. Nunca anda
+  para trás nem para os lados (`vy = 0`).
+- **Pronto** quando `|desvio| ≤ centro_ok` e (sem `aproximar`, ou `size_y ≥ altura_caixa_alvo_px`).
 - Cada comando vai com `SetVelocity(..., duração = 0,5 s)`: se o nosso processo morrer, o robô para
   em meio segundo. No fim de cada caso (pronto, desistiu, cancelado) manda parar (velocidade zero).
 - **Para e não cumprimenta** quando: o rosto some por mais que `perda_rosto_s` → para; se não voltar
@@ -88,16 +91,14 @@ esse nome (se houver mais de uma caixa com o nome, a maior). Laço a ~10 Hz:
 | Parâmetro | Padrão | O que é |
 |---|---|---|
 | `estagios` | `virar,aproximar,fala,posturas` | quais estágios rodam |
-| `campo_horizontal_graus` | 60 | campo de visão horizontal da webcam (medir) |
 | `largura_imagem` | 640 | largura em pixels da imagem das detecções |
-| `altura_rosto_m` | 0,20 | altura real da caixa do rosto (calibração da distância) |
+| `altura_caixa_alvo_px` | 90 | para de andar quando a caixa do rosto fica desta altura (escolher no teste, desarmado) |
 | `inverter_giro` | false | troca o sinal do giro se ele for para o lado errado |
-| `distancia_alvo_m` | 1,2 | para de andar a esta distância |
-| `angulo_ok_graus` | 5 | erro de direção aceito como "de frente" |
-| `angulo_para_andar_graus` | 15 | só anda para frente com erro menor que este |
+| `centro_ok` | 0,05 | desvio aceito como "de frente" (fração da meia largura) |
+| `centro_para_andar` | 0,15 | só anda para frente com desvio menor que este |
 | `vyaw_max` | 0,3 rad/s | giro máximo |
-| `vx_max` | 0,2 m/s | velocidade máxima para frente |
-| `kp_giro`, `kp_avanco` | 1,0 ; 0,5 | ganhos |
+| `vx` | 0,2 m/s | velocidade para frente (constante) |
+| `kp_giro` | 0,6 | ganho do giro (rad/s por desvio 1,0) |
 | `perda_rosto_s` | 1,0 | rosto sumido por isso → para |
 | `desistir_s` | 5,0 | rosto sumido por isso → desiste |
 | `tempo_max_s` | 20 | aproximação mais longa que isso → desiste |
@@ -141,7 +142,7 @@ termina e os braços voltam (`a_vontade`). O robô fica em pé, em equilíbrio. 
 ## Antimetas
 
 - Andar até alguém que não está no mapa (`desconhecido` ou fora do `reactions.yaml`).
-- Andar para trás, de lado, ou mais rápido que `vx_max` / `vyaw_max`.
+- Andar para trás, de lado, ou mais rápido que `vx` / `vyaw_max`.
 - Mexer o robô desarmado (só log).
 - Continuar andando sem detecção nova (o comando expira em 0,5 s).
 - Mudar a rotina do Gil, o serviço ou os combos do `~/hhhh`.
@@ -152,7 +153,8 @@ termina e os braços voltam (`a_vontade`). O robô fica em pé, em equilíbrio. 
 
 - A interface web (passo 3); ela só vai ler o status e escrever o `operacao.yaml`.
 - Wi-Fi do robô como ponto de acesso (passo 3).
-- Medir distância com profundidade (D435i): a webcam é só 2D.
+- Medir ou estimar distância (profundidade da D435i, tamanho real do rosto): o critério é só a
+  altura da caixa em pixels.
 
 ## Para quem vai construir
 
