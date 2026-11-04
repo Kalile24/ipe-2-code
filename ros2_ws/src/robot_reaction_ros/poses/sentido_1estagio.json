@@ -1,0 +1,14 @@
+{
+    "robot": "Unitree G1",
+    "description": "Pose do braço direito",
+    "created_at": "1970-03-21 08:18:01",
+    "right_arm": {
+        "RightShoulderPitch": 0.3622,
+        "RightShoulderRoll": -0.4857,
+        "RightShoulderYaw": 0.0932,
+        "RightElbow": 0.8029,
+        "RightWristRoll": 0.0,
+        "RightWristPitch": 0.0154,
+        "RightWristYaw": 0.0075
+    }
+}

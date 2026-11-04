@@ -103,6 +103,7 @@ Guia completo (build, testes, troubleshooting, cadastro de pessoas):
 
 ```bash
 ~/ipe-2-code/scripts/robo_tmux.sh && tmux attach -t face    # webcam + reconhecimento + reação (gesto desarmado)
+~/ipe-2-code/scripts/robo_rotina_cumprimento.sh [--armado]  # rotina militar (posturas + fala na caixa; não precisa do ~/hhhh)
 ```
 
 Instalação nativa (ROS2 Foxy + venv Python 3.8 + `onnxruntime-gpu`), convivência com os outros

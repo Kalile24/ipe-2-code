@@ -312,10 +312,16 @@ Num pipe (`| grep`, `| tail`), o `ros2 topic hz` não imprime nada até terminar
 
 Spec: [`2026-10-21-robot-reaction-design.md`](../superpowers/specs/2026-10-21-robot-reaction-design.md).
 Quem aparece em `robot_reaction_ros/config/reactions.yaml` por 5 frames seguidos faz o robô
-executar o gesto do firmware associado (cooldown de 60 s por pessoa e 10 s entre reações).
+executar o gesto do firmware associado (10 s entre reações; a mesma pessoa só de novo depois de
+5 min **e** de ter saído da frente da câmera por 5 s). Pessoas com `passos` no lugar de `gesto`
+fazem a rotina militar da seção 9.
 
 O ambiente obrigatório (prompt do fishros) já põe o CycloneDDS na `eth0`, a interface da rede
 do robô — a mesma que o `gesture_node` usa para o SDK da Unitree.
+
+**Atenção:** armar o `gesture_node` falha com `channel factory init error`: o rclpy e o SDK da
+Unitree não convivem no mesmo processo (testado em 2026-10-29). A rotina da seção 9 resolve isso
+com um processo à parte (`body_worker`); o `gesture_node` ainda não foi corrigido.
 
 **O nó de gesto nasce desarmado:** ele só publica `dry_run <gesto>` na janela `gestos`. Para mexer
 o braço de verdade — robô em pé pelo controle, alguém perto, autor do `~/hhhh` avisado e **sem
@@ -331,6 +337,37 @@ Desarmar não interrompe um gesto em andamento. `failed <gesto> code=<n>` na jan
 firmware recusando (por exemplo, robô fora do modo em pé). Para mudar quem dispara o quê, edite o
 `reactions.yaml` (gestos válidos: `GESTOS` em `core/reaction_policy.py`), rode
 `python3 -m colcon build --symlink-install` e reinicie a janela 0.
+
+## 9. Rotina de cumprimento (posturas militares + fala)
+
+Spec: [`2026-10-29-rotina-cumprimento-design.md`](../superpowers/specs/2026-10-29-rotina-cumprimento-design.md).
+Quem tem `passos` no `reactions.yaml` faz a rotina em ordem — ex. do `gil`: sentido → continência
+→ fala → descansar arma → descansar → 15 s → à vontade, com 0,5 s depois de cada postura (um passo
+`pausa` substitui esse tempo). As posturas são as do
+`movimentos_militares.py` do `~/hhhh` (mesmo código, poses e velocidades, copiados para
+`robot_reaction_ros`; a pasta `~/hhhh` não é usada — ver [`docs/hhhh/`](../hhhh/README.md)) e a fala
+sai pela caixa Bluetooth pelo nosso contêiner Piper (`scripts/robo_voz.sh`, mesma imagem Docker; o
+alto-falante da cabeça não responde: RPC 3104).
+
+```bash
+~/ipe-2-code/scripts/robo_rotina_cumprimento.sh            # desarmado: fala, posturas só no log
+~/ipe-2-code/scripts/robo_rotina_cumprimento.sh --armado   # robô NO SUPORTE: damp → em pé → equilíbrio
+tmux attach -t rotina                                      # janelas: rotina, status, deteccoes
+~/ipe-2-code/scripts/robo_liberar_cumprimento.sh [nome]    # cumprimentar de novo já (teste)
+```
+
+- O script conecta a caixa, sobe o contêiner do Piper (`scripts/robo_voz.sh`, `ipe-piper`) e se recusa a
+  rodar se o `movimentos_militares.py` ou o `assistente.py` estiverem de pé (alguém apertou START):
+  seriam dois donos do braço/da caixa. Não aperte START nem os combos F1+… durante a rotina.
+- **Ctrl+C na janela `rotina`** espera o passo atual, devolve os braços ao equilíbrio e solta o
+  arm_sdk (como o F1+RIGHT); o robô continua em pé. Para soltá-lo, use o controle (damp).
+- O `ipe-piper` fica de pé depois da rotina (`docker stop ipe-piper` para parar). Enquanto ele
+  ocupa a porta 5005, o Piper do START do `~/hhhh` não sobe, mas a API é a mesma e o `assistente.py`
+  continua falando pelo nosso. Pare o `ipe-piper` antes de devolver o robô se quiser o deles intacto.
+- Poses e posturas: `robot_reaction_ros/poses/` e `g1_arm_controller.py`. Depois de mudar, rode
+  `python3 -m colcon build --symlink-install` (as poses vão para `share/`).
+- O descansar dá um impulso curto de caminhada para frente (0,12 m/s por ~1 s).
+- Nome na fala: escreva como deve soar no Piper ("Nichinica"; "Nixinica" sai "ksi").
 
 ## Checklist
 

@@ -1,6 +1,27 @@
 # Quem dispara reação e qual. Nome = o mesmo do cadastro (pasta em data/known_faces/<nome>/).
-# Gestos válidos: GESTOS em core/reaction_policy.py (ex.: high wave, face wave, shake hand, clap).
+# Cada pessoa tem UM de:
+#   gesto: gesto pronto do firmware (gesture_node; launch robo.launch.py). Válidos: GESTOS em
+#          core/reaction_policy.py (ex.: high wave, face wave, shake hand, clap).
+#   passos: rotina militar (body_node; launch rotina.launch.py), em ordem. Cada passo é
+#          `postura: <sentido|descansar|continencia|desc_arma|a_vontade>`, `fala: <texto>` ou
+#          `pausa: <segundos>` (espera extra; substitui os 0,5 s automáticos depois da postura).
+#          A última postura tem que ser a_vontade (devolve os braços e solta o arm_sdk).
+#          Fala: escreva como deve SOAR no Piper ("Nichinica", não "Nixinica").
 gil:
-  gesto: high wave
+  passos:
+    - postura: sentido
+    - postura: continencia
+    - fala: "Olá, aspirante a oficial da reserva Gil, sou o Tenente Nichinica"
+    - postura: desc_arma
+    - postura: descansar
+    - pausa: 15
+    - postura: a_vontade
 marcos:
-  gesto: shake hand
+  passos:
+    - postura: sentido
+    - postura: continencia
+    - fala: "Olá, aspirante a oficial da reserva Marcos, sou o Tenente Nichinica"
+    - postura: desc_arma
+    - postura: descansar
+    - pausa: 15
+    - postura: a_vontade

@@ -2,7 +2,7 @@
 <package format="3">
   <name>robot_reaction_ros</name>
   <version>0.1.0</version>
-  <description>Reação do Unitree G1 ao reconhecer uma pessoa (gestos do firmware)</description>
+  <description>Reação do Unitree G1 ao reconhecer uma pessoa (gestos do firmware e rotinas militares)</description>
   <maintainer email="marcoskmvasconcellos@gmail.com">Marcos Kalile</maintainer>
   <license>Apache-2.0</license>
 
