@@ -19,3 +19,4 @@ unitree_sdk2_python/
 *.mp4
 *.avi
 *.mov
+data/operacao.yaml

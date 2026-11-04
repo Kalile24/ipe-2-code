@@ -139,8 +139,32 @@ Teste na ordem: F2+UP (o log mostra a sessão subindo; `tmux attach -t rotina` m
 F2+RIGHT com o Gil na frente, F2+LEFT duas vezes (ouça "desligadas"/"ligadas"), F2+DOWN.
 Para tirar o serviço: `systemctl --user disable --now ipe-controle`.
 
+## 8. Painel web e hotspot
+
+O hotspot tira o robô da rede Wi-Fi em que está e **para a transmissão da D435i do `~/cesar`**
+enquanto estiver ligado: combine com eles. O cabo continua funcionando.
+
+```bash
+~/ipe-2-code/scripts/robo_hotspot.sh liga          # rede IPE-G1, senha ipe-g1-2026 (HOTSPOT_SENHA troca)
+cp ~/ipe-2-code/scripts/systemd/ipe-painel.service ~/.config/systemd/user/
+systemctl --user daemon-reload && systemctl --user enable --now ipe-painel
+```
+
+No celular ou notebook, conecte-se à `IPE-G1` e abra `http://10.42.0.1:8080`. Confira:
+
+- Com a rotina parada: "rotina parada", câmera e reconhecimento vermelhos.
+- **Subir desarmado**: em ~1 min a câmera fica verde, o reconhecimento mostra o ritmo, e quem está na
+  frente aparece com a altura da caixa.
+- **Cadastrar pessoa** com 3 a 5 fotos de frente: "… cadastrado com N foto(s)" e a pessoa passa a
+  ser reconhecida na hora. Para ela ser cumprimentada, ponha uma rotina dela no `reactions.yaml`.
+  **Não copie depois o banco do notebook para o robô**: ele apaga quem foi cadastrado pelo painel.
+- **Operação**: mude `altura_caixa_alvo_px`, salve, **Parar** e suba de novo: vale na nova subida.
+- **Subir armado** só com o robô em equilíbrio (FSM 801), como o F2+UP.
+- `robo_hotspot.sh desliga` volta o robô para a rede de antes.
+
 ## O que mandar se algo der errado
 
 - A janela `status` (o que o body_node fez) e o log da janela `rotina`.
 - Em qual etapa deste guia, com quais `--estagios` e qual `operacao.yaml`.
 - Pelo controle: `journalctl --user -u ipe-controle --since "-10min"`.
+- Painel: `journalctl --user -u ipe-painel --since "-10min"`.

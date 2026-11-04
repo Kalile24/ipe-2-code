@@ -355,6 +355,9 @@ tmux attach -t rotina                                      # janelas: rotina, st
   escolhe o que roda; `--controle` é o modo dos combos F2+UP/RIGHT/LEFT/DOWN
   (`scripts/robo_controle.py`); os números ficam em `config/operacao.yaml` (`OPERACAO=arquivo` usa
   outro). Como testar no robô, passo a passo: [`teste-no-robo.md`](teste-no-robo.md).
+- **Painel web** (`painel_node`, porta 8080; serviço `ipe-painel`) e **hotspot** do robô
+  (`scripts/robo_hotspot.sh`): estágio, câmera, quem está na frente, comandos, operação e cadastro por
+  foto. Ver [`teste-no-robo.md`](teste-no-robo.md), passo 8. O hotspot para a transmissão do `~/cesar`.
 - O damp da janela `emergencia` é **só com o robô no suporte**; fora dele, ele cai. Andando, pare
   com F2+DOWN ou com o próprio controle.
 

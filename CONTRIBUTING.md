@@ -172,7 +172,8 @@ regras de convivência:
 Subir o reconhecimento no robô (desarmado: o robô não se mexe):
 `~/ipe-2-code/scripts/robo_rotina_cumprimento.sh && tmux attach -t rotina`.
 
-**Cadastrar uma pessoa:** no **notebook**, nunca no robô — as fotos não ficam lá, e o enroll
+**Cadastrar uma pessoa:** uma pessoa avulsa pode ser cadastrada pelo painel do robô (só ela muda;
+ver `docs/guides/teste-no-robo.md`, passo 8). Em lote: no **notebook**, nunca no robô — as fotos não ficam lá, e o enroll
 refaz o banco a partir da pasta inteira (rodá-lo no robô apagaria todo mundo). Foto em
 `data/known_faces/<nome>/`, enroll aqui, `scp` só do `data/identity_db_*` e reiniciar o nó
 (passo 5 do [guia do robô](docs/guides/jetson-deployment.md#5-modelos-e-cadastro)).

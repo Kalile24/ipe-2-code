@@ -2,13 +2,14 @@
 <package format="3">
   <name>robot_reaction_interfaces</name>
   <version>0.1.0</version>
-  <description>Interfaces do robot_reaction_ros (ação Rotina do body_node)</description>
+  <description>Interfaces do robot_reaction_ros (ação Rotina do body_node, serviço Cadastrar do reconhecimento)</description>
   <maintainer email="marcoskmvasconcellos@gmail.com">Marcos Kalile</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
   <buildtool_depend>rosidl_default_generators</buildtool_depend>
   <depend>action_msgs</depend>
+  <depend>sensor_msgs</depend>
   <exec_depend>rosidl_default_runtime</exec_depend>
   <member_of_group>rosidl_interface_packages</member_of_group>
 

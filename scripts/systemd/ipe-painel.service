@@ -1,0 +1,15 @@
+# Painel web (http://<ip do robô>:8080; no hotspot, http://10.42.0.1:8080): painel_node.
+# Unit de USUÁRIO, como a ipe-controle (instalação em docs/guides/teste-no-robo.md):
+#   cp ~/ipe-2-code/scripts/systemd/ipe-painel.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now ipe-painel
+# Log: journalctl --user -u ipe-painel -f
+[Unit]
+Description=ipe-2-code: painel web de monitoramento e operação
+
+[Service]
+ExecStart=/bin/bash -lc 'source %h/ipe-2-code/scripts/ambiente_robo.sh && exec ros2 run robot_reaction_ros painel_node'
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Painel do G1</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --fg:#1b1d21; --muted:#6a7180; --ok:#1f8f4e; --bad:#c23b32; --warn:#b7791f; --line:#e2e5ea; --acc:#2b6cb0; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#14161a; --card:#1e2127; --fg:#e8eaee; --muted:#9aa1ad; --line:#2d323a; --acc:#63a4ff; } }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:15px/1.4 system-ui, sans-serif; }
+  h1 { font-size:20px; margin:0 0 12px; }
+  h2 { font-size:15px; margin:0 0 8px; color:var(--muted); font-weight:600; }
+  .grid { display:grid; gap:12px; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px; }
+  .big { font-size:22px; font-weight:700; }
+  .row { display:flex; justify-content:space-between; gap:8px; padding:3px 0; }
+  .ok { color:var(--ok); } .bad { color:var(--bad); } .warn { color:var(--warn); } .muted { color:var(--muted); }
+  button { font:inherit; padding:10px 12px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--fg); cursor:pointer; }
+  button.primario { background:var(--acc); color:#fff; border-color:var(--acc); }
+  button.perigo { background:var(--bad); color:#fff; border-color:var(--bad); }
+  .botoes { display:flex; flex-wrap:wrap; gap:8px; }
+  input, select { font:inherit; padding:7px; border-radius:6px; border:1px solid var(--line); background:var(--bg); color:var(--fg); width:100%; }
+  label { display:block; margin:6px 0; } label span { display:block; font-size:13px; color:var(--muted); }
+  ul { margin:0; padding-left:18px; } li { margin:2px 0; }
+  #msg { min-height:1.4em; margin:8px 0 0; }
+  table { width:100%; border-collapse:collapse; } td { padding:3px 0; border-bottom:1px solid var(--line); }
+</style>
+</head>
+<body>
+<h1>Painel do G1 <span id="hora" class="muted" style="font-size:13px;font-weight:400"></span></h1>
+<div class="grid">
+  <div class="card">
+    <h2>Robô</h2>
+    <div class="big" id="estagio">—</div>
+    <div class="row"><span>Rotina</span><span id="rotina"></span></div>
+    <div class="row"><span>Armado</span><span id="armado"></span></div>
+    <div class="row"><span>Reações automáticas</span><span id="auto"></span></div>
+    <div class="row"><span>Câmera</span><span id="camera"></span></div>
+    <div class="row"><span>Reconhecimento</span><span id="recon"></span></div>
+  </div>
+  <div class="card">
+    <h2>Na frente agora</h2>
+    <table id="vistos"></table>
+    <p class="muted" style="font-size:13px">caixa = altura do rosto em pixels (o <b>altura_caixa_alvo_px</b> é onde o robô para)</p>
+  </div>
+  <div class="card">
+    <h2>Comandos</h2>
+    <div class="botoes">
+      <button onclick="acao('subir_desarmado')">Subir desarmado</button>
+      <button class="primario" onclick="if(confirm('Armado: o robô vai se mexer. Ele está em equilíbrio (FSM 801) e com espaço livre?')) acao('subir_armado')">Subir armado</button>
+      <button onclick="acao('agora')">Cumprimentar agora</button>
+      <button onclick="acao('automatico')">Liga/desliga automático</button>
+      <button class="perigo" onclick="acao('parar')">PARAR</button>
+    </div>
+    <p id="msg" class="muted"></p>
+  </div>
+  <div class="card">
+    <h2>Últimos eventos</h2>
+    <ul id="status" style="font-size:13px"></ul>
+  </div>
+  <div class="card">
+    <h2>Operação (vale na próxima subida)</h2>
+    <form id="operacao" onsubmit="salvar(event)"></form>
+  </div>
+  <div class="card">
+    <h2>Cadastrar pessoa</h2>
+    <form onsubmit="cadastrar(event)">
+      <label><span>Nome (minúsculas, sem espaço — o mesmo do reactions.yaml)</span><input id="nome" required pattern="[a-z0-9_]+"></label>
+      <label><span>1 a 5 fotos de frente, uma pessoa por foto</span><input id="fotos" type="file" accept="image/*" multiple required></label>
+      <button class="primario">Cadastrar</button>
+    </form>
+    <p id="cad" class="muted"></p>
+    <p class="muted" style="font-size:13px">Com rotina no reactions.yaml: <span id="pessoas"></span></p>
+  </div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const sim = (v, s='sim', n='não') => v ? `<span class="ok">${s}</span>` : `<span class="bad">${n}</span>`;
+async function json(url, corpo) {
+  const r = await fetch(url, corpo === undefined ? {} : {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(corpo)});
+  return r.json();
+}
+async function atualizar() {
+  try {
+    const e = await json('/estado');
+    $('hora').textContent = new Date().toLocaleTimeString();
+    $('estagio').textContent = e.estagio;
+    $('rotina').innerHTML = sim(e.rotina_de_pe, 'de pé', 'parada');
+    $('armado').innerHTML = e.rotina_de_pe ? (e.armado ? '<span class="warn">armado</span>' : 'desarmado') : '—';
+    $('auto').innerHTML = e.automatico === null ? '—' : sim(e.automatico, 'ligadas', 'desligadas');
+    $('camera').innerHTML = sim(e.camera.ok, 'publicando', 'sem imagem');
+    $('recon').innerHTML = e.reconhecimento.ok ? `<span class="ok">${e.reconhecimento.fps}/s</span>` : sim(false, '', e.reconhecimento.no ? 'parado' : 'fora do ar');
+    $('vistos').innerHTML = e.vistos.length ? e.vistos.map(v => `<tr><td>${v.nome}</td><td>${v.nota}</td><td>caixa ${v.caixa_px}px</td></tr>`).join('') : '<tr><td class="muted">ninguém</td></tr>';
+    $('status').innerHTML = e.status.map(s => `<li><span class="muted">${s.hora}</span> ${s.texto}</li>`).join('') || '<li class="muted">nada ainda</li>';
+    $('pessoas').textContent = e.pessoas_com_rotina.join(', ') || '—';
+  } catch (err) { $('estagio').textContent = 'painel sem resposta'; }
+}
+async function acao(nome) { $('msg').textContent = (await json('/acao/' + nome, {})).mensagem; atualizar(); }
+async function carregarOperacao() {
+  const op = await json('/operacao');
+  const campos = ['estagios','altura_caixa_alvo_px','vx','vyaw_max','kp_giro','inverter_giro','centro_ok','centro_para_andar','perda_rosto_s','desistir_s','tempo_max_s'];
+  $('operacao').innerHTML = campos.map(c => typeof op[c] === 'boolean'
+      ? `<label><span>${c}</span><select name="${c}"><option value="false"${op[c]?'':' selected'}>false</option><option value="true"${op[c]?' selected':''}>true</option></select></label>`
+      : `<label><span>${c}</span><input name="${c}" value="${op[c]}"></label>`).join('') + '<button class="primario">Salvar</button> <span id="opmsg" class="muted"></span>';
+}
+async function salvar(ev) {
+  ev.preventDefault();
+  $('opmsg').textContent = (await json('/operacao', Object.fromEntries(new FormData(ev.target)))).mensagem;
+}
+async function cadastrar(ev) {
+  ev.preventDefault();
+  const arquivos = [...$('fotos').files].slice(0, 5);
+  $('cad').textContent = 'enviando…';
+  // Reduz no navegador (máx. 1280 px, JPEG): foto de celular tem vários MB e o detector usa 640.
+  const reduzir = f => new Promise(ok => { const img = new Image(); img.onload = () => {
+    const k = Math.min(1, 1280 / Math.max(img.width, img.height)), c = document.createElement('canvas');
+    c.width = img.width * k; c.height = img.height * k; c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    ok(c.toDataURL('image/jpeg', 0.9)); URL.revokeObjectURL(img.src); }; img.src = URL.createObjectURL(f); });
+  const fotos = await Promise.all(arquivos.map(reduzir));
+  const r = await json('/cadastrar', {nome: $('nome').value, fotos});
+  $('cad').innerHTML = (r.ok ? '<span class="ok">' : '<span class="bad">') + r.mensagem + '</span>'
+    + (r.ok && !r.tem_rotina ? '<br>Reconhecido, mas sem rotina no reactions.yaml: ainda não será cumprimentado.' : '');
+}
+atualizar(); carregarOperacao(); setInterval(atualizar, 1000);
+</script>
+</body>
+</html>

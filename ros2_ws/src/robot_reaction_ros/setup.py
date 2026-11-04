@@ -14,6 +14,7 @@ setup(
         (f"share/{package_name}/launch", glob("launch/*.launch.py")),
         (f"share/{package_name}/config", ["config/reactions.yaml", "config/operacao.yaml"]),
         (f"share/{package_name}/poses", glob("poses/*.json")),
+        (f"share/{package_name}/painel", ["painel/index.html"]),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
@@ -26,6 +27,7 @@ setup(
         "console_scripts": [
             "reaction_node = robot_reaction_ros.reaction_node:main",
             "body_node = robot_reaction_ros.body_node:main",
+            "painel_node = robot_reaction_ros.painel_node:main",
         ],
     },
 )

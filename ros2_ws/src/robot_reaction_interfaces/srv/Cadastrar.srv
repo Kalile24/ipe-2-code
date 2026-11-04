@@ -1,0 +1,8 @@
+# Cadastra (ou recadastra) uma pessoa no banco de rostos, pelo face_recognition_node já carregado.
+# As fotos não são guardadas: só os embeddings dos rostos entram no banco.
+string nome
+sensor_msgs/CompressedImage[] fotos
+---
+bool ok
+string mensagem
+int32 fotos_usadas

@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import re
+
+import cv2
+import numpy as np
 import rclpy
 from cv_bridge import CvBridge, CvBridgeError
 from rclpy.node import Node
@@ -9,7 +13,9 @@ from vision_msgs.msg import Detection2DArray
 
 from core.config import DB_PATH, DET_SIZE, MODEL_NAME, MODEL_ROOT, SIMILARITY_THRESHOLD
 from core.face_engine import FaceEngine
+from core.face_selection import select_reference_face
 from core.identity_store import IdentityStore
+from robot_reaction_interfaces.srv import Cadastrar
 
 from face_recognition_ros.message_builder import bbox_area, build_detection, clip_bbox
 
@@ -25,6 +31,7 @@ _IMAGE_QOS = {
     "default": QoSProfile(reliability=ReliabilityPolicy.RELIABLE, history=HistoryPolicy.KEEP_LAST, depth=1),
 }
 HEARTBEAT_S = 10.0
+NOME_VALIDO = re.compile(r"^[a-z0-9_]+$")  # vira chave do reactions.yaml: minúsculas, sem espaço
 
 
 class FaceRecognitionNode(Node):
@@ -91,6 +98,38 @@ class FaceRecognitionNode(Node):
         self._frames = 0
         self._faces = 0
         self.create_timer(HEARTBEAT_S, self._heartbeat)
+        # Cadastro pela interface (painel_node): o modelo já está carregado aqui. Mesma thread das
+        # imagens (executor simples), então o banco nunca muda no meio de um frame.
+        self.create_service(Cadastrar, "~/cadastrar", self._on_cadastrar)
+
+    def _on_cadastrar(self, request: Cadastrar.Request, response: Cadastrar.Response) -> Cadastrar.Response:
+        """(Re)cadastra `nome` com o maior rosto de cada foto e salva o banco. Substitui as fotos
+        antigas da pessoa; as outras pessoas não mudam. As fotos não são guardadas."""
+        nome = request.nome.strip()
+        if not NOME_VALIDO.match(nome) or nome == "desconhecido":
+            response.ok, response.mensagem = False, f"nome inválido {nome!r}: use minúsculas, números e _"
+            return response
+        embeddings, avisos = [], []
+        for i, foto in enumerate(request.fotos, start=1):
+            frame = cv2.imdecode(np.frombuffer(bytes(foto.data), np.uint8), cv2.IMREAD_COLOR)
+            if frame is None:
+                avisos.append(f"foto {i}: não é uma imagem")
+                continue
+            face = select_reference_face(self._engine.extract_faces(frame))
+            if face is None:
+                avisos.append(f"foto {i}: nenhum rosto")
+                continue
+            embeddings.append(face.embedding)
+        if not embeddings:
+            response.ok, response.mensagem = False, "nenhum rosto aproveitado; " + "; ".join(avisos)
+            return response
+        self._store.embeddings.pop(nome, None)
+        self._store.enroll(nome, embeddings)
+        self._store.save()
+        response.ok, response.fotos_usadas = True, len(embeddings)
+        response.mensagem = f"{nome} cadastrado com {len(embeddings)} foto(s)" + (f"; {'; '.join(avisos)}" if avisos else "")
+        self.get_logger().info(f"cadastro: {response.mensagem}")
+        return response
 
     def _heartbeat(self) -> None:
         if self._frames:

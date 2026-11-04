@@ -10,7 +10,8 @@
 #               perguntas, só com o robô já em equilíbrio (FSM 801, nunca damp → em pé), reações
 #               automáticas desligadas (F2+RIGHT cumprimenta, F2+LEFT liga/desliga).
 #   --estagios LISTA: virar,aproximar,fala,posturas (padrão: os do config/operacao.yaml).
-#   OPERACAO=~/operacao.yaml: usa outro arquivo de operação (distância, velocidades; copie o do pacote).
+#   OPERACAO=~/operacao.yaml: usa outro arquivo de operação (padrão: data/operacao.yaml, que o painel
+#   salva; sem ele, o config/operacao.yaml do pacote).
 # Depois: tmux attach -t rotina. Ctrl+C na janela "rotina" devolve os braços e encerra.
 # Armado, a janela "emergencia" fica pronta: Enter = damp na hora (scripts/robo_emergencia.py).
 # Cumprimentar de novo antes dos 5 min: scripts/robo_liberar_cumprimento.sh [nome]
@@ -103,6 +104,8 @@ if [ "$CAMERA" = realsense ]; then
 fi
 ARGS_MODO="so_equilibrio:=$CONTROLE automatico:=$([ "$CONTROLE" = true ] && echo false || echo true)"
 [ -n "$ESTAGIOS" ] && ARGS_MODO="$ARGS_MODO estagios:=$ESTAGIOS"
+# O painel salva em data/operacao.yaml; OPERACAO=arquivo escolhe outro; sem nenhum, o do pacote.
+[ -z "${OPERACAO:-}" ] && [ -f "$REPO/data/operacao.yaml" ] && OPERACAO=$REPO/data/operacao.yaml
 [ -n "${OPERACAO:-}" ] && ARGS_MODO="$ARGS_MODO operacao_file:=$OPERACAO"
 rodar rotina "ros2 launch robot_reaction_ros rotina.launch.py armed:=$ARMADO $ARGS_MODO $ARGS_CAMERA \
 onnx_providers:=TensorrtExecutionProvider,CUDAExecutionProvider,CPUExecutionProvider"
