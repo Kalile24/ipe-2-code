@@ -130,6 +130,27 @@ o launch aceita outro arquivo (`operacao_file`). A interface do passo 3 vai escr
   um serviço no robô compartilhado: combinar antes com quem usa o robô.** O repositório traz a unit
   e o passo do guia; quem instala é o operador.
 
+### Reagir quando o operador quer
+
+Decisão do usuário (2026-11-04): um combo sobe só o robô (para andar com ele pelo controle) e
+outros fazem ele reagir quando o operador quer — tanto um cumprimento avulso quanto ligar/desligar
+as reações automáticas.
+
+| Combo (padrão, configurável) | Faz |
+|---|---|
+| F2 + UP | sobe armado (só 801), reconhecimento rodando, **reações automáticas desligadas** |
+| F2 + RIGHT | **cumprimentar agora**: a pessoa do mapa reconhecida agora (última detecção com até 1 s; se várias, a de maior nota) é cumprimentada uma vez (virar/aproximar + rotina, conforme os estágios), sem olhar os 5 min nem a saída da frente. Ninguém do mapa na frente: fala "Não reconheço ninguém." |
+| F2 + LEFT | **liga/desliga as reações automáticas**; o robô fala "Reações automáticas ligadas." / "Reações automáticas desligadas." |
+| F2 + DOWN | parada (abaixo) |
+
+- No `reaction_node`: parâmetro `automatico` (bool, mutável em execução; padrão `true`, o
+  `--controle` sobe com `false`) e parâmetro `cumprimentar_agora` (escrever qualquer valor
+  dispara). Com `automatico` desligado a política continua acompanhando quem está na frente, só não
+  dispara. Uma rotina em andamento recusa os dois (como hoje).
+- As falas de confirmação saem pelo mesmo servidor Piper; sem caixa, só o log.
+- O programa do controle muda esses parâmetros com `ros2 param set` (ele roda com o ambiente ROS
+  do `ambiente_robo.sh`; continua sem importar rclpy).
+
 ### Parada de emergência com o robô solto
 
 Decisão do usuário (2026-11-04): **F2 + DOWN para de andar na hora** — velocidade zero
