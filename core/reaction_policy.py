@@ -1,37 +1,15 @@
 """Decide a quem o robô reage: mapa pessoa → reação, confirmação por frames seguidos e cooldowns.
 
-Reação = um gesto pronto do firmware (`gesto`, executado pelo gesture_node) ou uma rotina de
-posturas militares e falas (`passos`, executada pelo body_node com robot_reaction_ros/g1_arm_controller.py).
+Reação = uma rotina de posturas militares, falas e pausas (`passos`), executada pelo body_node
+com robot_reaction_ros/g1_arm_controller.py.
 
 Puro (sem ROS, sem SDK da Unitree): os nós de `robot_reaction_ros` são cascas em volta disto.
-Spec: docs/superpowers/specs/2026-10-21-robot-reaction-design.md
+Specs: docs/superpowers/specs/2026-10-21-robot-reaction-design.md (confirmação e cooldowns) e
+2026-10-29-rotina-cumprimento-design.md (rotinas).
 """
 from __future__ import annotations
 
-# Cópia do `action_map` do unitree_sdk2py 1.0.1 (unitree_sdk2py/g1/arm/g1_arm_action_client.py),
-# a versão instalada no PC2 do robô. Copiado para validar o mapa onde o SDK não existe (notebook,
-# Docker). Se a Unitree mudar os ids, atualize aqui.
-GESTOS = {
-    "release arm": 99,
-    "two-hand kiss": 11,
-    "left kiss": 12,
-    "right kiss": 13,
-    "hands up": 15,
-    "clap": 17,
-    "high five": 18,
-    "hug": 19,
-    "heart": 20,
-    "right heart": 21,
-    "reject": 22,
-    "right hand up": 23,
-    "x-ray": 24,
-    "face wave": 25,
-    "high wave": 26,
-    "shake hand": 27,
-}
-RELEASE_ARM = "release arm"
 DESCONHECIDO = "desconhecido"  # nome que o face_recognition_node usa abaixo do limiar
-_CHAVES_PESSOA = {"gesto", "passos"}
 # Posturas militares (as do ~/hhhh/movimentos_militares.py) que o body_node sabe executar.
 POSTURAS = {"sentido", "descansar", "continencia", "desc_arma", "a_vontade"}
 A_VONTADE = "a_vontade"  # braços de volta ao equilíbrio e arm_sdk liberado
@@ -72,13 +50,10 @@ def validate_steps(nome: str, passos: object) -> list[dict[str, str]]:
     return validos
 
 
-def load_reactions(raw: object) -> dict[str, str | list[dict[str, str]]]:
-    """Valida o conteúdo do YAML e devolve `nome -> gesto` (str) ou `nome -> passos` (lista).
-
-    Cada pessoa tem exatamente um de: `gesto: <nome do gesto>` ou `passos: [...]`.
-    """
+def load_reactions(raw: object) -> dict[str, list[dict[str, str]]]:
+    """Valida o conteúdo do YAML e devolve `nome -> passos`. Cada pessoa é `{passos: [...]}`."""
     if not isinstance(raw, dict):
-        raise ReactionConfigError(f"o mapa de reações tem que ser um mapa nome -> {{gesto|passos: ...}}, veio {raw!r}")
+        raise ReactionConfigError(f"o mapa de reações tem que ser um mapa nome -> {{passos: [...]}}, veio {raw!r}")
     if not raw:
         raise ReactionConfigError("o mapa de reações não tem nenhuma pessoa")
     reactions = {}
@@ -87,20 +62,9 @@ def load_reactions(raw: object) -> dict[str, str | list[dict[str, str]]]:
             raise ReactionConfigError(f"nome de pessoa inválido: {nome!r}")
         if nome == DESCONHECIDO:
             raise ReactionConfigError(f"{DESCONHECIDO!r} não pode estar no mapa: o robô reagiria a qualquer estranho")
-        if not isinstance(reacao, dict):
-            raise ReactionConfigError(f"{nome}: esperado um mapa com 'gesto' ou 'passos', veio {reacao!r}")
-        extras = sorted(set(reacao) - _CHAVES_PESSOA)
-        if extras:
-            raise ReactionConfigError(f"{nome}: chave desconhecida {extras} (só 'gesto' ou 'passos')")
-        if len(reacao) != 1:
-            raise ReactionConfigError(f"{nome}: falta 'gesto' ou 'passos' (exatamente um dos dois)")
-        if "passos" in reacao:
-            reactions[nome] = validate_steps(nome, reacao["passos"])
-            continue
-        gesto = reacao["gesto"]
-        if gesto not in GESTOS:
-            raise ReactionConfigError(f"{nome}: gesto desconhecido {gesto!r}; válidos: {sorted(GESTOS)}")
-        reactions[nome] = gesto
+        if not isinstance(reacao, dict) or set(reacao) != {"passos"}:
+            raise ReactionConfigError(f"{nome}: esperado um mapa com só a chave 'passos', veio {reacao!r}")
+        reactions[nome] = validate_steps(nome, reacao["passos"])
     return reactions
 
 
@@ -120,7 +84,7 @@ class ReactionPolicy:
 
     def __init__(
         self,
-        reactions: dict[str, str | list[dict[str, str]]],
+        reactions: dict[str, list[dict[str, str]]],
         confirm_frames: int = 5,
         person_cooldown_s: float = 300.0,
         global_cooldown_s: float = 10.0,
@@ -141,7 +105,7 @@ class ReactionPolicy:
 
     def update(
         self, seen: list[tuple[str, float]], now: float, allow_fire: bool = True
-    ) -> tuple[str, str | list[dict[str, str]]] | None:
+    ) -> tuple[str, list[dict[str, str]]] | None:
         """`allow_fire=False` (uma rotina já está em andamento): só acompanha quem está na frente."""
         best: dict[str, float] = {}
         for nome, score in seen:

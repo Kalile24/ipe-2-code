@@ -63,7 +63,7 @@ export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 ```
 
 Sem isso, o ROS2 cai no Fast-DDS e qualquer nó morre com `std::bad_alloc` ou é morto por falta de
-memória. O `scripts/robo_tmux.sh` aplica esse ambiente sozinho. Não altere o `~/.bashrc`: alguém
+memória. Os scripts do robô aplicam esse ambiente sozinhos (`scripts/ambiente_robo.sh`). Não altere o `~/.bashrc`: alguém
 pode usar o Noetic.
 
 ## 0. Acesso ao robô
@@ -251,23 +251,25 @@ usuários.
 ### Um comando (recomendado)
 
 ```bash
-~/ipe-2-code/scripts/robo_tmux.sh            # webcam USB (padrão); "realsense" para a D435i
-tmux attach -t face
+~/ipe-2-code/scripts/robo_rotina_cumprimento.sh            # webcam USB (padrão); "realsense" para a D435i
+tmux attach -t rotina
 ```
 
-Abre a sessão tmux `face`, já com o ambiente obrigatório e sem o prompt do fishros:
+Sem `--armado` o robô não se mexe: as posturas só aparecem no log e a fala sai pela caixa
+Bluetooth, se ela estiver conectada (sem a caixa, só um aviso). Abre a sessão tmux `rotina`, já
+com o ambiente obrigatório e sem o prompt do fishros:
 
-- **janela 0 `reconhecimento`** — um único `ros2 launch robot_reaction_ros robo.launch.py` que
-  sobe a webcam (`v4l2_camera`, 640x480, achada pelo caminho estável
-  `/dev/v4l/by-id/...-video-index0`), o nó de reconhecimento **e** os nós de reação e de gesto
-  (gesto **desarmado**: só loga — ver passo 8);
-- **janela 1 `deteccoes`** — `watch_detections.py`, que imprime `nome: nota` por rosto (ou
+- **janela 0 `rotina`** — um único `ros2 launch robot_reaction_ros rotina.launch.py` que sobe a
+  webcam (`v4l2_camera`, 640x480, achada pelo caminho estável `/dev/v4l/by-id/...-video-index0`),
+  o nó de reconhecimento, o de reação e o body_node (seção 8);
+- **janela 1 `status`** — o que o body_node está fazendo (`/reaction/rotina_status`);
+- **janela 2 `deteccoes`** — `watch_detections.py`, que imprime `nome: nota` por rosto (ou
   `(nenhum rosto)`) a cada frame;
-- **janela 2 `gestos`** — eventos do nó de gesto (`dry_run high wave`, `started`, `done`, `failed …`);
 - **janela `camera`** — só no modo `realsense`.
 
 `Ctrl+b` e o número troca de janela; `Ctrl+b` e `d` sai deixando tudo rodando;
-`tmux kill-session -t face` encerra tudo. `VIDEO=/dev/videoN robo_tmux.sh` força outro dispositivo.
+`tmux kill-session -t rotina` encerra tudo. `VIDEO=/dev/videoN robo_rotina_cumprimento.sh` força
+outro dispositivo.
 
 ### Sem o script
 
@@ -308,40 +310,12 @@ journalctl -k --since "-10min" | grep -i "usb 1-2"   # a webcam reconectou?
 Num pipe (`| grep`, `| tail`), o `ros2 topic hz` não imprime nada até terminar — use
 `PYTHONUNBUFFERED=1` ou rode sem pipe.
 
-## 8. Reação a uma pessoa (Fase 2)
-
-Spec: [`2026-10-21-robot-reaction-design.md`](../superpowers/specs/2026-10-21-robot-reaction-design.md).
-Quem aparece em `robot_reaction_ros/config/reactions.yaml` por 5 frames seguidos faz o robô
-executar o gesto do firmware associado (10 s entre reações; a mesma pessoa só de novo depois de
-5 min **e** de ter saído da frente da câmera por 5 s). Pessoas com `passos` no lugar de `gesto`
-fazem a rotina militar da seção 9.
-
-O ambiente obrigatório (prompt do fishros) já põe o CycloneDDS na `eth0`, a interface da rede
-do robô — a mesma que o `gesture_node` usa para o SDK da Unitree.
-
-**Atenção:** armar o `gesture_node` falha com `channel factory init error`: o rclpy e o SDK da
-Unitree não convivem no mesmo processo (testado em 2026-10-29). A rotina da seção 9 resolve isso
-com um processo à parte (`body_worker`); o `gesture_node` ainda não foi corrigido.
-
-**O nó de gesto nasce desarmado:** ele só publica `dry_run <gesto>` na janela `gestos`. Para mexer
-o braço de verdade — robô em pé pelo controle, alguém perto, autor do `~/hhhh` avisado e **sem
-apertar os combos do joystick dele** enquanto o nosso estiver armado:
-
-```bash
-ros2 service call /gesture_node/set_armed std_srvs/srv/SetBool "{data: true}"    # arma
-ros2 service call /gesture_node/set_armed std_srvs/srv/SetBool "{data: false}"   # desarma
-ros2 topic pub --once /reaction/gesture std_msgs/msg/String "data: high wave"   # gesto à mão
-```
-
-Desarmar não interrompe um gesto em andamento. `failed <gesto> code=<n>` na janela `gestos` é o
-firmware recusando (por exemplo, robô fora do modo em pé). Para mudar quem dispara o quê, edite o
-`reactions.yaml` (gestos válidos: `GESTOS` em `core/reaction_policy.py`), rode
-`python3 -m colcon build --symlink-install` e reinicie a janela 0.
-
-## 9. Rotina de cumprimento (posturas militares + fala)
+## 8. Rotina de cumprimento (posturas militares + fala)
 
 Spec: [`2026-10-29-rotina-cumprimento-design.md`](../superpowers/specs/2026-10-29-rotina-cumprimento-design.md).
-Quem tem `passos` no `reactions.yaml` faz a rotina em ordem — ex. do `gil`: sentido → continência
+Quem aparece em `robot_reaction_ros/config/reactions.yaml` por 5 frames seguidos faz o robô
+executar a sua rotina (10 s entre reações; uma rotina por vez; a mesma pessoa só de novo depois de
+5 min **e** de ter saído da frente da câmera por 5 s). A rotina é a lista `passos`, em ordem — ex. do `gil`: sentido → continência
 → fala → descansar arma → descansar → 15 s → à vontade, com 0,5 s depois de cada postura (um passo
 `pausa` substitui esse tempo). As posturas são as do
 `movimentos_militares.py` do `~/hhhh` (mesmo código, poses e velocidades, copiados para

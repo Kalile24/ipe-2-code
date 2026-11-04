@@ -9,8 +9,8 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description() -> LaunchDescription:
-    # Câmera + reconhecimento + reação + corpo (posturas militares e fala). Sem o gesture_node:
-    # o body_node é o único dono dos braços. Usado por scripts/robo_rotina_cumprimento.sh.
+    # Câmera + reconhecimento + reação + corpo (posturas militares e fala); o body_node é o único
+    # dono dos braços. Usado por scripts/robo_rotina_cumprimento.sh.
     recognition = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(get_package_share_directory("face_recognition_ros"), "launch", "face_recognition.launch.py")

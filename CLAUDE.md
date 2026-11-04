@@ -1,3 +1,9 @@
+## Regras do projeto
+
+- A rotina do Gil em `ros2_ws/src/robot_reaction_ros/config/reactions.yaml` é a padronizada e não
+  muda sem pedido explícito do usuário: sentido → continência → "Olá, aspirante a oficial da
+  reserva Gil, sou o Tenente Nichinica" → desc_arma → descansar → 15 s → à vontade.
+
 <!-- ai-memory:start -->
 ## Long-term memory (ai-memory)
 

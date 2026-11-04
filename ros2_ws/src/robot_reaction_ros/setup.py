@@ -19,13 +19,12 @@ setup(
     zip_safe=True,
     maintainer="Marcos Kalile",
     maintainer_email="marcoskmvasconcellos@gmail.com",
-    description="Reação do Unitree G1 ao reconhecer uma pessoa (gestos do firmware e rotinas militares)",
+    description="Reação do Unitree G1 ao reconhecer uma pessoa (rotinas militares e fala)",
     license="Apache-2.0",
     tests_require=["pytest"],
     entry_points={
         "console_scripts": [
             "reaction_node = robot_reaction_ros.reaction_node:main",
-            "gesture_node = robot_reaction_ros.gesture_node:main",
             "body_node = robot_reaction_ros.body_node:main",
         ],
     },

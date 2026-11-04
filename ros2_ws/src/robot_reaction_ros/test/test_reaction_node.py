@@ -30,7 +30,8 @@ def _yaml(tmp_path, text):
 
 ROTINA_YAML = """
 gil:
-  gesto: high wave
+  passos:
+    - fala: "Olá, Gil"
 cmt:
   passos:
     - postura: sentido
@@ -53,11 +54,16 @@ class _Done:
 
 
 class _Pending:
-    def __init__(self):
+    """Resultado da rotina: chega na hora (`auto`) ou quando o teste chama finish()."""
+
+    def __init__(self, auto):
+        self.auto = auto
         self.callbacks = []
 
     def add_done_callback(self, callback):
         self.callbacks.append(callback)
+        if self.auto:
+            self.finish(True)
 
     def finish(self, sucesso, mensagem=""):
         resposta = type("R", (), {"result": type("Res", (), {"sucesso": sucesso, "mensagem": mensagem})()})()
@@ -71,6 +77,7 @@ class _FakeRotina:
     def __init__(self):
         self.ready = True
         self.accept = True
+        self.hold = False  # True: a rotina fica em andamento até o teste chamar finish()
         self.goals = []
         self.results = []
 
@@ -82,137 +89,119 @@ class _FakeRotina:
 
     def send_goal_async(self, goal):
         self.goals.append(goal)
-        result = _Pending()
+        result = _Pending(auto=not self.hold)
         self.results.append(result)
         handle = type("H", (), {"accepted": self.accept, "get_result_async": lambda _self: result})()
         return _Done(handle)
 
 
 @pytest.fixture
-def node(tmp_path, monkeypatch):
+def node(tmp_path):
     path = _yaml(tmp_path, ROTINA_YAML)
     # Sem cooldown global: os testes andam no relógio de verdade.
     rclpy.init(args=["--ros-args", "-p", f"reactions_file:={path}", "-p", "confirm_frames:=3", "-p", "global_cooldown_s:=0.0"])
     n = node_mod.ReactionNode()
-    published = []
-    monkeypatch.setattr(n._publisher, "publish", published.append)
-    n.subscribers = 1  # gesture_node de pé
-    monkeypatch.setattr(n._publisher, "get_subscription_count", lambda: n.subscribers)
     n._rotina.destroy()  # o ActionClient de verdade sai; entra o dublê
     n._rotina = _FakeRotina()
-    yield n, published
+    yield n
     n.destroy_node()
     rclpy.shutdown()
 
 
-def test_confirmed_person_publishes_one_gesture_command(node):
-    n, published = node
+def _greeted(n):
+    return [g.pessoa for g in n._rotina.goals]
+
+
+def test_confirmed_person_gets_one_routine(node):
     for _ in range(6):
-        n._on_detections(_array("gil", "desconhecido"))
-    assert [m.data for m in published] == ["high wave"]
+        node._on_detections(_array("gil", "desconhecido"))
+    assert _greeted(node) == ["gil"]
 
 
 def test_empty_arrays_reset_the_count(node):
-    n, published = node
     for msg in [_array("gil"), _array("gil"), _array(), _array("gil"), _array("gil")]:
-        n._on_detections(msg)
-    assert published == []
+        node._on_detections(msg)
+    assert _greeted(node) == []
 
 
 def test_routine_goes_to_the_body_node_as_an_action_goal(node):
-    n, published = node
     for _ in range(3):
-        n._on_detections(_array("cmt"))
-    assert published == []
-    assert [(g.pessoa, json.loads(g.passos_json)) for g in n._rotina.goals] == [
+        node._on_detections(_array("cmt"))
+    assert [(g.pessoa, json.loads(g.passos_json)) for g in node._rotina.goals] == [
         ("cmt", [{"postura": "sentido"}, {"fala": "Olá, comandante"}, {"postura": "a_vontade"}])
     ]
 
 
 def test_nobody_else_is_greeted_while_a_routine_runs(node):
-    n, published = node
+    node._rotina.hold = True
     for _ in range(3):
-        n._on_detections(_array("cmt"))
+        node._on_detections(_array("cmt"))
     for _ in range(5):
-        n._on_detections(_array("gil"))
-    assert published == []  # gil esperou a rotina do cmt
-    n._rotina.results[0].finish(True)
-    n._on_detections(_array("gil"))
-    assert [m.data for m in published] == ["high wave"]
+        node._on_detections(_array("gil"))
+    assert _greeted(node) == ["cmt"]  # gil esperou a rotina do cmt
+    node._rotina.results[0].finish(True)
+    node._on_detections(_array("gil"))
+    assert _greeted(node) == ["cmt", "gil"]
 
 
 def test_rejected_routine_does_not_count_as_greeted(node):
-    n, _ = node
-    n._rotina.accept = False  # inicializando ou ocupado
+    node._rotina.accept = False  # inicializando ou ocupado
     for _ in range(3):
-        n._on_detections(_array("cmt"))
-    n._rotina.accept = True
-    n._on_detections(_array("cmt"))
-    assert len(n._rotina.goals) == 2
+        node._on_detections(_array("cmt"))
+    node._rotina.accept = True
+    node._on_detections(_array("cmt"))
+    assert _greeted(node) == ["cmt", "cmt"]
 
 
 def test_failed_routine_still_counts_as_greeted(node):
-    n, _ = node
+    node._rotina.hold = True
     for _ in range(3):
-        n._on_detections(_array("cmt"))
-    n._rotina.results[0].finish(False, "falhou")
+        node._on_detections(_array("cmt"))
+    node._rotina.results[0].finish(False, "falhou")
     for _ in range(5):
-        n._on_detections(_array("cmt"))
-    assert len(n._rotina.goals) == 1
+        node._on_detections(_array("cmt"))
+    assert _greeted(node) == ["cmt"]
 
 
 def test_routine_without_body_node_is_not_counted(node):
-    n, _ = node
-    n._rotina.ready = False  # robo.launch.py: sem body_node
+    node._rotina.ready = False
     for _ in range(3):
-        n._on_detections(_array("cmt"))
-    assert n._rotina.goals == []
-    n._rotina.ready = True
-    n._on_detections(_array("cmt"))
-    assert len(n._rotina.goals) == 1
-
-
-def test_gesture_without_gesture_node_is_not_counted(node):
-    n, published = node
-    n.subscribers = 0  # rotina.launch.py: sem gesture_node
-    for _ in range(3):
-        n._on_detections(_array("gil"))
-    assert published == []
-    n.subscribers = 1
-    n._on_detections(_array("gil"))
-    assert [m.data for m in published] == ["high wave"]
+        node._on_detections(_array("cmt"))
+    assert _greeted(node) == []
+    node._rotina.ready = True
+    node._on_detections(_array("cmt"))
+    assert _greeted(node) == ["cmt"]
 
 
 def test_body_node_vanishing_mid_routine_frees_the_others(node):
-    n, published = node
+    node._rotina.hold = True
     for _ in range(3):
-        n._on_detections(_array("cmt"))
-    n._rotina.ready = False  # body_node morreu: o resultado nunca chega
-    for _ in range(3):
-        n._on_detections(_array("gil"))
-    assert [m.data for m in published] == ["high wave"]
+        node._on_detections(_array("cmt"))
+    node._rotina.ready = False  # body_node morreu: o resultado nunca chega
+    node._on_detections(_array("gil"))
+    node._rotina.ready = True  # voltou
+    for _ in range(2):
+        node._on_detections(_array("gil"))
+    assert _greeted(node) == ["cmt", "gil"]
 
 
 def test_same_person_in_front_is_not_greeted_again(node):
-    n, published = node
     for _ in range(30):
-        n._on_detections(_array("gil"))
-    assert [m.data for m in published] == ["high wave"]
+        node._on_detections(_array("gil"))
+    assert _greeted(node) == ["gil"]
 
 
 def test_liberar_parameter_allows_greeting_again(node):
-    n, published = node
     for _ in range(3):
-        n._on_detections(_array("gil"))
-    result = n.set_parameters([Parameter("liberar", Parameter.Type.STRING, "gil")])
+        node._on_detections(_array("gil"))
+    result = node.set_parameters([Parameter("liberar", Parameter.Type.STRING, "gil")])
     assert result[0].successful
-    n._on_detections(_array("gil"))
-    assert [m.data for m in published] == ["high wave", "high wave"]
+    node._on_detections(_array("gil"))
+    assert _greeted(node) == ["gil", "gil"]
 
 
 def test_liberar_unknown_name_is_refused(node):
-    n, _ = node
-    result = n.set_parameters([Parameter("liberar", Parameter.Type.STRING, "ze")])
+    result = node.set_parameters([Parameter("liberar", Parameter.Type.STRING, "ze")])
     assert not result[0].successful
     assert "ze" in result[0].reason
 
@@ -227,8 +216,8 @@ def _start_must_fail(args, exc, trecho):
 
 
 def test_invalid_map_stops_the_node_at_startup(tmp_path):
-    path = _yaml(tmp_path, "gil:\n  gesture: high wave\n")
-    _start_must_fail(["-p", f"reactions_file:={path}"], ReactionConfigError, "gesture")
+    path = _yaml(tmp_path, "gil:\n  gesto: high wave\n")  # gestos do firmware saíram
+    _start_must_fail(["-p", f"reactions_file:={path}"], ReactionConfigError, "gesto")
 
 
 def test_missing_map_file_fails_with_its_path(tmp_path):

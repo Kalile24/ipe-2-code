@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Rotina de cumprimento: o robô reconhece quem está no config/reactions.yaml e executa os passos
-# (posturas militares + fala pela caixa Bluetooth). Tudo vem deste repositório: o ~/hhhh não
-# precisa existir. Roda à mão, no robô:
+# (posturas militares + fala pela caixa Bluetooth). Também é o jeito de subir só o reconhecimento
+# (desarmado, sem a caixa). Tudo vem deste repositório: o ~/hhhh não precisa existir. Roda à mão,
+# no robô:
 #   ~/ipe-2-code/scripts/robo_rotina_cumprimento.sh [--armado] [usb|realsense]
 #   sem --armado: fala de verdade, posturas só no log (teste seguro).
 #   --armado: o robô vai para damp, levanta e fica em equilíbrio (como o F1+UP) — NO SUPORTE.
@@ -49,15 +50,21 @@ if ! bluetoothctl info "$CAIXA" | grep -q "Connected: yes"; then
         bluetoothctl info "$CAIXA" | grep -q "Connected: yes" && break
     done
 fi
-bluetoothctl info "$CAIXA" | grep -q "Connected: yes" || { echo "ERRO: caixa Bluetooth não conectou (está ligada?)"; exit 1; }
+# Sem a caixa a rotina roda muda (fala que falha não para o movimento): serve para testar o
+# reconhecimento sozinho.
 SINK=""
-for _ in $(seq 1 20); do
-    SINK=$(pactl list short sinks | awk '/A8_AA_CD_C6_5C_A3/ {print $2; exit}')
-    [ -n "$SINK" ] && break
-    sleep 1
-done
-[ -n "$SINK" ] || { echo "ERRO: caixa conectada, mas o PulseAudio não criou a saída dela"; exit 1; }
-pactl set-default-sink "$SINK"
+if bluetoothctl info "$CAIXA" | grep -q "Connected: yes"; then
+    for _ in $(seq 1 20); do
+        SINK=$(pactl list short sinks | awk '/A8_AA_CD_C6_5C_A3/ {print $2; exit}')
+        [ -n "$SINK" ] && break
+        sleep 1
+    done
+fi
+if [ -n "$SINK" ]; then
+    pactl set-default-sink "$SINK"
+else
+    echo "AVISO: caixa Bluetooth não conectou (está ligada?): a rotina vai rodar sem som."
+fi
 
 echo "[2/3] Servidor de voz (Piper)..."
 "$REPO/scripts/robo_voz.sh"

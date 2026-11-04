@@ -11,7 +11,6 @@ from rcl_interfaces.msg import SetParametersResult
 from rclpy.action import ActionClient
 from rclpy.node import Node
 from rclpy.qos import QoSProfile
-from std_msgs.msg import String
 from vision_msgs.msg import Detection2DArray
 
 from core.reaction_policy import ReactionPolicy, load_reactions
@@ -22,13 +21,10 @@ TODOS = "todos"
 
 
 class ReactionNode(Node):
-    """Escuta as detecções e publica a reação de quem a merece.
+    """Escuta as detecções e manda a rotina de quem a merece ao body_node (ação /reaction/rotina).
 
-    - `gesto` → /reaction/gesture (nome do gesto; gesture_node, no robo.launch.py).
-    - `passos` → ação /reaction/rotina (body_node, no rotina.launch.py). Uma rotina por vez:
-      enquanto ela roda, ninguém mais é cumprimentado.
-    Se ninguém executa a reação (nó do outro launch) ou o body_node recusa a rotina, a pessoa
-    não conta como cumprimentada (ReactionPolicy.forget).
+    Uma rotina por vez: enquanto ela roda, ninguém mais é cumprimentado. Se o body_node não está
+    de pé ou recusa a rotina, a pessoa não conta como cumprimentada (ReactionPolicy.forget).
     Comando manual de teste: `ros2 param set /reaction_node liberar <nome|todos>`
     (scripts/robo_liberar_cumprimento.sh).
     """
@@ -58,7 +54,6 @@ class ReactionNode(Node):
         )
 
         detections_topic = self.get_parameter("detections_topic").value
-        self._publisher = self.create_publisher(String, "/reaction/gesture", 10)
         self._rotina = ActionClient(self, Rotina, "/reaction/rotina")
         self._em_andamento: str | None = None  # pessoa cuja rotina o body_node está executando
         self._subscription = self.create_subscription(
@@ -90,16 +85,8 @@ class ReactionNode(Node):
             return
         nome, reacao = hit
         log = self.get_logger()
-        if isinstance(reacao, str):
-            if self._publisher.get_subscription_count() == 0:
-                log.warn(f"{nome}: ninguém executa gestos (gesture_node, robo.launch.py); não cumprimentado")
-                self._policy.forget(nome)
-                return
-            log.info(f"reagindo a {nome}: {reacao}")
-            self._publisher.publish(String(data=reacao))
-            return
         if not self._rotina.server_is_ready():
-            log.warn(f"{nome}: ninguém executa rotinas (body_node, rotina.launch.py); não cumprimentado")
+            log.warn(f"{nome}: o body_node não está de pé; não cumprimentado")
             self._policy.forget(nome)
             return
         log.info(f"reagindo a {nome}: rotina de {len(reacao)} passos")

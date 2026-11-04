@@ -169,7 +169,8 @@ regras de convivência:
 - dois programas comandando o mesmo atuador (braço, **alto-falante**) ao mesmo tempo é
   problema — combine antes.
 
-Subir o reconhecimento no robô: `~/ipe-2-code/scripts/robo_tmux.sh && tmux attach -t face`.
+Subir o reconhecimento no robô (desarmado: o robô não se mexe):
+`~/ipe-2-code/scripts/robo_rotina_cumprimento.sh && tmux attach -t rotina`.
 
 **Cadastrar uma pessoa:** no **notebook**, nunca no robô — as fotos não ficam lá, e o enroll
 refaz o banco a partir da pasta inteira (rodá-lo no robô apagaria todo mundo). Foto em

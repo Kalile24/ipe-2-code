@@ -35,7 +35,7 @@ caminho que o código do ~/hhhh já faz (F1+B → F1+A → F1+X).
 - **`body_node`**: único dono do braço e da voz. Desarmado por padrão (fala, posturas no log);
   `armed` só na partida, e armar inicializa o robô (damp → em pé → equilíbrio, no suporte).
   Ctrl+C espera o passo atual e devolve os braços.
-- **YAML**: cada pessoa tem `gesto` (firmware, `gesture_node`) ou `passos` (`postura`/`fala`/`pausa`).
+- **YAML**: cada pessoa tem `passos` (`postura`/`fala`/`pausa`); `gesto` (firmware) saiu em 2026-11-04.
   Rotina que mexe o braço tem que terminar a última postura em `a_vontade`.
 - **Repetição**: a mesma pessoa só de novo depois de 5 min **e** de ter saído da frente por 5 s
   seguidos (ficar parado na frente nunca repete; rosto virado não conta como saída). Comando
@@ -44,7 +44,7 @@ caminho que o código do ~/hhhh já faz (F1+B → F1+A → F1+X).
 - **Fala que falha não para o movimento; postura que falha encerra e tenta `a_vontade`.**
 - **Processo à parte para o braço**: rclpy e o SDK da Unitree no mesmo processo falham
   (`channel factory init error`, CycloneDDS com duas configurações). O body_node abre o
-  `body_worker` (sem ROS), dono do G1ArmController. O mesmo vale para o gesture_node, nunca armado.
+  `body_worker` (sem ROS), dono do G1ArmController. O gesture_node, que tinha o mesmo problema, foi removido em 2026-11-04.
 - **Emergência pelo computador** (`scripts/robo_emergencia.py`): damp e mata o worker; testado
   com o robô em pé no suporte em 2026-10-30.
 - **Nome escrito como soa**: "Nichinica" (o Piper lê "Nixinica" como "ksi").
@@ -54,8 +54,8 @@ caminho que o código do ~/hhhh já faz (F1+B → F1+A → F1+X).
 - **Ação ROS 2 no lugar do tópico**: `/reaction/rotina` é a ação `robot_reaction_interfaces/Rotina`
   (pacote novo, ament_cmake). O body_node aceita uma rotina por vez e recusa enquanto inicializa ou
   executa outra; o reaction_node só dá a pessoa como cumprimentada se a rotina foi aceita, e não
-  cumprimenta ninguém enquanto ela roda. Sem quem execute a reação (body_node no `rotina.launch.py`,
-  gesture_node no `robo.launch.py`), a pessoa também não conta (`ReactionPolicy.forget`). O status
+  cumprimenta ninguém enquanto ela roda. Com o body_node fora do ar, a pessoa também não conta
+  (`ReactionPolicy.forget`). O status
   continua em `/reaction/rotina_status` e vai também no feedback da ação.
 - **Cancelar ou Ctrl+C**: termina o passo atual, faz o `a_vontade` (se os braços saíram do
   equilíbrio) e solta o arm_sdk. Uma `pausa` acaba na hora (espera no evento de parada).
@@ -70,12 +70,15 @@ caminho que o código do ~/hhhh já faz (F1+B → F1+A → F1+X).
   continua ligado (testado em 2026-10-30), desligável com `passo_descansar:=false`.
 - **`G1ArmController.shutdown`** devolve os braços antes de parar a thread de controle (no ~/hhhh,
   parar a thread primeiro deixava o retorno ao equilíbrio sem ninguém movendo os braços).
-- Continua sem correção: o gesture_node falha ao armar pelo mesmo `channel factory init error`.
+- **Caminho dos gestos do firmware removido** (`gesture_node`, `robo.launch.py`, `robo_tmux.sh`,
+  `gesto` no YAML): não armava (`channel factory init error`) e ninguém no mapa o usava. Está no
+  histórico do git (PR #2) e no ramo `feat/robot-reaction`. Se voltar, volta como passo `gesto`
+  executado pelo body_worker. O `robo_rotina_cumprimento.sh` desarmado e sem a caixa substitui o
+  `robo_tmux.sh` para testar só o reconhecimento.
 
 ## Descartado
 
-- **Gestos do firmware na rotina:** não fazem sentido/continência/descansar; o `gesture_node` e o
-  modo antigo (`robo_tmux.sh`) continuam no repositório.
+- **Gestos do firmware na rotina:** não fazem sentido/continência/descansar.
 - **Alto-falante da cabeça:** `AudioClient` responde 3104 (o `vui_service` cai, ver a spec de
   2026-10-21); a caixa Bluetooth funciona.
 - **Subir no boot:** o robô é compartilhado; a rotina roda só quando alguém executa o script.
