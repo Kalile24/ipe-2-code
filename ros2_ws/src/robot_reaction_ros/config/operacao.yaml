@@ -1,0 +1,18 @@
+# Parâmetros de operação do body_node (padrões são chute: ajustar no robô).
+# Spec: docs/superpowers/specs/2026-11-04-aproximacao-e-estagios-design.md
+body_node:
+  ros__parameters:
+    estagios: "virar,aproximar,fala,posturas"  # quais estágios rodam (aproximar inclui virar)
+    detections_topic: /face_recognition/detections
+    so_equilibrio: false  # true: só inicializa já em equilíbrio (FSM 801), sem damp → em pé
+    largura_imagem: 640  # largura em pixels da imagem das detecções
+    altura_caixa_alvo_px: 90.0  # para de andar com a caixa do rosto desta altura (escolher desarmado)
+    inverter_giro: false  # troca o sinal do giro se ele for para o lado errado
+    centro_ok: 0.15  # desvio aceito como "de frente" (fração da meia largura)
+    centro_para_andar: 0.30  # só anda para frente com desvio menor que este
+    vyaw_max: 0.3  # giro máximo (rad/s)
+    vx: 0.2  # velocidade para frente (m/s, constante)
+    kp_giro: 0.6  # ganho do giro (rad/s por desvio 1,0)
+    perda_rosto_s: 1.0  # rosto sumido por isso → para
+    desistir_s: 5.0  # rosto sumido por isso → desiste
+    tempo_max_s: 20.0  # aproximação mais longa que isso → desiste

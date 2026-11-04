@@ -9,6 +9,7 @@ import subprocess
 import sys
 import threading
 import time
+from dataclasses import fields
 from typing import Callable
 
 import rclpy
@@ -18,11 +19,15 @@ from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
+from rclpy.qos import QoSProfile
 from std_msgs.msg import String
+from vision_msgs.msg import Detection2DArray
 
+from core.approach import DESISTIU_ROSTO, DESISTIU_TEMPO, PRONTO, ApproachConfig, escolher_caixa, passo_aproximacao
 from core.piper_voice import DEFAULT_URL, say
 from core.reaction_policy import ReactionConfigError, validate_steps
 from core.routine import run_routine
+from core.stages import filter_steps, parse_stages
 from robot_reaction_interfaces.action import Rotina
 
 # Tempos máximos. O sigterm_timeout do rotina.launch.py tem que cobrir o pior caso do Ctrl+C:
@@ -32,6 +37,10 @@ INICIALIZACAO_TIMEOUT_S = 120.0
 ESPERA_ROTINA_S = 2 * POSTURA_TIMEOUT_S + 10.0
 SHUTDOWN_TIMEOUT_S = 60.0
 ESPERA_PROCESSO_S = 10.0
+# Desarmado o robô não se mexe: virar/aproximar só medem (status com a caixa do rosto) por isto.
+MEDIR_DESARMADO_S = 2.0
+PASSO_APROXIMACAO_S = 0.1  # laço a ~10 Hz
+NAO_EQUILIBRIO = "Não estou em equilíbrio, não vou começar."
 
 
 class SubprocessBody:
@@ -133,7 +142,10 @@ class BodyNode(Node):
     Armado (`armed:=true`, só na partida): ao subir faz a inicialização do F1+UP e depois executa
     as posturas. Uma rotina chegando enquanto inicializa ou executa outra é recusada (o
     reaction_node fica sabendo). Status em /reaction/rotina_status e no feedback da ação.
-    Cancelar a ação ou Ctrl+C: termina o passo atual, devolve os braços (a_vontade) e solta o arm_sdk.
+    Antes da rotina (estágios `virar`/`aproximar`) vira e anda até a pessoa pela caixa do rosto
+    nas detecções; os estágios `fala`/`posturas` filtram a rotina.
+    Cancelar a ação ou Ctrl+C: para de andar na hora; uma postura em andamento termina, os braços
+    voltam (a_vontade) e solta o arm_sdk.
     """
 
     def __init__(
@@ -151,6 +163,22 @@ class BodyNode(Node):
         self.declare_parameter("passo_descansar", True)
         self.declare_parameter("tts_url", DEFAULT_URL)
         self.declare_parameter("tts_timeout_s", 60.0)
+        self.declare_parameter("estagios", "virar,aproximar,fala,posturas")
+        self.declare_parameter("detections_topic", "/face_recognition/detections")
+        # true: inicializa só se já estiver em equilíbrio (FSM 801), sem damp → em pé (partida pelo controle)
+        self.declare_parameter("so_equilibrio", False)
+        for campo in fields(ApproachConfig):
+            self.declare_parameter(campo.name, campo.default)
+        # ValueError com os estágios válidos: derruba o nó na partida
+        self._estagios = parse_stages(str(self.get_parameter("estagios").value))
+        self._approach = ApproachConfig(**{
+            # `is True` nos bool: um "true" string seria verdadeiro; int/float convertidos (9 vira 9.0)
+            c.name: self.get_parameter(c.name).value is True
+            if isinstance(c.default, bool)
+            else type(c.default)(self.get_parameter(c.name).value)
+            for c in fields(ApproachConfig)
+        })
+        self._so_equilibrio = self.get_parameter("so_equilibrio").value is True
         self._pausa_s = float(self.get_parameter("pausa_s").value)
         self._speak = functools.partial(
             speak,
@@ -166,8 +194,17 @@ class BodyNode(Node):
         self._idle.set()
         self._busy = threading.Lock()  # preso durante a inicialização e durante cada rotina
         self._init_thread: threading.Thread | None = None
+        self._vistos: dict[str, tuple[tuple[float, float], float]] = {}  # nome → ((center_x, size_y), instante)
 
+        grupo = ReentrantCallbackGroup()  # as detecções chegam enquanto a ação executa
         self._status_pub = self.create_publisher(String, "/reaction/rotina_status", 10)
+        self._detections = self.create_subscription(
+            Detection2DArray,
+            self.get_parameter("detections_topic").value,
+            self._on_detections,
+            QoSProfile(depth=1),
+            callback_group=grupo,
+        )
         self._server = ActionServer(
             self,
             Rotina,
@@ -175,7 +212,7 @@ class BodyNode(Node):
             execute_callback=self._execute,
             goal_callback=self._on_goal,
             cancel_callback=self._on_cancel,
-            callback_group=ReentrantCallbackGroup(),
+            callback_group=grupo,
         )
         # `armed` só vale na partida: armar no meio faria o robô cair em damp sem aviso.
         self.add_on_set_parameters_callback(self._on_set_parameters)
@@ -213,13 +250,20 @@ class BodyNode(Node):
             self._publish("inicializando: damp → em pé → equilíbrio (robô no suporte)")
             try:
                 self._body = body_factory(*args)
-                self._ready = self._body.initialize()
+                self._ready = self._body.initialize(self._so_equilibrio)
             except Exception as exc:  # sem SDK, sem poses ou sem DDS
                 self._publish(f"falha na inicialização: {exc!r}")
-                return
             if self._ready:
                 self._publish("pronto: em equilíbrio, esperando reconhecimento")
-            else:
+            elif self._so_equilibrio:
+                # Pelo controle não há terminal olhando: a recusa é falada. Sem dry-run neste modo.
+                self._stop.set()  # recusa todas as rotinas
+                self._publish("falha na inicialização: não está em equilíbrio (FSM 801); rotinas recusadas")
+                try:
+                    self._speak(NAO_EQUILIBRIO)
+                except Exception as exc:  # sem caixa ou sem Piper: o log basta
+                    self._publish(f"fala falhou: {exc!r}")
+            elif self._body is not None:
                 self._publish("falha na inicialização (veja o log do G1ArmController); posturas só no log")
         finally:
             self._busy.release()
@@ -246,7 +290,53 @@ class BodyNode(Node):
 
     def _on_cancel(self, goal_handle: object) -> CancelResponse:
         self._interromper.set()
+        self._parar()  # andar para na hora; uma postura em andamento termina
         return CancelResponse.ACCEPT
+
+    def _parar(self) -> None:
+        if self._ready:
+            self._body.stop()
+
+    def _on_detections(self, msg: Detection2DArray) -> None:
+        agora = time.monotonic()
+        caixas = [(d.results[0].id, d.bbox.center.x, d.bbox.size_y) for d in msg.detections if d.results]
+        for nome in {c[0] for c in caixas}:
+            self._vistos[nome] = (escolher_caixa(caixas, nome), agora)
+
+    def _aproximar(self, pessoa: str, log: Callable[[str], None]) -> str:
+        """Vira (e anda, com `aproximar`) até a pessoa. Devolve PRONTO, um DESISTIU_* ou "interrompida".
+
+        Velocidade só armado e inicializado; desarmado só mede por MEDIR_DESARMADO_S e dá como feito.
+        """
+        aproximar = "aproximar" in self._estagios
+        etapa = "aproximar" if aproximar else "virar"
+        mover = self._ready
+        cfg = self._approach
+        inicio = time.monotonic()
+        try:
+            while not self._interromper.is_set():
+                agora = time.monotonic()
+                if not mover and agora - inicio >= MEDIR_DESARMADO_S:
+                    return PRONTO
+                caixa, visto_em = self._vistos.get(pessoa, (None, inicio))
+                cmd = passo_aproximacao(cfg, aproximar, caixa, visto_em, inicio, agora)
+                if caixa is None:
+                    log(f"{etapa}: sem rosto ({cmd.estado})")
+                else:
+                    meia = cfg.largura_imagem / 2
+                    log(
+                        f"{etapa}: desvio={(caixa[0] - meia) / meia:+.2f} caixa={caixa[1]:.0f}px "
+                        f"vx={cmd.vx:.2f} vyaw={cmd.vyaw:.2f} ({cmd.estado})"
+                    )
+                if mover:
+                    if cmd.estado in (PRONTO, DESISTIU_ROSTO, DESISTIU_TEMPO):
+                        return cmd.estado
+                    self._body.velocity(cmd.vx, cmd.vyaw)
+                self._interromper.wait(PASSO_APROXIMACAO_S)
+            return "interrompida"
+        finally:
+            if mover:
+                self._body.stop()
 
     def _execute(self, goal_handle: object) -> Rotina.Result:
         self._idle.clear()
@@ -263,17 +353,21 @@ class BodyNode(Node):
                     pass
 
             self._publish(f"rotina de {pessoa}: início")
-            ok = run_routine(
-                passos,
-                postura=self._posture,
-                falar=self._speak,
-                pausa_s=self._pausa_s,
-                log=log,
-                deve_parar=self._interromper.is_set,
-                sleep=self._interromper.wait,
-            )
-            interrompida = not ok and self._interromper.is_set()
-            fim = "fim" if ok else "interrompida" if interrompida else "falhou"
+            estado = self._aproximar(pessoa, log) if "virar" in self._estagios else PRONTO
+            if estado == PRONTO:
+                ok = run_routine(
+                    filter_steps(passos, self._estagios),
+                    postura=self._posture,
+                    falar=self._speak,
+                    pausa_s=self._pausa_s,
+                    log=log,
+                    deve_parar=self._interromper.is_set,
+                    sleep=self._interromper.wait,
+                )
+                interrompida = not ok and self._interromper.is_set()
+                fim = "fim" if ok else "interrompida" if interrompida else "falhou"
+            else:  # desistiu ou interrompida na aproximação: não cumprimenta
+                ok, fim = False, estado
             self._publish(f"rotina de {pessoa}: {fim}")
             try:
                 if ok:
@@ -303,6 +397,7 @@ class BodyNode(Node):
         """Ctrl+C: interrompe a rotina depois do passo atual, devolve os braços e solta o arm_sdk."""
         self._stop.set()
         self._interromper.set()
+        self._parar()  # antes de esperar qualquer coisa: depois do shutdown o body_worker não lê mais
         log = self.get_logger()
         if self._init_thread is not None and self._init_thread.is_alive():
             log.info("esperando a inicialização terminar antes de soltar os braços...")
