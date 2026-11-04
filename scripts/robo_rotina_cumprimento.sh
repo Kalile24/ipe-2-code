@@ -6,6 +6,10 @@
 #   ~/ipe-2-code/scripts/robo_rotina_cumprimento.sh [--armado] [usb|realsense]
 #   sem --armado: fala de verdade, posturas só no log (teste seguro).
 #   --armado: o robô vai para damp, levanta e fica em equilíbrio (como o F1+UP) — NO SUPORTE.
+#   --controle: o que o combo F2+UP do controle roda (scripts/robo_controle.py): armado, sem
+#               perguntas, só com o robô já em equilíbrio (FSM 801, nunca damp → em pé), reações
+#               automáticas desligadas (F2+RIGHT cumprimenta, F2+LEFT liga/desliga).
+#   --estagios LISTA: virar,aproximar,fala,posturas (padrão: os do config/operacao.yaml).
 # Depois: tmux attach -t rotina. Ctrl+C na janela "rotina" devolve os braços e encerra.
 # Armado, a janela "emergencia" fica pronta: Enter = damp na hora (scripts/robo_emergencia.py).
 # Cumprimentar de novo antes dos 5 min: scripts/robo_liberar_cumprimento.sh [nome]
@@ -15,13 +19,18 @@ SESSAO=rotina
 HHHH=$HOME/hhhh  # só para checar se o START do outro projeto está de pé
 CAIXA=A8:AA:CD:C6:5C:A3  # caixa Bluetooth KD-833 do robô
 ARMADO=false
+CONTROLE=false
+ESTAGIOS=""
 CAMERA=usb
-for arg in "$@"; do
-    case "$arg" in
+while [ $# -gt 0 ]; do
+    case "$1" in
         --armado) ARMADO=true ;;
-        usb|realsense) CAMERA=$arg ;;
-        *) echo "Argumento desconhecido: $arg (use --armado e/ou usb|realsense)"; exit 1 ;;
+        --controle) ARMADO=true; CONTROLE=true ;;
+        --estagios) shift; ESTAGIOS=${1:-}; [ -n "$ESTAGIOS" ] || { echo "--estagios precisa de uma lista"; exit 1; } ;;
+        usb|realsense) CAMERA=$1 ;;
+        *) echo "Argumento desconhecido: $1 (use --armado, --controle, --estagios LISTA e/ou usb|realsense)"; exit 1 ;;
     esac
+    shift
 done
 VIDEO=${VIDEO:-$(ls /dev/v4l/by-id/*-video-index0 2>/dev/null | head -1)}
 case "$CAMERA" in
@@ -69,7 +78,7 @@ fi
 echo "[2/3] Servidor de voz (Piper)..."
 "$REPO/scripts/robo_voz.sh"
 
-if [ "$ARMADO" = true ]; then
+if [ "$ARMADO" = true ] && [ "$CONTROLE" = false ]; then
     echo
     echo "ARMADO: o robô vai para damp (motores soltos), levanta e fica em equilíbrio."
     read -r -p "O robô está preso no suporte e com espaço livre em volta? [s/N] " resposta
@@ -82,8 +91,8 @@ rodar() { tmux send-keys -t "$SESSAO:$1" "$AMBIENTE" C-m "$2" C-m; }
 tmux new-session -d -s "$SESSAO" -n rotina "bash --norc"
 tmux new-window -t "$SESSAO:" -n status "bash --norc"
 tmux new-window -t "$SESSAO:" -n deteccoes "bash --norc"
-if [ "$ARMADO" = true ]; then
-    # Parada de emergência já conectada: Enter nesta janela = damp na hora.
+if [ "$ARMADO" = true ] && [ "$CONTROLE" = false ]; then
+    # Parada de emergência já conectada (damp: SÓ com o robô no suporte; fora dele, ele cai): Enter nesta janela = damp na hora.
     tmux new-window -t "$SESSAO:" -n emergencia "bash --norc"
     tmux send-keys -t "$SESSAO:emergencia" "$REPO/.venv/bin/python $REPO/scripts/robo_emergencia.py" C-m
 fi
@@ -91,7 +100,9 @@ if [ "$CAMERA" = realsense ]; then
     tmux new-window -t "$SESSAO:" -n camera "bash --norc"
     rodar camera "ros2 launch realsense2_camera rs_launch.py"
 fi
-rodar rotina "ros2 launch robot_reaction_ros rotina.launch.py armed:=$ARMADO $ARGS_CAMERA \
+ARGS_MODO="so_equilibrio:=$CONTROLE automatico:=$([ "$CONTROLE" = true ] && echo false || echo true)"
+[ -n "$ESTAGIOS" ] && ARGS_MODO="$ARGS_MODO estagios:=$ESTAGIOS"
+rodar rotina "ros2 launch robot_reaction_ros rotina.launch.py armed:=$ARMADO $ARGS_MODO $ARGS_CAMERA \
 onnx_providers:=TensorrtExecutionProvider,CUDAExecutionProvider,CPUExecutionProvider"
 rodar status "ros2 topic echo /reaction/rotina_status"
 rodar deteccoes "python3 $REPO/scripts/watch_detections.py"
@@ -101,6 +112,9 @@ echo
 echo "Pronto ($([ "$ARMADO" = true ] && echo ARMADO || echo desarmado: só fala)). Entre com: tmux attach -t $SESSAO"
 echo "  Ctrl+b e 0/1/2 troca de janela; Ctrl+C na janela 'rotina' devolve os braços e encerra."
 echo "  Cumprimentar de novo: $REPO/scripts/robo_liberar_cumprimento.sh [nome]"
-if [ "$ARMADO" = true ]; then
-    echo "  EMERGÊNCIA: Enter na janela 'emergencia' (ou robo_emergencia.py --agora) = damp na hora."
+if [ "$CONTROLE" = true ]; then
+    echo "  Controle: F2+RIGHT cumprimenta agora, F2+LEFT liga/desliga as reações, F2+DOWN para."
+elif [ "$ARMADO" = true ]; then
+    echo "  EMERGÊNCIA (só no suporte: fora dele o damp derruba o robô): Enter na janela 'emergencia'"
+    echo "  (ou robo_emergencia.py --agora) = damp na hora."
 fi

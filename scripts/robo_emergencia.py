@@ -1,6 +1,7 @@
 """Parada de emergência pelo computador: põe o robô em damp (motores soltos) e mata o corpo.
 
-Com o robô no suporte, damp é o estado mais seguro: ele fica pendurado, sem torque.
+SÓ COM O ROBÔ NO SUPORTE: lá, damp é o estado mais seguro (fica pendurado, sem torque). Fora do
+suporte o damp derruba o robô: para pará-lo andando, use o F2+DOWN ou o próprio controle.
 Uso, no robô (venv do projeto, sem ROS):
     ~/ipe-2-code/.venv/bin/python ~/ipe-2-code/scripts/robo_emergencia.py           # pronto: Enter = DAMP
     ~/ipe-2-code/.venv/bin/python ~/ipe-2-code/scripts/robo_emergencia.py --agora   # damp já
@@ -73,7 +74,7 @@ def main() -> int:
         print(f"FSM atual: {fsm_id(loco)}")
         return 0
     if not args.agora:
-        print(f"Conectado (FSM atual: {fsm_id(loco)}). Aperte Enter para DAMP (motores soltos).", flush=True)
+        print(f"Conectado (FSM atual: {fsm_id(loco)}). Aperte Enter para DAMP (motores soltos; SÓ no suporte).", flush=True)
         input()
     return 0 if emergency(loco) else 1
 
