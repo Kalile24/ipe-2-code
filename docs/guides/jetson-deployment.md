@@ -359,14 +359,22 @@ tmux attach -t rotina                                      # janelas: rotina, st
 - O script conecta a caixa, sobe o contêiner do Piper (`scripts/robo_voz.sh`, `ipe-piper`) e se recusa a
   rodar se o `movimentos_militares.py` ou o `assistente.py` estiverem de pé (alguém apertou START):
   seriam dois donos do braço/da caixa. Não aperte START nem os combos F1+… durante a rotina.
-- **Ctrl+C na janela `rotina`** espera o passo atual, devolve os braços ao equilíbrio e solta o
-  arm_sdk (como o F1+RIGHT); o robô continua em pé. Para soltá-lo, use o controle (damp).
+- **Armado, a inicialização só passa pelo damp se o robô já está mole** (FSM 0 ou 1). Se já está em
+  equilíbrio (FSM 801, de uma rodada anterior), aproveita sem damp. Em pé em outro modo, recusa
+  (`falha na inicialização` no status): no suporte, ponha-o em damp e suba de novo.
+- **Ctrl+C na janela `rotina`** termina o passo atual (uma `pausa` acaba na hora), faz o à vontade e
+  solta o arm_sdk (como o F1+RIGHT); o robô continua em pé. Para soltá-lo, use o controle (damp).
+- As rotinas vão do reaction_node ao body_node pela ação `/reaction/rotina` (pacote
+  `robot_reaction_interfaces`). Depois do `git pull` que a trouxe, o `colcon build` compila esse
+  pacote em C (ament_cmake + rosidl, já no `ros-foxy-ros-base`). Teste à mão, sem câmera:
+  `ros2 action send_goal /reaction/rotina robot_reaction_interfaces/action/Rotina "{pessoa: gil, passos_json: '[{\"fala\": \"oi\"}]'}" --feedback`.
 - O `ipe-piper` fica de pé depois da rotina (`docker stop ipe-piper` para parar). Enquanto ele
   ocupa a porta 5005, o Piper do START do `~/hhhh` não sobe, mas a API é a mesma e o `assistente.py`
   continua falando pelo nosso. Pare o `ipe-piper` antes de devolver o robô se quiser o deles intacto.
 - Poses e posturas: `robot_reaction_ros/poses/` e `g1_arm_controller.py`. Depois de mudar, rode
   `python3 -m colcon build --symlink-install` (as poses vão para `share/`).
-- O descansar dá um impulso curto de caminhada para frente (0,12 m/s por ~1 s).
+- O descansar dá um impulso curto de caminhada para frente (0,12 m/s por ~1 s); `passo_descansar:=false`
+  no `rotina.launch.py` o desliga.
 - Nome na fala: escreva como deve soar no Piper ("Nichinica"; "Nixinica" sai "ksi").
 
 ## Checklist

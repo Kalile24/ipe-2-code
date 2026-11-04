@@ -49,6 +49,29 @@ caminho que o código do ~/hhhh já faz (F1+B → F1+A → F1+X).
   com o robô em pé no suporte em 2026-10-30.
 - **Nome escrito como soa**: "Nichinica" (o Piper lê "Nixinica" como "ksi").
 
+## Revisão de 2026-11-04 (depois do merge do PR #3)
+
+- **Ação ROS 2 no lugar do tópico**: `/reaction/rotina` é a ação `robot_reaction_interfaces/Rotina`
+  (pacote novo, ament_cmake). O body_node aceita uma rotina por vez e recusa enquanto inicializa ou
+  executa outra; o reaction_node só dá a pessoa como cumprimentada se a rotina foi aceita, e não
+  cumprimenta ninguém enquanto ela roda. Sem quem execute a reação (body_node no `rotina.launch.py`,
+  gesture_node no `robo.launch.py`), a pessoa também não conta (`ReactionPolicy.forget`). O status
+  continua em `/reaction/rotina_status` e vai também no feedback da ação.
+- **Cancelar ou Ctrl+C**: termina o passo atual, faz o `a_vontade` (se os braços saíram do
+  equilíbrio) e solta o arm_sdk. Uma `pausa` acaba na hora (espera no evento de parada).
+- **Pipe com o body_worker**: cada ordem leva um `id` e só a resposta com ele vale (uma resposta
+  atrasada depois de um timeout não é confundida com a da ordem seguinte); uma ordem por vez.
+- **Tempos**: postura até 120 s; o Ctrl+C espera até 250 s (postura + a_vontade) + 70 s do
+  shutdown do worker; `sigterm_timeout` de 330 s no `rotina.launch.py`.
+- **Inicialização armada só começa pelo damp se o robô já está mole** (FSM 0 ou 1). Em equilíbrio
+  (FSM 801, rodada anterior), aproveita sem damp; em pé em qualquer outro modo, recusa (o damp o
+  derrubaria fora do suporte).
+- **Passo para frente do descansar** (SetVelocity 0,12 m/s, compensação de equilíbrio do ~/hhhh):
+  continua ligado (testado em 2026-10-30), desligável com `passo_descansar:=false`.
+- **`G1ArmController.shutdown`** devolve os braços antes de parar a thread de controle (no ~/hhhh,
+  parar a thread primeiro deixava o retorno ao equilíbrio sem ninguém movendo os braços).
+- Continua sem correção: o gesture_node falha ao armar pelo mesmo `channel factory init error`.
+
 ## Descartado
 
 - **Gestos do firmware na rotina:** não fazem sentido/continência/descansar; o `gesture_node` e o
