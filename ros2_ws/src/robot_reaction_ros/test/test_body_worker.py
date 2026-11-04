@@ -52,7 +52,8 @@ def _serve(body, *ordens):
 def test_serve_answers_each_order_and_shuts_down():
     body = _FakeBody()
     respostas = _serve(body, {"cmd": "initialize"}, {"cmd": "posture", "nome": "sentido"}, {"cmd": "shutdown"})
-    assert body.calls == ["initialize", "sentido", "shutdown"]
+    assert "parar" in body.calls  # no encerramento para de andar (a ordem com a fila varia)
+    assert [c for c in body.calls if c != "parar"] == ["initialize", "sentido", "shutdown"]
     assert respostas == [{"ok": True}, {"ok": True}, {"ok": True}]
 
 
@@ -65,7 +66,8 @@ def test_replies_repeat_the_order_id():
 def test_closed_input_also_shuts_down():
     body = _FakeBody()
     assert _serve(body, {"cmd": "initialize"}) == [{"ok": True}, {"ok": True}]
-    assert body.calls == ["initialize", "shutdown"]
+    assert "parar" in body.calls
+    assert [c for c in body.calls if c != "parar"] == ["initialize", "shutdown"]
 
 
 def test_failures_and_errors_are_answers_not_crashes():

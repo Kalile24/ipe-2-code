@@ -21,6 +21,7 @@ Andar não espera postura e não tem resposta (nem `id`):
 from __future__ import annotations
 
 import json
+import math
 import os
 import queue
 import signal
@@ -97,6 +98,9 @@ class G1Body:
             self.robot.max_joint_speed = anterior
 
     def velocity(self, vx: float, vyaw: float) -> None:
+        # Última barreira antes do robô: nunca para trás, nunca NaN/inf (vira parado).
+        vx = max(0.0, vx) if math.isfinite(vx) else 0.0
+        vyaw = vyaw if math.isfinite(vyaw) else 0.0
         self.robot.loco.SetVelocity(vx, 0.0, vyaw, 0.5)
 
     def stop(self) -> None:
@@ -165,6 +169,10 @@ def serve(body: object, inp: IO[str], out: IO[str]) -> None:
                 print(f"body_worker: {ordem['cmd']} falhou: {exc!r}", file=sys.stderr)  # sem resposta
             else:
                 reply(ordem if isinstance(ordem, dict) else {}, False, repr(exc))
+    try:  # entrada fechada ou shutdown: para de andar já, antes de esperar a postura em andamento
+        body.stop()
+    except Exception as exc:
+        print(f"body_worker: parar no encerramento falhou: {exc!r}", file=sys.stderr)
     fila.put(None)
     executora.join()
     try:
