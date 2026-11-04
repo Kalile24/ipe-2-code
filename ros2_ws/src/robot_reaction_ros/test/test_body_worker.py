@@ -9,7 +9,7 @@ import textwrap
 import pytest
 
 from robot_reaction_ros.body_node import SubprocessBody
-from robot_reaction_ros.body_worker import serve
+from robot_reaction_ros.body_worker import G1Body, serve
 
 
 class _FakeBody:
@@ -44,6 +44,12 @@ def test_serve_answers_each_order_and_shuts_down():
     assert respostas == [{"ok": True}, {"ok": True}, {"ok": True}]
 
 
+def test_replies_repeat_the_order_id():
+    body = _FakeBody()
+    respostas = _serve(body, {"id": 7, "cmd": "posture", "nome": "sentido"}, {"id": 8, "cmd": "shutdown"})
+    assert respostas == [{"id": 7, "ok": True}, {"id": 8, "ok": True}]
+
+
 def test_closed_input_also_shuts_down():
     body = _FakeBody()
     assert _serve(body, {"cmd": "initialize"}) == [{"ok": True}, {"ok": True}]
@@ -67,11 +73,14 @@ def test_failures_and_errors_are_answers_not_crashes():
 
 FAKE_WORKER = textwrap.dedent(
     """
-    import json, sys
+    import json, sys, time
     from robot_reaction_ros.body_worker import serve
     class Body:
         def initialize(self): return True
-        def posture(self, nome): return nome != "falha"
+        def posture(self, nome):
+            if nome == "lenta":
+                time.sleep(1.0)
+            return nome != "falha"
         def shutdown(self): print("shutdown", file=sys.stderr)
     print(json.dumps({"ok": True}), flush=True)
     serve(Body(), sys.stdin, sys.stdout)
@@ -99,3 +108,58 @@ def test_dead_worker_makes_postures_fail():
     body._proc.kill()
     body._proc.wait()
     assert body.posture("sentido") is False
+
+
+def test_late_reply_is_not_taken_as_the_next_answer():
+    body = SubprocessBody("", "", command=[sys.executable, "-c", FAKE_WORKER], posture_timeout_s=0.3)
+    assert body.posture("lenta") is False  # desistiu de esperar; a resposta (ok) chega depois
+    body._posture_timeout_s = 5.0
+    assert body.posture("falha") is False  # a resposta atrasada "ok" não vale para esta ordem
+    assert body.posture("sentido") is True
+    body.shutdown()
+    assert body._proc.returncode == 0
+
+
+class _FakeController:
+    def __init__(self, fsm):
+        self.fsm = fsm
+        self.initialized_801 = False
+        self.inicializou = False
+        self.logs = []
+
+    def state(self, label):
+        return self.fsm
+
+    def log(self, text):
+        self.logs.append(text)
+
+    def initialize_to_balance(self):
+        self.inicializou = True
+        return True
+
+
+def _g1_body(fsm):
+    body = G1Body.__new__(G1Body)  # sem o __init__: ele importaria o SDK da Unitree
+    body.robot = _FakeController(fsm)
+    return body
+
+
+@pytest.mark.parametrize("fsm", [(0, 0), (1, 0)])
+def test_initialize_from_damp_or_zero_torque_goes_through_damp(fsm):
+    body = _g1_body(fsm)
+    assert body.initialize() is True
+    assert body.robot.inicializou and not body.robot.initialized_801
+
+
+def test_initialize_already_balanced_skips_the_damp():
+    body = _g1_body((801, 0))
+    assert body.initialize() is True
+    assert body.robot.initialized_801  # o initialize_to_balance só captura a postura
+
+
+@pytest.mark.parametrize("fsm", [(4, 0), (500, 0), (801, 3), (None, None)])
+def test_initialize_refuses_when_standing_otherwise(fsm):
+    body = _g1_body(fsm)
+    assert body.initialize() is False
+    assert not body.robot.inicializou
+    assert "derrubaria" in body.robot.logs[-1]

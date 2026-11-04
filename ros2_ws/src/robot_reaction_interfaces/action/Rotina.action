@@ -1,0 +1,11 @@
+# Rotina de uma pessoa, executada pelo body_node (posturas militares, falas e pausas).
+# passos_json: a lista `passos` do reactions.yaml em JSON, ex.: [{"postura": "sentido"}, ...]
+string pessoa
+string passos_json
+---
+# sucesso: todos os passos deram certo. mensagem: o motivo quando não deram.
+bool sucesso
+string mensagem
+---
+# O passo em andamento, como aparece no /reaction/rotina_status (ex.: "postura: sentido").
+string passo

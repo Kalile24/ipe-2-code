@@ -30,6 +30,12 @@ def generate_launch_description() -> LaunchDescription:
     pausa_arg = DeclareLaunchArgument(
         "pausa_s", default_value="0.5", description="Pausa depois de cada postura da rotina (s)"
     )
+    passo_arg = DeclareLaunchArgument(
+        "passo_descansar",
+        default_value="true",
+        description="true: o descansar dá um passo curto para frente (SetVelocity 0,12 m/s) para "
+        "compensar os braços indo para trás, como no ~/hhhh. false: o robô não anda.",
+    )
     reaction_node = Node(
         package="robot_reaction_ros",
         executable="reaction_node",
@@ -40,10 +46,17 @@ def generate_launch_description() -> LaunchDescription:
         package="robot_reaction_ros",
         executable="body_node",
         name="body_node",
-        parameters=[{"armed": LaunchConfiguration("armed"), "pausa_s": LaunchConfiguration("pausa_s")}],
-        # No Ctrl+C o body_node espera o passo atual e devolve os braços (até ~2 min no pior caso);
-        # o padrão do launch (SIGTERM depois de 5 s) cortaria isso no meio.
-        sigterm_timeout="120",
+        parameters=[
+            {
+                "armed": LaunchConfiguration("armed"),
+                "pausa_s": LaunchConfiguration("pausa_s"),
+                "passo_descansar": LaunchConfiguration("passo_descansar"),
+            }
+        ],
+        # No Ctrl+C o body_node termina o passo atual, faz o a_vontade e solta os braços. Pior caso
+        # (tempos em body_node.py): ESPERA_ROTINA_S 250 + SHUTDOWN_TIMEOUT_S 60 + ESPERA_PROCESSO_S
+        # 10 = 320 s. O padrão do launch (SIGTERM depois de 5 s) cortaria isso no meio.
+        sigterm_timeout="330",
         sigkill_timeout="10",
     )
-    return LaunchDescription([armed_arg, reactions_file_arg, pausa_arg, recognition, reaction_node, body_node])
+    return LaunchDescription([armed_arg, reactions_file_arg, pausa_arg, passo_arg, recognition, reaction_node, body_node])

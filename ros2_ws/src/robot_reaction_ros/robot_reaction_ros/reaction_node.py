@@ -8,12 +8,14 @@ import rclpy
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from rcl_interfaces.msg import SetParametersResult
+from rclpy.action import ActionClient
 from rclpy.node import Node
 from rclpy.qos import QoSProfile
 from std_msgs.msg import String
 from vision_msgs.msg import Detection2DArray
 
 from core.reaction_policy import ReactionPolicy, load_reactions
+from robot_reaction_interfaces.action import Rotina
 
 
 TODOS = "todos"
@@ -22,8 +24,11 @@ TODOS = "todos"
 class ReactionNode(Node):
     """Escuta as detecções e publica a reação de quem a merece.
 
-    - `gesto` → /reaction/gesture (nome do gesto; gesture_node).
-    - `passos` → /reaction/rotina (JSON {"pessoa", "passos"}; body_node).
+    - `gesto` → /reaction/gesture (nome do gesto; gesture_node, no robo.launch.py).
+    - `passos` → ação /reaction/rotina (body_node, no rotina.launch.py). Uma rotina por vez:
+      enquanto ela roda, ninguém mais é cumprimentado.
+    Se ninguém executa a reação (nó do outro launch) ou o body_node recusa a rotina, a pessoa
+    não conta como cumprimentada (ReactionPolicy.forget).
     Comando manual de teste: `ros2 param set /reaction_node liberar <nome|todos>`
     (scripts/robo_liberar_cumprimento.sh).
     """
@@ -54,7 +59,8 @@ class ReactionNode(Node):
 
         detections_topic = self.get_parameter("detections_topic").value
         self._publisher = self.create_publisher(String, "/reaction/gesture", 10)
-        self._routine_publisher = self.create_publisher(String, "/reaction/rotina", 10)
+        self._rotina = ActionClient(self, Rotina, "/reaction/rotina")
+        self._em_andamento: str | None = None  # pessoa cuja rotina o body_node está executando
         self._subscription = self.create_subscription(
             Detection2DArray, detections_topic, self._on_detections, QoSProfile(depth=1)
         )
@@ -75,16 +81,52 @@ class ReactionNode(Node):
 
     def _on_detections(self, msg: Detection2DArray) -> None:
         seen = [(d.results[0].id, d.results[0].score) for d in msg.detections if d.results]
-        hit = self._policy.update(seen, time.monotonic())
+        if self._em_andamento is not None and not self._rotina.server_is_ready():
+            # body_node morreu no meio: o resultado nunca vai chegar
+            self.get_logger().warn(f"rotina de {self._em_andamento}: o body_node sumiu")
+            self._em_andamento = None
+        hit = self._policy.update(seen, time.monotonic(), allow_fire=self._em_andamento is None)
         if hit is None:
             return
         nome, reacao = hit
-        self.get_logger().info(f"reagindo a {nome}: {reacao}")
+        log = self.get_logger()
         if isinstance(reacao, str):
+            if self._publisher.get_subscription_count() == 0:
+                log.warn(f"{nome}: ninguém executa gestos (gesture_node, robo.launch.py); não cumprimentado")
+                self._policy.forget(nome)
+                return
+            log.info(f"reagindo a {nome}: {reacao}")
             self._publisher.publish(String(data=reacao))
-        else:
-            payload = json.dumps({"pessoa": nome, "passos": reacao}, ensure_ascii=False)
-            self._routine_publisher.publish(String(data=payload))
+            return
+        if not self._rotina.server_is_ready():
+            log.warn(f"{nome}: ninguém executa rotinas (body_node, rotina.launch.py); não cumprimentado")
+            self._policy.forget(nome)
+            return
+        log.info(f"reagindo a {nome}: rotina de {len(reacao)} passos")
+        self._em_andamento = nome
+        goal = Rotina.Goal(pessoa=nome, passos_json=json.dumps(reacao, ensure_ascii=False))
+        self._rotina.send_goal_async(goal).add_done_callback(lambda future: self._on_goal_response(nome, future))
+
+    def destroy_node(self) -> None:
+        self._rotina.destroy()  # antes do nó: no Foxy, o __del__ dele depois reclama do nó destruído
+        super().destroy_node()
+
+    def _on_goal_response(self, nome: str, future: object) -> None:
+        handle = future.result()
+        if self._em_andamento != nome:  # já dado como perdido (body_node sumiu)
+            return
+        if not handle.accepted:  # inicializando, ocupado ou encerrando: o motivo está no rotina_status
+            self.get_logger().warn(f"{nome}: o body_node recusou a rotina; não cumprimentado")
+            self._policy.forget(nome)
+            self._em_andamento = None
+            return
+        handle.get_result_async().add_done_callback(lambda future: self._on_result(nome, future))
+
+    def _on_result(self, nome: str, future: object) -> None:
+        # Rotina que falhou no meio também conta como cumprimento: repetir não consertaria o braço.
+        resultado = future.result().result
+        self.get_logger().info(f"rotina de {nome}: {'fim' if resultado.sucesso else resultado.mensagem}")
+        self._em_andamento = None
 
 
 def main(args: list[str] | None = None) -> None:

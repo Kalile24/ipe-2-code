@@ -157,6 +157,24 @@ def test_release_all_clears_global_cooldown_too():
     assert _feed(p, [MARCOS] * 3, start=3.0)[-1] == ("marcos", "shake hand")  # t=5, antes do global
 
 
+def test_forget_lets_the_person_be_greeted_after_the_global_cooldown():
+    p = _policy()
+    assert _feed(p, [GIL] * 3)[-1] == ("gil", "high wave")  # disparo em t=2; ninguém executou
+    p.forget("gil")
+    assert _feed(p, [GIL] * 9, start=3.0) == [None] * 9  # t=3..11: cooldown global de 10 s
+    assert p.update(GIL, 12.0) == ("gil", "high wave")  # sem sair da frente nem esperar 60 s
+
+
+def test_no_fire_while_a_routine_runs_but_presence_is_tracked():
+    p = _policy()
+    assert _feed(p, [GIL] * 3)[-1] == ("gil", "high wave")  # disparo em t=2
+    for t in range(3, 70):  # gil sai; marcos fica na frente enquanto a rotina do gil roda
+        assert p.update(MARCOS, float(t), allow_fire=False) is None
+    assert p.update(MARCOS, 70.0) == ("marcos", "shake hand")  # já confirmado: dispara na hora
+    # gil voltou: saiu da frente e passou o cooldown; precisa de 3 frames de novo (t=140..142)
+    assert _feed(p, [GIL] * 3, start=140.0) == [None, None, ("gil", "high wave")]
+
+
 def test_release_unknown_name_fails():
     with pytest.raises(KeyError, match="ze"):
         _policy().release("ze")

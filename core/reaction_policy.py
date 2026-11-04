@@ -139,7 +139,10 @@ class ReactionPolicy:
         self._left: dict[str, bool] = {}  # saiu da frente desde a última reação?
         self._last_any: float | None = None
 
-    def update(self, seen: list[tuple[str, float]], now: float) -> tuple[str, str | list[dict[str, str]]] | None:
+    def update(
+        self, seen: list[tuple[str, float]], now: float, allow_fire: bool = True
+    ) -> tuple[str, str | list[dict[str, str]]] | None:
+        """`allow_fire=False` (uma rotina já está em andamento): só acompanha quem está na frente."""
         best: dict[str, float] = {}
         for nome, score in seen:
             if nome in self._reactions:  # `desconhecido` e quem não está no mapa ficam fora
@@ -151,7 +154,7 @@ class ReactionPolicy:
             if nome not in best and now - self._last_seen[nome] >= self._absence_s:
                 self._left[nome] = True
 
-        if self._last_any is not None and now - self._last_any < self._global_cooldown_s:
+        if not allow_fire or (self._last_any is not None and now - self._last_any < self._global_cooldown_s):
             return None
         prontos = [nome for nome in best if self._streak[nome] >= self._confirm_frames and self._may_repeat(nome, now)]
         if not prontos:
@@ -167,6 +170,13 @@ class ReactionPolicy:
         if nome not in self._last_fired:
             return True
         return self._left[nome] and now - self._last_fired[nome] >= self._person_cooldown_s
+
+    def forget(self, nome: str) -> None:
+        """A reação a `nome` não aconteceu (ninguém para executar, rotina recusada): ele volta a
+        poder ser cumprimentado sem esperar o cooldown nem sair da frente. O cooldown global
+        continua, para não insistir a cada frame."""
+        self._last_fired.pop(nome, None)
+        self._left.pop(nome, None)
 
     def release(self, nome: str | None = None) -> None:
         """Libera a reação de `nome` (None = todos), sem esperar cooldown nem saída da frente."""

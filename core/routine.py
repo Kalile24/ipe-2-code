@@ -27,11 +27,18 @@ def run_routine(
     - Fala que falha só é registrada: o movimento não depende do som.
     - Postura que falha encerra a rotina e tenta `a_vontade`, para não deixar o braço preso
       numa pose intermediária (o mesmo que o operador faria com F1+RIGHT).
-    - `deve_parar()` é conferido antes de cada passo (Ctrl+C no meio da rotina).
+    - `deve_parar()` é conferido antes de cada passo (Ctrl+C ou cancelamento no meio da rotina);
+      se os braços saíram do equilíbrio, tenta `a_vontade` antes de sair.
+    - `sleep` faz as pausas: o body_node passa o `wait` do evento de parada, para que uma pausa
+      longa (até 120 s) acabe na hora do Ctrl+C.
     """
+    bracos_fora = False  # alguma postura rodou desde o último a_vontade
     for i, passo in enumerate(passos):
         if deve_parar():
             log("rotina interrompida")
+            if bracos_fora:
+                log(f"tentando {A_VONTADE} para soltar os braços")
+                _tentar(postura, A_VONTADE, log)
             return False
         if "pausa" in passo:
             log(f"pausa: {passo['pausa']} s")
@@ -53,6 +60,7 @@ def run_routine(
                 log(f"tentando {A_VONTADE} para soltar os braços")
                 _tentar(postura, A_VONTADE, log)
             return False
+        bracos_fora = nome != A_VONTADE
         if i < len(passos) - 1 and "pausa" not in passos[i + 1]:
             sleep(pausa_s)
     return True

@@ -6,7 +6,10 @@ depender da pasta ~/hhhh. O movimento é o mesmo; as únicas mudanças, marcadas
 
 - sem a GUI (classe G1ArmCalibrationGUI, tkinter e main);
 - poses lidas de `robot_reaction_ros/poses/` (cópia de ~/hhhh/poses/; G1_POSE_DIR muda o lugar);
-- `wait_fsm4_transition_complete` na versão tolerante do ~/hhhh/movimentos_militares.py.
+- `wait_fsm4_transition_complete` na versão tolerante do ~/hhhh/movimentos_militares.py;
+- `rest_forward_pulse`: desliga o passo para frente do Descansar (padrão ligado, como no ~/hhhh);
+- `shutdown` devolve os braços ANTES de parar a thread de controle (no ~/hhhh, parar a thread
+  primeiro deixava o retorno ao equilíbrio sem ninguém movendo os braços).
 
 Precisa do unitree_sdk2py, numpy e pymodbus (mãos Inspire por Modbus TCP): o venv do projeto no
 robô. Só o body_worker (processo sem ROS) importa isto. Spec:
@@ -265,6 +268,8 @@ class G1ArmController:
         self.crc = CRC()
 
         self.initialized_801 = False
+        # [ipe-2-code] False = Descansar sem o pulso de SetVelocity para frente (o robô não anda).
+        self.rest_forward_pulse = True
         self.arm_enabled = False
         self.releasing = False
         self.shutdown_event = threading.Event()
@@ -1175,7 +1180,7 @@ class G1ArmController:
                 zip(stage_files, stages),
                 start=1,
             ):
-                if number == 2:
+                if number == 2 and self.rest_forward_pulse:  # [ipe-2-code] desligável
                     # A passagem para descansar2 leva os braços para trás.
                     # O pulso começa um pouco antes do movimento dos braços e
                     # permanece ativo durante a transição para ficar perceptível.
@@ -1769,14 +1774,15 @@ class G1ArmController:
             }
 
     def shutdown(self) -> None:
-        self.shutdown_event.set()
-
         # Tenta liberar o braço apenas se o controle estava ativo.
         if self.arm_enabled and self.balance_pose is not None:
             try:
                 self.return_to_balance_and_release()
             except Exception:
                 self.log("Falha ao liberar os braços durante o encerramento.")
+
+        # [ipe-2-code] Só depois do retorno: é a thread de controle que leva os braços ao alvo.
+        self.shutdown_event.set()
 
         self.stop_hand_control("both")
 

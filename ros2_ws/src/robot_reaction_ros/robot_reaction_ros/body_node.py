@@ -8,80 +8,120 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 from typing import Callable
 
 import rclpy
 from ament_index_python.packages import get_package_share_directory
 from rcl_interfaces.msg import SetParametersResult
+from rclpy.action import ActionServer, CancelResponse, GoalResponse
+from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from std_msgs.msg import String
 
 from core.piper_voice import DEFAULT_URL, say
 from core.reaction_policy import ReactionConfigError, validate_steps
 from core.routine import run_routine
+from robot_reaction_interfaces.action import Rotina
+
+# Tempos máximos. O sigterm_timeout do rotina.launch.py tem que cobrir o pior caso do Ctrl+C:
+# a postura em andamento + o a_vontade + a ordem de shutdown + a espera do processo.
+POSTURA_TIMEOUT_S = 120.0
+INICIALIZACAO_TIMEOUT_S = 120.0
+ESPERA_ROTINA_S = 2 * POSTURA_TIMEOUT_S + 10.0
+SHUTDOWN_TIMEOUT_S = 60.0
+ESPERA_PROCESSO_S = 10.0
 
 
 class SubprocessBody:
     """O corpo num processo sem ROS (body_worker): rclpy e SDK da Unitree não convivem.
 
     Mesma interface que o body_node espera (initialize/posture/shutdown); cada chamada é uma
-    linha JSON para o body_worker e espera a resposta dele.
+    linha JSON com um `id` para o body_worker, e só a resposta com esse `id` vale. Uma chamada
+    por vez (lock): o shutdown do Ctrl+C espera a postura em andamento em vez de se misturar a ela.
     """
 
-    def __init__(self, poses_dir: str, network_interface: str, command: list[str] | None = None) -> None:
-        command = command or [sys.executable, "-m", "robot_reaction_ros.body_worker", poses_dir, network_interface]
-        # stderr herdado: o log do G1ArmController aparece junto com o do launch.
-        self._proc = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)
-        hello = self._read(timeout_s=60.0)
+    def __init__(
+        self,
+        poses_dir: str,
+        network_interface: str,
+        rest_forward_pulse: bool = True,
+        command: list[str] | None = None,
+        posture_timeout_s: float = POSTURA_TIMEOUT_S,
+    ) -> None:
+        command = command or [
+            sys.executable, "-m", "robot_reaction_ros.body_worker", poses_dir, network_interface,
+            "com_passo" if rest_forward_pulse else "sem_passo",
+        ]
+        self._posture_timeout_s = posture_timeout_s
+        self._lock = threading.Lock()
+        self._next_id = 0
+        # Binário sem buffer: o readline não lê adiantado, então o select nunca perde uma linha
+        # que já chegou. stderr herdado: o log do G1ArmController aparece junto com o do launch.
+        self._proc = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, bufsize=0)
+        hello = self._read(timeout_s=60.0, ordem_id=None)
         if not hello.get("ok"):
             self._proc.kill()
             raise RuntimeError(f"body_worker não subiu: {hello.get('erro', hello)}")
 
-    def _read(self, timeout_s: float) -> dict:
-        prontos, _, _ = select.select([self._proc.stdout], [], [], timeout_s)
-        line = self._proc.stdout.readline() if prontos else ""
-        if not line:
-            return {"ok": False, "erro": f"sem resposta do body_worker em {timeout_s:.0f} s"}
-        return json.loads(line)
+    def _read(self, timeout_s: float, ordem_id: int | None) -> dict:
+        fim = time.monotonic() + timeout_s
+        while True:
+            restante = fim - time.monotonic()
+            prontos = select.select([self._proc.stdout], [], [], restante)[0] if restante > 0 else []
+            line = self._proc.stdout.readline() if prontos else b""
+            if not line:
+                return {"ok": False, "erro": f"sem resposta do body_worker em {timeout_s:.0f} s"}
+            resposta = json.loads(line)
+            if ordem_id is None or resposta.get("id") == ordem_id:
+                return resposta
+            # resposta atrasada de uma ordem em que já desistimos de esperar: descartada
 
     def _call(self, ordem: dict, timeout_s: float) -> bool:
-        if self._proc.poll() is not None:
-            return False
-        self._proc.stdin.write(json.dumps(ordem) + "\n")
-        self._proc.stdin.flush()
-        return bool(self._read(timeout_s).get("ok"))
+        with self._lock:
+            if self._proc.poll() is not None:
+                return False
+            self._next_id += 1
+            ordem = {"id": self._next_id, **ordem}
+            try:
+                self._proc.stdin.write((json.dumps(ordem) + "\n").encode())
+            except BrokenPipeError:
+                return False
+            return bool(self._read(timeout_s, ordem["id"]).get("ok"))
 
     def initialize(self) -> bool:
-        return self._call({"cmd": "initialize"}, timeout_s=120.0)
+        return self._call({"cmd": "initialize"}, timeout_s=INICIALIZACAO_TIMEOUT_S)
 
     def posture(self, nome: str) -> bool:
-        return self._call({"cmd": "posture", "nome": nome}, timeout_s=120.0)
+        return self._call({"cmd": "posture", "nome": nome}, timeout_s=self._posture_timeout_s)
 
     def shutdown(self) -> None:
         try:
-            self._call({"cmd": "shutdown"}, timeout_s=60.0)
+            self._call({"cmd": "shutdown"}, timeout_s=SHUTDOWN_TIMEOUT_S)
         finally:
             if self._proc.poll() is None:
                 try:
-                    self._proc.wait(10.0)
+                    self._proc.wait(ESPERA_PROCESSO_S)
                 except subprocess.TimeoutExpired:
                     self._proc.kill()
 
 
 class BodyNode(Node):
-    """Único dono dos braços e da voz: executa as rotinas que chegam em /reaction/rotina.
+    """Único dono dos braços e da voz: servidor da ação /reaction/rotina (uma rotina por vez).
 
     Os braços são comandados pelo body_worker (processo sem ROS, ver body_worker.py).
 
     Desarmado (padrão): fala de verdade, mas as posturas só aparecem no log (dry-run).
     Armado (`armed:=true`, só na partida): ao subir faz a inicialização do F1+UP e depois executa
-    as posturas. Status em /reaction/rotina_status. Ctrl+C: espera o passo atual, devolve os braços
-    ao equilíbrio e solta o arm_sdk.
+    as posturas. Uma rotina chegando enquanto inicializa ou executa outra é recusada (o
+    reaction_node fica sabendo). Status em /reaction/rotina_status e no feedback da ação.
+    Cancelar a ação ou Ctrl+C: termina o passo atual, devolve os braços (a_vontade) e solta o arm_sdk.
     """
 
     def __init__(
         self,
-        body_factory: Callable[[str, str], object] = SubprocessBody,
+        body_factory: Callable[..., object] = SubprocessBody,
         speak: Callable[..., None] = say,
     ) -> None:
         super().__init__("body_node")
@@ -90,6 +130,8 @@ class BodyNode(Node):
         self.declare_parameter("poses_dir", "")
         self.declare_parameter("network_interface", "eth0")
         self.declare_parameter("pausa_s", 0.5)
+        # true: o descansar dá um passo curto para frente (compensação de equilíbrio do ~/hhhh)
+        self.declare_parameter("passo_descansar", True)
         self.declare_parameter("tts_url", DEFAULT_URL)
         self.declare_parameter("tts_timeout_s", 60.0)
         self._pausa_s = float(self.get_parameter("pausa_s").value)
@@ -101,12 +143,23 @@ class BodyNode(Node):
 
         self._body = None
         self._ready = False  # inicializado (FSM 801): só então as posturas mexem o braço
-        self._stop = threading.Event()
-        self._busy = threading.Lock()
-        self._worker: threading.Thread | None = None
+        self._stop = threading.Event()  # Ctrl+C: nenhuma rotina nova
+        self._interromper = threading.Event()  # cancelamento ou Ctrl+C: encerra a rotina atual
+        self._idle = threading.Event()  # nenhuma rotina em execução
+        self._idle.set()
+        self._busy = threading.Lock()  # preso durante a inicialização e durante cada rotina
+        self._init_thread: threading.Thread | None = None
 
         self._status_pub = self.create_publisher(String, "/reaction/rotina_status", 10)
-        self._subscription = self.create_subscription(String, "/reaction/rotina", self._on_routine, 10)
+        self._server = ActionServer(
+            self,
+            Rotina,
+            "/reaction/rotina",
+            execute_callback=self._execute,
+            goal_callback=self._on_goal,
+            cancel_callback=self._on_cancel,
+            callback_group=ReentrantCallbackGroup(),
+        )
         # `armed` só vale na partida: armar no meio faria o robô cair em damp sem aviso.
         self.add_on_set_parameters_callback(self._on_set_parameters)
 
@@ -115,12 +168,14 @@ class BodyNode(Node):
             poses_dir = self.get_parameter("poses_dir").value or os.path.join(
                 get_package_share_directory("robot_reaction_ros"), "poses"
             )
-            network_interface = self.get_parameter("network_interface").value
-            self._busy.acquire()  # nenhuma rotina enquanto inicializa
-            self._worker = threading.Thread(
-                target=self._initialize, args=(body_factory, poses_dir, network_interface), daemon=True
+            args = (
+                poses_dir,
+                self.get_parameter("network_interface").value,
+                self.get_parameter("passo_descansar").value is True,
             )
-            self._worker.start()
+            self._busy.acquire()  # nenhuma rotina enquanto inicializa
+            self._init_thread = threading.Thread(target=self._initialize, args=(body_factory, *args), daemon=True)
+            self._init_thread.start()
         else:
             self._publish("desarmado: posturas só no log, fala de verdade")
 
@@ -136,11 +191,11 @@ class BodyNode(Node):
             return SetParametersResult(successful=False, reason="armed só vale na partida (reinicie o nó)")
         return SetParametersResult(successful=True)
 
-    def _initialize(self, body_factory: Callable[[str, str], object], poses_dir: str, network_interface: str) -> None:
+    def _initialize(self, body_factory: Callable[..., object], *args: object) -> None:
         try:
             self._publish("inicializando: damp → em pé → equilíbrio (robô no suporte)")
             try:
-                self._body = body_factory(poses_dir, network_interface)
+                self._body = body_factory(*args)
                 self._ready = self._body.initialize()
             except Exception as exc:  # sem SDK, sem poses ou sem DDS
                 self._publish(f"falha na inicialização: {exc!r}")
@@ -152,36 +207,70 @@ class BodyNode(Node):
         finally:
             self._busy.release()
 
-    def _on_routine(self, msg: String) -> None:
-        try:
-            dados = json.loads(msg.data)
-            pessoa = str(dados["pessoa"])
-            passos = validate_steps(pessoa, dados["passos"])
-        except (ValueError, KeyError, TypeError, ReactionConfigError) as exc:
-            self._publish(f"rotina rejeitada (mensagem inválida): {exc}")
-            return
-        if self._stop.is_set():
-            return
-        if not self._busy.acquire(blocking=False):
-            self._publish(f"rotina de {pessoa} rejeitada: ocupado")
-            return
-        self._worker = threading.Thread(target=self._run, args=(pessoa, passos), daemon=True)
-        self._worker.start()
+    @staticmethod
+    def _parse(request: Rotina.Goal) -> tuple[str, list[dict[str, str]]]:
+        pessoa = request.pessoa.strip()
+        if not pessoa:
+            raise ReactionConfigError("rotina sem pessoa")
+        return pessoa, validate_steps(pessoa, json.loads(request.passos_json))
 
-    def _run(self, pessoa: str, passos: list[dict[str, str]]) -> None:
+    def _on_goal(self, request: Rotina.Goal) -> GoalResponse:
         try:
+            pessoa, _ = self._parse(request)
+        except (ValueError, TypeError, ReactionConfigError) as exc:  # JSONDecodeError é ValueError
+            self._publish(f"rotina rejeitada (mensagem inválida): {exc}")
+            return GoalResponse.REJECT
+        if self._stop.is_set():
+            return GoalResponse.REJECT
+        if not self._busy.acquire(blocking=False):  # solto no fim do _execute
+            self._publish(f"rotina de {pessoa} rejeitada: ocupado")
+            return GoalResponse.REJECT
+        return GoalResponse.ACCEPT
+
+    def _on_cancel(self, goal_handle: object) -> CancelResponse:
+        self._interromper.set()
+        return CancelResponse.ACCEPT
+
+    def _execute(self, goal_handle: object) -> Rotina.Result:
+        self._idle.clear()
+        if not self._stop.is_set():
+            self._interromper.clear()
+        try:
+            pessoa, passos = self._parse(goal_handle.request)
+
+            def log(text: str) -> None:
+                self._publish(text)
+                try:
+                    goal_handle.publish_feedback(Rotina.Feedback(passo=text))
+                except Exception:  # Ctrl+C: o status no log basta
+                    pass
+
             self._publish(f"rotina de {pessoa}: início")
             ok = run_routine(
                 passos,
                 postura=self._posture,
                 falar=self._speak,
                 pausa_s=self._pausa_s,
-                log=self._publish,
-                deve_parar=self._stop.is_set,
+                log=log,
+                deve_parar=self._interromper.is_set,
+                sleep=self._interromper.wait,
             )
-            self._publish(f"rotina de {pessoa}: {'fim' if ok else 'falhou'}")
+            interrompida = not ok and self._interromper.is_set()
+            fim = "fim" if ok else "interrompida" if interrompida else "falhou"
+            self._publish(f"rotina de {pessoa}: {fim}")
+            try:
+                if ok:
+                    goal_handle.succeed()
+                elif goal_handle.is_cancel_requested:
+                    goal_handle.canceled()
+                else:
+                    goal_handle.abort()
+            except Exception:  # Ctrl+C no meio: ninguém espera mais o resultado
+                pass
+            return Rotina.Result(sucesso=ok, mensagem="" if ok else fim)
         finally:
             self._busy.release()
+            self._idle.set()
 
     def _posture(self, nome: str) -> bool:
         if not self._ready:
@@ -189,13 +278,22 @@ class BodyNode(Node):
             return True
         return self._body.posture(nome)
 
-    def shutdown(self, timeout_s: float = 90.0) -> None:
-        """Ctrl+C: espera o passo em andamento terminar e solta os braços."""
+    def destroy_node(self) -> None:
+        self._server.destroy()  # antes do nó: no Foxy, o __del__ dela depois reclama do nó destruído
+        super().destroy_node()
+
+    def shutdown(self, timeout_s: float = ESPERA_ROTINA_S) -> None:
+        """Ctrl+C: interrompe a rotina depois do passo atual, devolve os braços e solta o arm_sdk."""
         self._stop.set()
+        self._interromper.set()
         log = self.get_logger()
-        if self._worker is not None and self._worker.is_alive():
-            log.info("esperando o passo atual terminar antes de soltar os braços...")
-            self._worker.join(timeout_s)
+        if self._init_thread is not None and self._init_thread.is_alive():
+            log.info("esperando a inicialização terminar antes de soltar os braços...")
+            self._init_thread.join(INICIALIZACAO_TIMEOUT_S + ESPERA_PROCESSO_S)
+        if not self._idle.is_set():
+            log.info("esperando o passo atual terminar e o a_vontade antes de soltar os braços...")
+            if not self._idle.wait(timeout_s):
+                log.error(f"a rotina não terminou em {timeout_s:.0f} s; soltando os braços mesmo assim")
         if self._body is not None:
             log.info("devolvendo os braços ao equilíbrio e soltando o arm_sdk...")
             try:
@@ -207,9 +305,12 @@ class BodyNode(Node):
 def main(args: list[str] | None = None) -> None:
     rclpy.init(args=args)
     node = None
+    # Vários threads: a rotina roda no callback da ação e o nó continua recusando outras.
+    executor = MultiThreadedExecutor()
     try:
         node = BodyNode()
-        rclpy.spin(node)
+        executor.add_node(node)
+        executor.spin()
     except KeyboardInterrupt:
         pass
     finally:
@@ -218,6 +319,8 @@ def main(args: list[str] | None = None) -> None:
         signal.signal(signal.SIGINT, signal.SIG_IGN)
         if node is not None:
             node.shutdown()
+        executor.shutdown()
+        if node is not None:
             node.destroy_node()
         if rclpy.ok():  # o Ctrl+C já pode ter desligado o contexto
             rclpy.shutdown()

@@ -88,11 +88,26 @@ def test_speech_failure_does_not_stop_the_movement():
     assert ("postura", "a_vontade") in r.eventos
 
 
-def test_stop_request_is_checked_before_each_step():
+def test_stop_request_is_checked_before_each_step_and_releases_the_arms():
     r = _Robo()
     feitos = []
     assert r.rodar(deve_parar=lambda: len(feitos) > 0 or feitos.append(1)) is False
-    assert r.eventos == [("postura", "sentido"), ("pausa", 2.0)]
+    # Parou antes da fala, com os braços em sentido: a_vontade antes de sair.
+    assert r.eventos == [("postura", "sentido"), ("pausa", 2.0), ("postura", "a_vontade")]
+
+
+def test_stop_before_any_posture_moves_nothing():
+    r = _Robo()
+    assert r.rodar(deve_parar=lambda: True) is False
+    assert r.eventos == []
+
+
+def test_stop_after_a_vontade_does_not_release_again():
+    r = _Robo()
+    passos = [{"postura": "sentido"}, {"postura": "a_vontade"}, {"fala": "tchau"}]
+    feitos = []
+    assert r.rodar(passos, deve_parar=lambda: len(feitos) > 1 or feitos.append(1)) is False
+    assert r.eventos == [("postura", "sentido"), ("pausa", 2.0), ("postura", "a_vontade"), ("pausa", 2.0)]
 
 
 def test_explicit_pause_replaces_the_automatic_one():
