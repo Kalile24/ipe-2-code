@@ -1,0 +1,16 @@
+# Combos do controle (F2+UP/RIGHT/LEFT/DOWN) para operar a rotina sem terminal: scripts/robo_controle.py.
+# Unit de USUÁRIO. Instalar só depois de combinar com quem usa o robô (docs/guides/teste-no-robo.md):
+#   mkdir -p ~/.config/systemd/user && cp ~/ipe-2-code/scripts/systemd/ipe-controle.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now ipe-controle
+#   sudo loginctl enable-linger unitree      # sobe no boot sem ninguém logado
+# Log: journalctl --user -u ipe-controle -f
+[Unit]
+Description=ipe-2-code: combos do controle para a rotina de cumprimento
+
+[Service]
+ExecStart=/bin/bash -lc 'source %h/ipe-2-code/scripts/ambiente_robo.sh && exec python3 -u %h/ipe-2-code/scripts/robo_controle.py'
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
