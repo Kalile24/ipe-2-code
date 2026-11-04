@@ -16,6 +16,7 @@ import base64
 import glob
 import json
 import os
+import re
 import subprocess
 import threading
 import time
@@ -34,6 +35,11 @@ from sensor_msgs.msg import CompressedImage
 from std_msgs.msg import String
 from vision_msgs.msg import Detection2DArray
 
+from core.bipes import tocar
+from core.caixa import CAIXA_PADRAO, caixa_atual, ler_dispositivos, mac_valido, nome_do_sink
+from core.config import DB_PATH, MODEL_NAME
+from core.identity_store import IdentityStore
+from core.pessoas import carregar_reacoes, nome_falado, rotina_padrao
 from core.reaction_policy import load_reactions
 from core.stages import parse_stages
 from robot_reaction_interfaces.srv import Cadastrar
@@ -43,22 +49,34 @@ SESSAO = "rotina"
 RECENTE_S = 2.0  # câmera/detecção mais velha que isso conta como parada
 CAMPOS_OPERACAO = (  # o que o formulário pode mudar no operacao.yaml (o resto fica como está)
     "estagios", "altura_caixa_alvo_px", "vx", "vyaw_max", "vyaw_min", "kp_giro", "inverter_giro", "centro_ok",
-    "centro_para_andar", "centro_chegada", "perda_rosto_s", "desistir_s", "tempo_max_s",
+    "centro_para_andar", "centro_chegada", "perda_rosto_s", "desistir_s", "tempo_max_s", "avisos_voz",
 )
 FIM = ("fim", "falhou", "interrompida", "desistiu", "rejeitada")
 WEBCAM_GLOB = "/dev/v4l/by-id/*-video-index0"  # o mesmo que o robo_rotina_cumprimento.sh usa
-CAIXA = "A8:AA:CD:C6:5C:A3"  # caixa Bluetooth KD-833 (a mesma do robo_rotina_cumprimento.sh)
+ARQ_CAIXA = os.path.join(REPO, "data", "caixa.txt")
+ARQ_REACOES = os.path.join(REPO, "data", "reactions.yaml")
+DB_BASE = DB_PATH
+NOME_VALIDO = re.compile(r"^[a-z0-9_]+$")
 CAIXA_CACHE_S = 3.0  # bluetoothctl/pactl a cada pedido pesariam no painel
 
 
-def caixa_de_som() -> dict:
+def _comando(*args: str, timeout: float = 25.0) -> str:
+    """Saída do comando; vazia se ele não existe ou passou do tempo (quem chama confere o resultado)."""
+    try:
+        return subprocess.run(args, capture_output=True, text=True, timeout=timeout).stdout
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return ""
+
+
+def caixa_de_som(mac: str) -> dict:
     """Caixa conectada pelo Bluetooth? E é a saída de som padrão (por onde saem fala e bipes)?"""
     try:
-        info = subprocess.run(["bluetoothctl", "info", CAIXA], capture_output=True, text=True, timeout=3).stdout
+        info = subprocess.run(["bluetoothctl", "info", mac], capture_output=True, text=True, timeout=3).stdout
         padrao = subprocess.run(["pactl", "info"], capture_output=True, text=True, timeout=3).stdout
     except (FileNotFoundError, subprocess.TimeoutExpired):
-        return {"conectada": None, "saida_padrao": None}
-    return {"conectada": "Connected: yes" in info, "saida_padrao": CAIXA.replace(":", "_") in padrao}
+        return {"conectada": None, "saida_padrao": None, "mac": mac, "padrao": mac == CAIXA_PADRAO}
+    return {"conectada": "Connected: yes" in info, "saida_padrao": nome_do_sink(mac) in padrao,
+            "mac": mac, "padrao": mac == CAIXA_PADRAO}
 
 
 def webcam_usb() -> float | None:
@@ -73,6 +91,15 @@ def webcam_usb() -> float | None:
             return os.lstat(caminho).st_mtime
         except OSError:  # sumiu entre o glob e o lstat
             continue
+    return None
+
+
+def webcam_nome() -> str | None:
+    """O nome da webcam USB conectada, como o sistema a chama: confirma qual câmera está em uso."""
+    for caminho in sorted(glob.glob(WEBCAM_GLOB)):
+        if "RealSense" not in caminho:
+            nome = os.path.basename(caminho)
+            return nome[len("usb-"):-len("-video-index0")].replace("_", " ") if nome.startswith("usb-") else nome
     return None
 
 
@@ -208,6 +235,7 @@ class PainelNode(Node):
                 self._webcam_vista = desde
             quedas = self._webcam_quedas
         return {
+            "nome": webcam_nome(),
             "conectada": desde is not None,
             "desde": time.strftime("%H:%M:%S", time.localtime(desde)) if desde else None,
             "quedas": quedas,
@@ -217,14 +245,119 @@ class PainelNode(Node):
     def caixa(self) -> dict:
         lido_em, resultado = self._caixa
         if time.monotonic() - lido_em > CAIXA_CACHE_S:
-            resultado = caixa_de_som()
+            resultado = caixa_de_som(caixa_atual(ARQ_CAIXA))
             self._caixa = (time.monotonic(), resultado)
         return resultado
 
+    def caixas(self, procurar: bool = False) -> list[dict]:
+        """As caixas que o robô conhece; `procurar` faz antes uma busca curta, só quando pedida."""
+        if procurar:
+            _comando("bluetoothctl", "--timeout", "8", "scan", "on", timeout=12.0)
+        atual = caixa_atual(ARQ_CAIXA)
+        return [{**d, "atual": d["mac"] == atual, "padrao": d["mac"] == CAIXA_PADRAO}
+                for d in ler_dispositivos(_comando("bluetoothctl", "devices", timeout=5.0))]
+
+    def usar_caixa(self, mac: str) -> dict:
+        """Pareia, conecta e passa a usar a caixa. Só salva se conectou; a anterior vale até lá."""
+        if not mac_valido(mac):
+            return {"ok": False, "mensagem": f"endereço inválido: {mac!r}"}
+        for acao in ("pair", "trust", "connect"):
+            _comando("bluetoothctl", acao, mac)
+        if "Connected: yes" not in _comando("bluetoothctl", "info", mac, timeout=5.0):
+            return {"ok": False, "mensagem": "não conectou: ligue a caixa em modo de pareamento e tente de novo. "
+                                             "A caixa anterior continua valendo."}
+        sink = None
+        for _ in range(10):
+            linhas = _comando("pactl", "list", "short", "sinks", timeout=3.0).splitlines()
+            sink = next((l.split()[1] for l in linhas if nome_do_sink(mac) in l and len(l.split()) > 1), None)
+            if sink:
+                break
+            time.sleep(1.0)
+        if sink is None:
+            return {"ok": False, "mensagem": "conectou, mas não apareceu como saída de som. A caixa anterior continua valendo."}
+        _comando("pactl", "set-default-sink", sink, timeout=3.0)
+        if mac == CAIXA_PADRAO:
+            if os.path.exists(ARQ_CAIXA):
+                os.remove(ARQ_CAIXA)
+        else:
+            os.makedirs(os.path.dirname(ARQ_CAIXA), exist_ok=True)
+            with open(ARQ_CAIXA, "w") as f:
+                f.write(mac + "\n")
+        self._caixa = (0.0, {})
+        tocar("agora")
+        return {"ok": True, "mensagem": "caixa em uso; ouviu o bipe?"}
+
+    # ---- pessoas ----------------------------------------------------------------------------
+    def _mapa_pacote(self) -> dict:
+        with open(os.path.join(get_package_share_directory("robot_reaction_ros"), "config", "reactions.yaml")) as f:
+            return load_reactions(yaml.safe_load(f))
+
+    def _fotos(self) -> dict:
+        try:
+            with open(f"{DB_BASE}_{MODEL_NAME}.json") as f:
+                return json.load(f).get("counts", {})
+        except (OSError, ValueError):
+            return {}
+
+    def pessoas(self) -> list[dict]:
+        """Todo mundo com foto ou rotina: sem foto não é reconhecido; sem rotina não é cumprimentado."""
+        try:
+            pacote = self._mapa_pacote()
+        except Exception:
+            pacote = {}
+        com_rotina = set(self.pessoas_com_rotina())
+        fotos = self._fotos()
+        return [{"nome": n, "fotos": fotos.get(n, 0), "rotina": n in com_rotina, "padrao": n in pacote}
+                for n in sorted(com_rotina | set(fotos))]
+
+    def _ler_extras(self) -> dict:
+        try:
+            with open(ARQ_REACOES) as f:
+                return yaml.safe_load(f) or {}
+        except (OSError, yaml.YAMLError):
+            return {}
+
+    def _gravar_extras(self, extras: dict) -> None:
+        os.makedirs(os.path.dirname(ARQ_REACOES), exist_ok=True)
+        with open(ARQ_REACOES, "w") as f:
+            yaml.safe_dump(extras, f, allow_unicode=True, sort_keys=False)
+
+    def salvar_pessoa(self, nome: str, tratamento: str, falado: str) -> dict:
+        """Rotina padrão para uma pessoa nova. Quem está no reactions.yaml do pacote não muda por aqui."""
+        nome = nome.strip()
+        if not NOME_VALIDO.match(nome) or nome == "desconhecido":
+            return {"ok": False, "mensagem": f"nome inválido {nome!r}: use minúsculas, números e _"}
+        if nome in self._mapa_pacote():
+            return {"ok": False, "mensagem": f"{nome} já tem a rotina padrão do projeto"}
+        try:
+            rotina = rotina_padrao(tratamento, falado.strip() or nome_falado(nome))
+        except ValueError as exc:
+            return {"ok": False, "mensagem": str(exc)}
+        extras = self._ler_extras()
+        extras[nome] = rotina
+        self._gravar_extras(extras)
+        return {"ok": True, "mensagem": f"rotina de {nome} salva; vale na próxima subida"}
+
+    def remover_pessoa(self, nome: str) -> dict:
+        """Apaga as fotos (e a rotina acrescentada pelo painel). Com a rotina de pé, o reconhecimento
+        tem o banco na memória e o regravaria: só com ela parada."""
+        if not NOME_VALIDO.match(nome):
+            return {"ok": False, "mensagem": f"nome inválido {nome!r}"}
+        if "face_recognition_node" in self.get_node_names():
+            return {"ok": False, "mensagem": "pare a rotina antes de remover (para trocar a foto, basta cadastrar de novo)"}
+        banco = IdentityStore(DB_BASE, model_name=MODEL_NAME)
+        banco.load()
+        if banco.embeddings.pop(nome, None) is not None:
+            banco.save()
+        extras = self._ler_extras()
+        if extras.pop(nome, None) is not None:
+            self._gravar_extras(extras)
+        return {"ok": True, "mensagem": f"{nome} removido"}
+
     def pessoas_com_rotina(self) -> list[str]:
         try:
-            with open(os.path.join(get_package_share_directory("robot_reaction_ros"), "config", "reactions.yaml")) as f:
-                return sorted(load_reactions(yaml.safe_load(f)))
+            base = os.path.join(get_package_share_directory("robot_reaction_ros"), "config", "reactions.yaml")
+            return sorted(carregar_reacoes(base, ARQ_REACOES)[0])
         except Exception:
             return []
 
@@ -252,7 +385,7 @@ class PainelNode(Node):
             "automatico": self.param_reacao("automatico") if "reaction_node" in nos else None,
             "armado": any("pronto: em equilíbrio" in s or "inicializando" in s for _, s in status),
             "status": [{"hora": time.strftime("%H:%M:%S", time.localtime(t)), "texto": s} for t, s in status[-15:]][::-1],
-            "pessoas_com_rotina": self.pessoas_com_rotina(),
+            "pessoas": self.pessoas(),
         }
 
     def acao(self, nome: str) -> str:
@@ -290,6 +423,11 @@ class PainelNode(Node):
             with open(self._operacao_file) as f:
                 valores.update(yaml.safe_load(f)["/**"]["ros__parameters"])
         return valores
+
+    def restaurar_operacao(self) -> str:
+        if os.path.exists(self._operacao_file):
+            os.remove(self._operacao_file)
+        return "padrões restaurados; valem na próxima subida"
 
     def salvar_operacao(self, novos: dict) -> str:
         atual = self.operacao()
@@ -341,6 +479,8 @@ def handler(painel: PainelNode) -> type:
                 self._json(painel.estado())
             elif self.path == "/operacao":
                 self._json(painel.operacao())
+            elif self.path == "/caixas":
+                self._json(painel.caixas())
             else:
                 self._json({"erro": "não existe"}, 404)
 
@@ -350,6 +490,20 @@ def handler(painel: PainelNode) -> type:
                     self._json({"mensagem": painel.acao(self.path[len("/acao/"):])})
                 elif self.path == "/operacao":
                     self._json({"mensagem": painel.salvar_operacao(self._corpo())})
+                elif self.path == "/operacao/restaurar":
+                    self._json({"mensagem": painel.restaurar_operacao()})
+                elif self.path == "/pessoa":
+                    d = self._corpo()
+                    self._json(painel.salvar_pessoa(str(d.get("nome", "")), str(d.get("tratamento", "")), str(d.get("falado", ""))))
+                elif self.path == "/pessoa/remover":
+                    self._json(painel.remover_pessoa(str(self._corpo().get("nome", ""))))
+                elif self.path == "/caixa/procurar":
+                    self._json(painel.caixas(procurar=True))
+                elif self.path == "/caixa/usar":
+                    self._json(painel.usar_caixa(str(self._corpo().get("mac", ""))))
+                elif self.path == "/caixa/testar":
+                    tocar("agora")
+                    self._json({"mensagem": "bipe enviado; ouviu?"})
                 elif self.path == "/cadastrar":
                     dados = self._corpo()
                     self._json(painel.cadastrar(str(dados.get("nome", "")), list(dados.get("fotos", []))))

@@ -7,7 +7,6 @@ import threading
 import time
 
 import rclpy
-import yaml
 from ament_index_python.packages import get_package_share_directory
 from rcl_interfaces.msg import SetParametersResult
 from rclpy.action import ActionClient
@@ -15,8 +14,11 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile
 from vision_msgs.msg import Detection2DArray
 
+from core.approach import DESISTIU_TEMPO
+from core.config import REACOES_EXTRA
+from core.pessoas import carregar_reacoes
 from core.piper_voice import DEFAULT_URL, say
-from core.reaction_policy import ReactionPolicy, load_reactions
+from core.reaction_policy import ReactionPolicy
 from robot_reaction_interfaces.action import Rotina
 
 
@@ -39,6 +41,7 @@ class ReactionNode(Node):
     def __init__(self) -> None:
         super().__init__("reaction_node")
         self.declare_parameter("reactions_file", "")
+        self.declare_parameter("reactions_extra_file", REACOES_EXTRA)
         self.declare_parameter("detections_topic", "/face_recognition/detections")
         self.declare_parameter("confirm_frames", 5)
         self.declare_parameter("person_cooldown_s", 300.0)
@@ -60,8 +63,10 @@ class ReactionNode(Node):
         path = self.get_parameter("reactions_file").value or os.path.join(
             get_package_share_directory("robot_reaction_ros"), "config", "reactions.yaml"
         )
-        with open(path) as f:  # arquivo ausente ou mapa inválido derrubam o nó na partida
-            reactions = load_reactions(yaml.safe_load(f))
+        # Arquivo do pacote ausente ou inválido derruba o nó na partida; o de pessoas extras, não.
+        reactions, aviso = carregar_reacoes(path, self.get_parameter("reactions_extra_file").value)
+        if aviso:
+            self.get_logger().warn(aviso)
         # float()/int(): `-p x:=60` chega como int e `-p x:=5.0` como float
         self._policy = ReactionPolicy(
             reactions,
@@ -163,9 +168,13 @@ class ReactionNode(Node):
         resultado = future.result().result
         self.get_logger().info(f"rotina de {nome}: {'fim' if resultado.sucesso else resultado.mensagem}")
         if not resultado.sucesso and resultado.mensagem.startswith("desistiu"):
-            # A aproximação desistiu (rosto perdido, tempo esgotado): não cumprimentou, então não
-            # conta para os 5 min, mas espera um pouco para não andar até a pessoa sem parar.
-            self._policy.desistiu(nome, time.monotonic())
+            # A aproximação desistiu: não cumprimentou, então não conta para os 5 min. Rosto perdido:
+            # tenta assim que reconhecer de novo. Tempo esgotado: espera, para não andar até a
+            # pessoa sem parar.
+            if resultado.mensagem == DESISTIU_TEMPO:
+                self._policy.desistiu(nome, time.monotonic())
+            else:
+                self._policy.forget(nome)
         self._em_andamento = None
 
 

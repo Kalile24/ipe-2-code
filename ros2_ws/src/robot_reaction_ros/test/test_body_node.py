@@ -312,8 +312,24 @@ def test_lost_face_gives_up_without_greeting(make_node):
     resultado = env.run()
     assert not resultado.sucesso and resultado.mensagem == "desistiu: rosto perdido"
     assert "sentido" not in body.calls and body.calls[-1] == "stop"
-    assert spoken == []
+    assert spoken == ["Perdi Gil de vista"]  # só ao desistir, uma vez
     assert status[-1] == "rotina de gil: desistiu: rosto perdido"
+
+
+def test_lost_sight_warning_can_be_turned_off(make_node):
+    make, status, spoken = make_node
+    env = make(body=_FakeBody(), armed=True, estagios=TODOS,
+               params=["desistir_s:=0.3", "perda_rosto_s:=0.1", "avisos_voz:=false"])
+    assert env.run().mensagem == "desistiu: rosto perdido"
+    assert spoken == []
+
+
+def test_running_out_of_time_says_nothing(make_node):
+    make, status, spoken = make_node
+    env = make(body=_FakeBody(), armed=True, estagios=TODOS, params=["tempo_max_s:=0.2"])
+    _dets(env.node, ("gil", 320, 50))
+    assert env.run().mensagem == "desistiu: tempo esgotado"
+    assert spoken == []
 
 
 def test_cancel_during_approach_stops_at_once_and_skips_routine(make_node):

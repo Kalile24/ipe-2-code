@@ -242,25 +242,19 @@ def test_balance_only_still_refuses_without_801(fsm):
     assert body.initialize(so_equilibrio=True) is False
 
 
-def test_mode_3_that_clears_is_accepted():
+def test_mode_3_gets_time_to_clear_before_starting():
     # Logo depois de outra rodada soltar os braços o MODE fica em 3 por um tempo.
     body = _g1_body([(801, 3), (801, 0)])
     assert body.initialize(so_equilibrio=True) is True
-    assert body.robot.permitir_damp is False
+    assert body.robot.fsm == [(801, 0)]  # releu até o MODE 0
 
 
 @pytest.mark.parametrize("so_equilibrio", [False, True])
-def test_mode_3_that_does_not_clear_is_refused_without_damp(so_equilibrio):
-    # arm_sdk ainda ativo: os braços podem estar fora do equilíbrio (worker morto no meio de uma
-    # continência), e a postura capturada aqui viraria o "equilíbrio" do à vontade.
+def test_mode_3_that_does_not_clear_still_starts_without_damp(so_equilibrio):
+    # Como no último teste físico: em pé no 801, recusar impediria a operação.
     body = _g1_body((801, 3))
-    assert body.initialize(so_equilibrio=so_equilibrio) is False
-    assert not body.robot.inicializou
-
-
-def test_unanswered_mode_is_read_again_before_accepting():
-    body = _g1_body([(801, None), (801, 3), (801, 3)])
-    assert body.initialize(so_equilibrio=True) is False  # a releitura achou o MODE 3
+    assert body.initialize(so_equilibrio=so_equilibrio) is True
+    assert body.robot.permitir_damp is False
 
 
 @pytest.mark.parametrize("fsm", [(0, 0), (1, 0)])

@@ -25,3 +25,10 @@ bianco:
     - fala: "Olá, aspirante a oficial da reserva Bianco, sou o Tenente Nichinica"
     - postura: desc_arma
     - postura: a_vontade
+aderson:
+  passos:
+    - postura: sentido
+    - postura: continencia
+    - fala: "Olá, coronel veterano Aderson, sou o Tenente Nichinica"
+    - postura: desc_arma
+    - postura: a_vontade

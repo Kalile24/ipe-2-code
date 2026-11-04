@@ -697,16 +697,11 @@ class G1ArmController:
         try:
             if self.initialized_801 or not permitir_damp:
                 fsm_id, fsm_mode = self.state("Estado atual")
-                # [ipe-2-code] em pé: relê por até 5 s (leitura que falha/MODE mudando).
-                # MODE 3 (arm_sdk ativo) só com a postura já capturada: capturar agora guardaria
-                # braços que podem estar fora do equilíbrio, e o à vontade voltaria para eles.
+                # [ipe-2-code] em pé: relê por até 5 s (leitura que falha/MODE mudando) e aceita o
+                # MODE 3 (arm_sdk ativo), como a verificação do body_worker.
                 # MODE None (o RPC do MODE não respondeu) com FSM 801 também é equilíbrio.
                 def equilibrio() -> bool:
-                    return fsm_id == 801 and (
-                        fsm_mode == 0
-                        or (fsm_mode == 3 and self.balance_pose is not None)
-                        or (not permitir_damp and fsm_mode is None)
-                    )
+                    return fsm_id == 801 and (fsm_mode in (0, 3) or (not permitir_damp and fsm_mode is None))
 
                 fim = time.time() + (0.0 if permitir_damp else 5.0)
                 while not equilibrio() and time.time() < fim:
@@ -901,6 +896,12 @@ class G1ArmController:
         # MODE 0: FSM 801 equilibrado, antes de assumir o controle dos braços.
         # MODE 3: FSM 801 com o arm_sdk ativo. Esse modo aparece normalmente
         # depois que começamos a publicar em rt/arm_sdk.
+        # [ipe-2-code] relê por até 5 s: uma leitura pode falhar, e logo depois de andar o robô
+        # ainda está assentando. Sem isso a rotina acabava sem gesto nem fala ao chegar na pessoa.
+        fim = time.time() + 5.0
+        while (fsm_id != 801 or fsm_mode not in (0, 3)) and time.time() < fim:
+            time.sleep(0.25)
+            fsm_id, fsm_mode = self.state("Verificando equilíbrio")
         if fsm_id != 801 or fsm_mode not in (0, 3):
             self.log(
                 "ERRO: o robô não está em FSM 801 compatível "

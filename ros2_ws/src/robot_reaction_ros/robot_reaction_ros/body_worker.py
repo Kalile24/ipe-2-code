@@ -34,11 +34,11 @@ SEM_TORQUE_OU_DAMP = (0, 1)  # FSM_ID do G1 com os motores soltos: o damp não m
 
 
 def em_equilibrio(fsm_id: object, fsm_mode: object) -> bool:
-    """FSM 801 = o controlador de equilíbrio. MODE 3 = arm_sdk ainda ativo: os braços podem estar
-    fora do equilíbrio (worker morto no meio de uma continência) e a postura capturada viraria o
-    "equilíbrio" do à vontade, então não vale. Quando a leitura do MODE falha (None: o RPC não
-    respondeu, o que no robô acontecia logo depois de outra rodada sair) o 801 basta."""
-    return fsm_id == 801 and fsm_mode in (0, None)
+    """FSM 801 = o controlador de equilíbrio. O MODE só diz se o arm_sdk está ativo (3, logo depois
+    de outra rodada soltar os braços; o ler_estado dá tempo para ele voltar a 0) e a leitura dele
+    pode falhar (None): o 801 basta. ponytail: se um worker morreu no meio de um gesto, os braços
+    fora do lugar viram a "postura de equilíbrio" (ver o guia); recusar aqui impedia a operação."""
+    return fsm_id == 801 and fsm_mode in (0, 3, None)
 
 
 class G1Body:

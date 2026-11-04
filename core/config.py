@@ -21,6 +21,7 @@ MODEL_NAME = "buffalo_l"
 MODEL_ROOT = os.environ.get("INSIGHTFACE_ROOT") or None
 KNOWN_FACES_DIR = str(_REPO_ROOT / "data" / "known_faces")
 DB_PATH = str(_REPO_ROOT / "data" / "identity_db")
+REACOES_EXTRA = str(_REPO_ROOT / "data" / "reactions.yaml")  # pessoas acrescentadas pelo painel
 # Em CPU, o reconhecimento (ArcFace) roda bem mais devagar que a detecção
 # sozinha; rodar o reconhecimento só a cada N frames mantém o vídeo fluido.
 RECOGNITION_INTERVAL_FRAMES = 1

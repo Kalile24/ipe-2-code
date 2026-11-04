@@ -19,7 +19,9 @@ set -e
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 SESSAO=rotina
 HHHH=$HOME/hhhh  # só para checar se o START do outro projeto está de pé
-CAIXA=A8:AA:CD:C6:5C:A3  # caixa Bluetooth KD-833 do robô
+# Caixa Bluetooth: a KD-833 do robô, ou a escolhida no painel (data/caixa.txt).
+CAIXA=A8:AA:CD:C6:5C:A3
+if grep -qsE '^[0-9A-F]{2}(:[0-9A-F]{2}){5}$' "$REPO/data/caixa.txt"; then CAIXA=$(cat "$REPO/data/caixa.txt"); fi
 ARMADO=false
 CONTROLE=false
 ESTAGIOS=""
@@ -74,7 +76,7 @@ fi
 SINK=""
 if bluetoothctl info "$CAIXA" | grep -q "Connected: yes"; then
     for _ in $(seq 1 20); do
-        SINK=$(pactl list short sinks | awk '/A8_AA_CD_C6_5C_A3/ {print $2; exit}')
+        SINK=$(pactl list short sinks | awk -v caixa="${CAIXA//:/_}" '$0 ~ caixa {print $2; exit}')
         [ -n "$SINK" ] && break
         sleep 1
     done

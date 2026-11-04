@@ -109,3 +109,5 @@ Guia completo (build, testes, troubleshooting, cadastro de pessoas):
 
 Instalação nativa (ROS2 Foxy + venv Python 3.8 + `onnxruntime-gpu`), convivência com os outros
 projetos do robô e problemas comuns: [`docs/guides/jetson-deployment.md`](docs/guides/jetson-deployment.md).
+
+**Operar o robô (controle, painel, hotspot, pessoas): [`docs/guides/operar-o-robo.md`](docs/guides/operar-o-robo.md).**

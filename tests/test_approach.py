@@ -79,15 +79,15 @@ def test_never_walks_backwards_when_too_close():
     assert _passo((352.0, 300.0)).vx == 0.0
 
 
-def test_stops_moving_half_a_second_after_the_last_sighting():
+def test_stops_moving_one_second_after_the_last_sighting():
     # No robô: a câmera caía e ele seguia andando na última caixa e chegava perto demais.
-    assert _passo((352.0, 50.0), visto_em=0.0, agora=0.5).vx == pytest.approx(0.2)
-    c = _passo((352.0, 50.0), visto_em=0.0, agora=0.6)
+    assert _passo((352.0, 50.0), visto_em=0.0, agora=1.0).vx == pytest.approx(0.2)
+    c = _passo((352.0, 50.0), visto_em=0.0, agora=1.1)
     assert (c.vx, c.vyaw, c.estado) == (0.0, 0.0, SEM_ROSTO)
 
-def test_package_config_also_stops_within_half_a_second():
+def test_package_config_stops_within_one_second():
     texto = (Path(__file__).parents[1] / "ros2_ws/src/robot_reaction_ros/config/operacao.yaml").read_text(encoding="utf-8")
-    assert float(re.search(r"perda_rosto_s:\s*([\d.]+)", texto).group(1)) == 0.5
+    assert float(re.search(r"perda_rosto_s:\s*([\d.]+)", texto).group(1)) == 1.0
 
 def test_vyaw_max_wins_over_vyaw_min():
     c = _passo((480.0, 50.0), aproximar=False, cfg=ApproachConfig(vyaw_max=0.2))

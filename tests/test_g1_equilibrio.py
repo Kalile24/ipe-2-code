@@ -41,14 +41,45 @@ def _preparar(robo, modo, balance_pose=None):
     robo.current_all_arm_position = lambda: {"capturada": True}
 
 
-def test_mode_3_never_captures_the_arms_as_balance(controlador, monkeypatch):
-    _preparar(controlador, 3)
+def _braco_pronto(robo, leituras):
+    import threading
+
+    robo.initialized_801 = True
+    robo.pose_lock = threading.Lock()
+    robo.command_pose = robo.target_pose = None
+    robo.arm_enabled = False
+    robo.log = lambda _texto: None
+    robo.current_all_arm_position = lambda: {"atual": True}
+    robo.lidas = 0
+
+    def ler(_rotulo):
+        robo.lidas += 1
+        return leituras[min(robo.lidas - 1, len(leituras) - 1)]
+
+    robo.state = ler
+
+
+def test_arm_control_reads_once_when_the_robot_answers(controlador):
+    _braco_pronto(controlador, [(801, 0)])
+    assert controlador.enable_arm_control() is True
+    assert controlador.lidas == 1
+
+
+def test_a_failed_reading_right_after_walking_does_not_abort_the_gesture(controlador, monkeypatch):
+    # No robô: andou até a pessoa e a rotina acabava sem nenhum gesto nem fala.
+    _braco_pronto(controlador, [(None, None), (801, 1), (801, 0)])
     monkeypatch.setattr("time.sleep", lambda _s: None)
-    relogio = iter(range(0, 1000, 3))
+    assert controlador.enable_arm_control() is True
+    assert controlador.lidas == 3
+
+
+def test_arm_control_still_refuses_when_not_in_balance(controlador, monkeypatch):
+    _braco_pronto(controlador, [(4, 0)])
+    monkeypatch.setattr("time.sleep", lambda _s: None)
+    relogio = iter(range(0, 1000))
     monkeypatch.setattr("time.time", lambda: float(next(relogio)))
-    assert controlador.initialize_to_balance(permitir_damp=False) is False
-    assert controlador.balance_pose is None
-    controlador.loco.SetFsmId.assert_not_called()
+    assert controlador.enable_arm_control() is False
+    assert controlador.arm_enabled is False
 
 
 def test_mode_0_captures_the_balance_pose(controlador):
@@ -57,11 +88,7 @@ def test_mode_0_captures_the_balance_pose(controlador):
     assert controlador.balance_pose == {"capturada": True}
 
 
-def test_mode_3_with_a_known_pose_stays_in_balance_without_damp(controlador):
-    # Mesma rodada: a pose já é a capturada em MODE 0. Cair para o damp derrubaria o robô.
-    pose = {"anterior": True}
-    _preparar(controlador, 3, balance_pose=pose)
-    controlador.initialized_801 = True
-    assert controlador.initialize_to_balance() is True
-    assert controlador.balance_pose is pose
+def test_mode_3_standing_never_goes_through_damp(controlador):
+    _preparar(controlador, 3)
+    assert controlador.initialize_to_balance(permitir_damp=False) is True
     controlador.loco.SetFsmId.assert_not_called()

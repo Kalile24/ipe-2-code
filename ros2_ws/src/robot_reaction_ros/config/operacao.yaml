@@ -15,6 +15,7 @@
     vyaw_min: 0.3  # giro mínimo parado (rad/s): abaixo disso o G1 não gira no lugar (0,22 não girou)
     vx: 0.2  # velocidade para frente (m/s, constante)
     kp_giro: 0.6  # ganho do giro (rad/s por desvio 1,0)
-    perda_rosto_s: 0.5  # sem ver o rosto por isso → para até ver de novo (não desiste; quem desiste é o desistir_s)
+    perda_rosto_s: 1.0  # sem ver o rosto por isso → para até ver de novo (quem desiste é o desistir_s)
     desistir_s: 10.0  # rosto sumido por isso → desiste
     tempo_max_s: 30.0  # aproximação mais longa que isso → desiste
+    avisos_voz: true  # depuração: fala "Perdi <nome> de vista" ao desistir (só nesse caso)

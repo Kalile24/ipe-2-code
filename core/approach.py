@@ -28,7 +28,7 @@ class ApproachConfig:
     vyaw_min: float = 0.3  # giro no lugar abaixo disso o G1 não executa (0,22 não girou; 0,3 girou)
     vx: float = 0.2
     kp_giro: float = 0.6
-    perda_rosto_s: float = 0.5  # sem imagem nova o robô não se mexe: com a última caixa ele chegava perto demais
+    perda_rosto_s: float = 1.0
     desistir_s: float = 5.0
     tempo_max_s: float = 20.0
 

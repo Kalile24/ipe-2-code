@@ -18,7 +18,7 @@ PADRAO = {INICIAR: F2 | UP, AGORA: F2 | RIGHT, AUTOMATICO: F2 | LEFT, PARAR: F2 
 # o L2+B da Unitree não faz damp no modo de equilíbrio 801 (testado em 2026-11-05).
 SEGURAR = (DAMP, LEVANTAR)
 SEGURAR_S = 1.5
-LEITURA_RECENTE_S = 0.2  # o rt/lf/lowstate chega muitas vezes por segundo: mais velho que isso, parou
+LEITURA_RECENTE_S = 0.5  # o rt/lf/lowstate chega muitas vezes por segundo: mais velho que isso, parou
 
 
 def botoes(wireless_remote: bytes | list[int]) -> int:

@@ -24,6 +24,7 @@ from std_msgs.msg import String
 from vision_msgs.msg import Detection2DArray
 
 from core.approach import DESISTIU_ROSTO, DESISTIU_TEMPO, PRONTO, ApproachConfig, escolher_caixa, passo_aproximacao
+from core.pessoas import nome_falado
 from core.piper_voice import DEFAULT_URL, say
 from core.reaction_policy import ReactionConfigError, validate_steps
 from core.routine import run_routine
@@ -167,6 +168,7 @@ class BodyNode(Node):
         self.declare_parameter("detections_topic", "/face_recognition/detections")
         # true: inicializa só se já estiver em equilíbrio (FSM 801), sem damp → em pé (partida pelo controle)
         self.declare_parameter("so_equilibrio", False)
+        self.declare_parameter("avisos_voz", True)  # depuração: "Perdi <nome> de vista" ao desistir
         for campo in fields(ApproachConfig):
             self.declare_parameter(campo.name, campo.default)
         # ValueError com os estágios válidos: derruba o nó na partida
@@ -179,6 +181,7 @@ class BodyNode(Node):
             for c in fields(ApproachConfig)
         })
         self._so_equilibrio = self.get_parameter("so_equilibrio").value is True
+        self._avisos_voz = self.get_parameter("avisos_voz").value is True
         self._pausa_s = float(self.get_parameter("pausa_s").value)
         self._speak = functools.partial(
             speak,
@@ -368,6 +371,11 @@ class BodyNode(Node):
                 fim = "fim" if ok else "interrompida" if interrompida else "falhou"
             else:  # desistiu ou interrompida na aproximação: não cumprimenta
                 ok, fim = False, estado
+                if estado == DESISTIU_ROSTO and self._avisos_voz:
+                    try:  # já parado; só nesse caso, para o robô não ficar narrando o que faz
+                        self._speak(f"Perdi {nome_falado(pessoa)} de vista")
+                    except Exception as exc:
+                        log(f"fala falhou: {exc!r}")
             self._publish(f"rotina de {pessoa}: {fim}")
             try:
                 if ok:

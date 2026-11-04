@@ -24,11 +24,22 @@
   label { display:block; margin:6px 0; } label span { display:block; font-size:13px; color:var(--muted); }
   ul { margin:0; padding-left:18px; } li { margin:2px 0; }
   #msg { min-height:1.4em; margin:8px 0 0; }
+  .barra { position:sticky; top:0; z-index:2; display:flex; justify-content:space-between; align-items:center; gap:12px; margin:-16px -16px 12px; padding:10px 16px; background:var(--bg); border-bottom:1px solid var(--line); }
+  .barra h1 { margin:0; }
+  .barra .perigo { font-weight:700; padding:12px 22px; }
+  .pronto { margin:0 0 12px; padding:10px 12px; border-radius:8px; border:1px solid var(--line); background:var(--card); }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  button.pequeno { padding:5px 9px; font-size:13px; }
+  .dica { font-size:13px; color:var(--muted); margin:6px 0 0; }
   table { width:100%; border-collapse:collapse; } td { padding:3px 0; border-bottom:1px solid var(--line); }
 </style>
 </head>
 <body>
-<h1>Painel do G1 <span id="hora" class="muted" style="font-size:13px;font-weight:400"></span></h1>
+<div class="barra">
+  <h1>Painel do G1 <span id="hora" class="muted" style="font-size:13px;font-weight:400"></span></h1>
+  <button class="perigo" onclick="acao('parar')">PARAR</button>
+</div>
+<p id="pronto" class="pronto"></p>
 <div class="grid">
   <div class="card">
     <h2>Robô</h2>
@@ -50,12 +61,11 @@
   <div class="card">
     <h2>Comandos</h2>
     <div class="botoes">
-      <button onclick="acao('subir_desarmado')">Subir desarmado</button>
-      <button class="primario" onclick="if(confirm('Armado: o robô vai se mexer. Ele está em equilíbrio (FSM 801) e com espaço livre?')) acao('subir_armado')">Subir armado</button>
-      <button onclick="acao('agora')">Cumprimentar agora</button>
-      <button onclick="acao('automatico')">Liga/desliga automático</button>
-      <button onclick="acao('liberar')">Liberar cumprimentos</button>
-      <button class="perigo" onclick="acao('parar')">PARAR</button>
+      <button id="b_desarmado" onclick="acao('subir_desarmado')">Subir desarmado</button>
+      <button id="b_armado" class="primario" onclick="if(confirm('Armado: o robô vai se mexer. Ele está em equilíbrio (FSM 801) e com espaço livre?')) acao('subir_armado')">Subir armado</button>
+      <button id="b_agora" onclick="acao('agora')">Cumprimentar agora</button>
+      <button id="b_auto" onclick="acao('automatico')">Liga/desliga automático</button>
+      <button id="b_liberar" onclick="acao('liberar')">Liberar cumprimentos</button>
     </div>
     <p id="msg" class="muted"></p>
   </div>
@@ -66,20 +76,40 @@
   <div class="card">
     <h2>Operação (vale na próxima subida)</h2>
     <form id="operacao" onsubmit="salvar(event)"></form>
+    <p class="dica"><button class="pequeno" onclick="restaurar()">Restaurar padrões</button></p>
   </div>
   <div class="card">
-    <h2>Cadastrar pessoa</h2>
+    <h2>Pessoas</h2>
+    <table id="pessoas"></table>
+    <p class="dica">Sem foto não é reconhecido. Sem rotina não é cumprimentado.</p>
+  </div>
+  <div class="card">
+    <h2>Adicionar pessoa ou trocar foto</h2>
     <form onsubmit="cadastrar(event)">
-      <label><span>Nome (minúsculas, sem espaço — o mesmo do reactions.yaml)</span><input id="nome" required pattern="[a-z0-9_]+"></label>
-      <label><span>1 a 5 fotos de frente, uma pessoa por foto</span><input id="fotos" type="file" accept="image/*" multiple required></label>
-      <button class="primario">Cadastrar</button>
+      <label><span>Nome (minúsculas, sem espaço)</span><input id="nome" required pattern="[a-z0-9_]+" autocapitalize="off" placeholder="aderson"></label>
+      <label><span>Foto de frente, uma pessoa só (substitui as anteriores da pessoa; precisa da rotina de pé)</span><input id="fotos" type="file" accept="image/*" multiple></label>
+      <label><span>Tratamento, só para pessoa nova (mesmo gesto e mesma fala do Gil)</span><input id="tratamento" list="tratamentos" placeholder="coronel veterano"></label>
+      <datalist id="tratamentos"><option value="aspirante a oficial da reserva"><option value="coronel veterano"><option value="tenente"><option value="capitão"><option value="major"><option value="general"></datalist>
+      <label><span>Nome falado, só se for diferente do nome acima (opcional)</span><input id="falado"></label>
+      <button class="primario">Salvar</button>
     </form>
     <p id="cad" class="muted"></p>
-    <p class="muted" style="font-size:13px">Com rotina no reactions.yaml: <span id="pessoas"></span></p>
+  </div>
+  <div class="card">
+    <h2>Caixa de som</h2>
+    <div class="row"><span>Em uso</span><span id="caixa_atual"></span></div>
+    <div class="botoes" style="margin:8px 0">
+      <button id="b_testar" onclick="testarSom()">Testar som</button>
+      <button id="b_procurar" onclick="procurarCaixas()">Procurar caixas</button>
+    </div>
+    <table id="caixas"></table>
+    <p id="caixa_msg" class="muted"></p>
+    <p class="dica">Só para trocar de caixa: ligue a nova em modo de pareamento antes de procurar. Sem mexer aqui, nada muda.</p>
   </div>
 </div>
 <script>
 const $ = id => document.getElementById(id);
+const esc = t => String(t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const sim = (v, s='sim', n='não') => v ? `<span class="ok">${s}</span>` : `<span class="bad">${n}</span>`;
 async function json(url, corpo) {
   const r = await fetch(url, corpo === undefined ? {} : {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(corpo)});
@@ -94,7 +124,7 @@ async function atualizar() {
     $('armado').innerHTML = e.rotina_de_pe ? (e.armado ? '<span class="warn">armado</span>' : 'desarmado') : '—';
     $('auto').innerHTML = e.automatico === null ? '—' : sim(e.automatico, 'ligadas', 'desligadas');
     const w = e.webcam;
-    $('webcam').innerHTML = (w.conectada ? `<span class="ok">conectada desde ${w.desde}</span>` : '<span class="bad">desconectada</span>')
+    $('webcam').innerHTML = (w.conectada ? `<span class="ok">${esc(w.nome || 'conectada')}, desde ${w.desde}</span>` : '<span class="bad">desconectada</span>')
       + (w.quedas ? ` <span class="warn">(${w.quedas} queda${w.quedas > 1 ? 's' : ''})</span>` : '');
     $('webcam_aviso').hidden = !w.reiniciar;
     $('camera').innerHTML = sim(e.camera.ok, 'no ar', 'fora do ar');
@@ -105,14 +135,56 @@ async function atualizar() {
       : '<span class="warn">conectada, mas não é a saída de som</span>';
     $('recon').innerHTML = e.reconhecimento.ok ? `<span class="ok">${e.reconhecimento.fps}/s</span>` : sim(false, '', e.reconhecimento.no ? 'parado' : 'fora do ar');
     $('vistos').innerHTML = e.vistos.length ? e.vistos.map(v => `<tr><td>${v.nome}</td><td>${v.nota}</td><td>caixa ${v.caixa_px}px</td></tr>`).join('') : '<tr><td class="muted">ninguém</td></tr>';
-    $('status').innerHTML = e.status.map(s => `<li><span class="muted">${s.hora}</span> ${s.texto}</li>`).join('') || '<li class="muted">nada ainda</li>';
-    $('pessoas').textContent = e.pessoas_com_rotina.join(', ') || '—';
+    $('status').innerHTML = e.status.map(s => `<li><span class="muted">${s.hora}</span> ${esc(s.texto)}</li>`).join('') || '<li class="muted">nada ainda</li>';
+    desenharPessoas(e.pessoas);
+    $('caixa_atual').textContent = c.mac ? (c.padrao ? `padrão (${c.mac})` : c.mac) : '—';
+    $('b_desarmado').disabled = $('b_armado').disabled = e.rotina_de_pe;
+    $('b_agora').disabled = $('b_auto').disabled = $('b_liberar').disabled = !e.rotina_de_pe;
+    const faltando = [];
+    if (!w.conectada) faltando.push('webcam desconectada');
+    if (e.rotina_de_pe && !e.reconhecimento.ok) faltando.push('reconhecimento sem imagem');
+    if (c.conectada === false) faltando.push('caixa de som desconectada');
+    $('pronto').innerHTML = faltando.length ? `<span class="bad">Atenção: ${faltando.join(', ')}.</span>`
+      : e.rotina_de_pe ? `<span class="ok">Tudo no ar.</span> ${e.armado ? 'Armado: o robô se mexe.' : 'Desarmado: o robô não se mexe.'}`
+      : '<span class="ok">Tudo pronto para subir.</span>';
   } catch (err) { $('estagio').textContent = 'painel sem resposta'; }
+}
+function desenharPessoas(lista) {
+  const html = lista.map(p => `<tr><td><b>${esc(p.nome)}</b></td>
+    <td>${p.fotos ? `${p.fotos} foto${p.fotos > 1 ? 's' : ''}` : '<span class="warn">sem foto</span>'}</td>
+    <td>${p.rotina ? 'rotina ok' : '<span class="warn">sem rotina</span>'}</td>
+    <td style="text-align:right">${p.fotos || !p.padrao ? `<button class="pequeno" data-nome="${esc(p.nome)}" onclick="remover(this.dataset.nome)">Remover</button>` : ''}</td></tr>`).join('');
+  if ($('pessoas').dataset.html !== html) { $('pessoas').dataset.html = html; $('pessoas').innerHTML = html; }
+}
+async function remover(nome) {
+  if (!confirm(`Remover ${nome}? Apaga as fotos cadastradas.`)) return;
+  $('cad').textContent = (await json('/pessoa/remover', {nome})).mensagem;
+  atualizar();
+}
+function desenharCaixas(lista) {
+  $('caixas').innerHTML = lista.map(d => `<tr><td>${esc(d.nome)}${d.padrao ? ' <span class="muted">(padrão)</span>' : ''}</td>
+    <td style="text-align:right">${d.atual ? '<span class="ok">em uso</span>' : `<button class="pequeno" data-mac="${esc(d.mac)}" onclick="usarCaixa(this.dataset.mac)">Usar</button>`}</td></tr>`).join('');
+}
+async function procurarCaixas() {
+  $('b_procurar').disabled = true; $('caixa_msg').textContent = 'procurando por 8 s…';
+  try { desenharCaixas(await json('/caixa/procurar', {})); $('caixa_msg').textContent = ''; }
+  finally { $('b_procurar').disabled = false; }
+}
+async function usarCaixa(mac) {
+  $('caixa_msg').textContent = 'conectando…';
+  $('caixa_msg').textContent = (await json('/caixa/usar', {mac})).mensagem;
+  desenharCaixas(await json('/caixas'));
+}
+async function testarSom() { $('caixa_msg').textContent = (await json('/caixa/testar', {})).mensagem; }
+async function restaurar() {
+  if (!confirm('Voltar todos os ajustes de operação aos padrões?')) return;
+  $('opmsg').textContent = (await json('/operacao/restaurar', {})).mensagem;
+  await carregarOperacao();
 }
 async function acao(nome) { $('msg').textContent = (await json('/acao/' + nome, {})).mensagem; atualizar(); }
 async function carregarOperacao() {
   const op = await json('/operacao');
-  const campos = ['estagios','altura_caixa_alvo_px','vx','vyaw_max','vyaw_min','kp_giro','inverter_giro','centro_ok','centro_para_andar','centro_chegada','perda_rosto_s','desistir_s','tempo_max_s'];
+  const campos = ['estagios','altura_caixa_alvo_px','vx','vyaw_max','vyaw_min','kp_giro','inverter_giro','centro_ok','centro_para_andar','centro_chegada','perda_rosto_s','desistir_s','tempo_max_s','avisos_voz'];
   $('operacao').innerHTML = campos.map(c => typeof op[c] === 'boolean'
       ? `<label><span>${c}</span><select name="${c}"><option value="false"${op[c]?'':' selected'}>false</option><option value="true"${op[c]?' selected':''}>true</option></select></label>`
       : `<label><span>${c}</span><input name="${c}" value="${op[c]}"></label>`).join('') + '<button class="primario">Salvar</button> <span id="opmsg" class="muted"></span>';
@@ -124,18 +196,29 @@ async function salvar(ev) {
 async function cadastrar(ev) {
   ev.preventDefault();
   const arquivos = [...$('fotos').files].slice(0, 5);
+  const nome = $('nome').value, tratamento = $('tratamento').value.trim();
+  if (!arquivos.length && !tratamento) { $('cad').textContent = 'Escolha uma foto ou preencha o tratamento.'; return; }
   $('cad').textContent = 'enviando…';
+  let aviso = '';
+  if (tratamento) {
+    const p = await json('/pessoa', {nome, tratamento, falado: $('falado').value});
+    if (!p.ok) { $('cad').innerHTML = `<span class="bad">${esc(p.mensagem)}</span>`; return; }
+    aviso = p.mensagem;
+  }
+  if (!arquivos.length) { $('cad').innerHTML = `<span class="ok">${esc(aviso)}</span>`; atualizar(); return; }
   // Reduz no navegador (máx. 1280 px, JPEG): foto de celular tem vários MB e o detector usa 640.
   const reduzir = f => new Promise(ok => { const img = new Image(); img.onload = () => {
     const k = Math.min(1, 1280 / Math.max(img.width, img.height)), c = document.createElement('canvas');
     c.width = img.width * k; c.height = img.height * k; c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
     ok(c.toDataURL('image/jpeg', 0.9)); URL.revokeObjectURL(img.src); }; img.src = URL.createObjectURL(f); });
   const fotos = await Promise.all(arquivos.map(reduzir));
-  const r = await json('/cadastrar', {nome: $('nome').value, fotos});
-  $('cad').innerHTML = (r.ok ? '<span class="ok">' : '<span class="bad">') + r.mensagem + '</span>'
-    + (r.ok && !r.tem_rotina ? '<br>Reconhecido, mas sem rotina no reactions.yaml: ainda não será cumprimentado.' : '');
+  const r = await json('/cadastrar', {nome, fotos});
+  $('cad').innerHTML = (r.ok ? '<span class="ok">' : '<span class="bad">') + esc(r.mensagem) + '</span>'
+    + (aviso ? `<br>${esc(aviso)}` : '')
+    + (r.ok && !r.tem_rotina ? '<br>Reconhecido, mas sem rotina: preencha o tratamento para ser cumprimentado.' : '');
+  atualizar();
 }
-atualizar(); carregarOperacao(); setInterval(atualizar, 1000);
+atualizar(); carregarOperacao(); json('/caixas').then(desenharCaixas); setInterval(atualizar, 1000);
 </script>
 </body>
 </html>

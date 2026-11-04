@@ -3,6 +3,7 @@ import json
 
 import pytest
 import rclpy
+import yaml
 from rclpy.parameter import Parameter
 from vision_msgs.msg import Detection2D, Detection2DArray, ObjectHypothesisWithPose
 
@@ -123,6 +124,50 @@ def test_gave_up_routine_is_not_retried_at_once(node):
     for _ in range(6):
         node._on_detections(_array("gil"))
     assert _greeted(node) == ["gil"]
+
+
+def test_lost_sight_routine_can_try_again_as_soon_as_recognised(node):
+    node._rotina.hold = True
+    for _ in range(3):
+        node._on_detections(_array("gil"))
+    node._rotina.results[0].finish(False, "desistiu: rosto perdido")
+    for _ in range(2):
+        node._on_detections(_array("gil"))
+    assert _greeted(node) == ["gil", "gil"]
+
+
+def test_people_added_in_the_data_file_join_the_package_map(tmp_path):
+    base = _yaml(tmp_path, ROTINA_YAML)
+    extra = tmp_path / "extra.yaml"
+    extra.write_text('novo:\n  passos:\n    - fala: "oi"\n')
+    rclpy.init(args=["--ros-args", "-p", f"reactions_file:={base}", "-p", f"reactions_extra_file:={extra}",
+                     "-p", "confirm_frames:=1", "-p", "global_cooldown_s:=0.0"])
+    n = node_mod.ReactionNode()
+    n._rotina.destroy()
+    n._rotina = _FakeRotina()
+    try:
+        n._on_detections(_array("novo"))
+        assert _greeted(n) == ["novo"]
+    finally:
+        n.destroy_node()
+        rclpy.shutdown()
+
+
+def test_a_broken_data_file_never_stops_the_robot(tmp_path):
+    base = _yaml(tmp_path, ROTINA_YAML)
+    extra = tmp_path / "extra.yaml"
+    extra.write_text("isto: [nao e uma rotina")
+    rclpy.init(args=["--ros-args", "-p", f"reactions_file:={base}", "-p", f"reactions_extra_file:={extra}",
+                     "-p", "confirm_frames:=1", "-p", "global_cooldown_s:=0.0"])
+    n = node_mod.ReactionNode()
+    n._rotina.destroy()
+    n._rotina = _FakeRotina()
+    try:
+        n._on_detections(_array("gil"))
+        assert _greeted(n) == ["gil"]
+    finally:
+        n.destroy_node()
+        rclpy.shutdown()
 
 
 def test_confirmed_person_gets_one_routine(node):
@@ -246,3 +291,14 @@ def test_installed_default_map_loads():
         n.destroy_node()
     finally:
         rclpy.shutdown()
+
+
+def test_package_map_keeps_gil_and_adds_the_colonel():
+    from ament_index_python.packages import get_package_share_directory
+
+    with open(get_package_share_directory("robot_reaction_ros") + "/config/reactions.yaml") as f:
+        mapa = yaml.safe_load(f)
+    passos = lambda fala: [{"postura": "sentido"}, {"postura": "continencia"}, {"fala": fala},
+                           {"postura": "desc_arma"}, {"postura": "a_vontade"}]
+    assert mapa["gil"]["passos"] == passos("Olá, aspirante a oficial da reserva Gil, sou o Tenente Nichinica")
+    assert mapa["aderson"]["passos"] == passos("Olá, coronel veterano Aderson, sou o Tenente Nichinica")

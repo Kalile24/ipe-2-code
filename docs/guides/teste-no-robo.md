@@ -107,7 +107,7 @@ O Gil a ~3 m, de frente para o robô. F2+RIGHT: o robô vira, anda devagar e par
 rosto chega a `altura_caixa_alvo_px`; então fala. Confira também:
 
 - **F2+DOWN no meio da caminhada**: para na hora.
-- **O Gil sai da frente** no meio: para em 0,5 s (`perda_rosto_s`) e desiste em 10 s (`desistir_s`),
+- **O Gil sai da frente** no meio: para em 1 s (`perda_rosto_s`) e desiste em 10 s (`desistir_s`),
   sem cumprimentar (`desistiu: rosto perdido` no status).
 - Parou longe ou perto demais: ajuste `altura_caixa_alvo_px` (maior = para mais perto).
 

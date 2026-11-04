@@ -41,7 +41,8 @@ def test_single_buttons_do_nothing():
     (F2 | B | UP, 10.0, 10.1, True),    # outra tecla junto não solta o combo
     (F2, 10.0, 10.1, False),            # soltou o B
     (None, 0.0, 10.1, False),           # nunca chegou leitura
-    (F2 | B, 10.0, 10.3, False),        # leituras pararam de chegar: não dá para saber que segue apertado
+    (F2 | B, 10.0, 10.4, True),         # atraso normal de leitura
+    (F2 | B, 10.0, 10.6, False),        # leituras pararam de chegar: não dá para saber que segue apertado
 ])
 def test_a_held_combo_needs_a_recent_reading(keys, recebido_em, agora, esperado):
     assert segue_apertado(keys, F2 | B, recebido_em, agora) is esperado
