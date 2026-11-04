@@ -20,10 +20,7 @@ case "$CAMERA" in
     realsense) ARGS_CAMERA="camera:=none" ;;
     *) echo "Câmera desconhecida: $CAMERA (use usb ou realsense)"; exit 1 ;;
 esac
-AMBIENTE="source /opt/ros/foxy/setup.bash && source ~/cyclonedds_ws/install/setup.bash \
-&& export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp CYCLONEDDS_URI=\$HOME/cyclonedds_ws/cyclonedds.xml \
-LD_LIBRARY_PATH=/usr/local/lib:\$LD_LIBRARY_PATH \
-&& source $REPO/.venv/bin/activate && source $REPO/ros2_ws/install/setup.bash"
+AMBIENTE="source $REPO/scripts/ambiente_robo.sh"
 
 if tmux has-session -t "$SESSAO" 2>/dev/null; then
     echo "A sessão '$SESSAO' já existe: entre com 'tmux attach -t $SESSAO' ou feche com 'tmux kill-session -t $SESSAO'."

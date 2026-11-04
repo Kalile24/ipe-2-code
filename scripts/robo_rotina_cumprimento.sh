@@ -94,4 +94,6 @@ echo
 echo "Pronto ($([ "$ARMADO" = true ] && echo ARMADO || echo desarmado: só fala)). Entre com: tmux attach -t $SESSAO"
 echo "  Ctrl+b e 0/1/2 troca de janela; Ctrl+C na janela 'rotina' devolve os braços e encerra."
 echo "  Cumprimentar de novo: $REPO/scripts/robo_liberar_cumprimento.sh [nome]"
-[ "$ARMADO" = true ] && echo "  EMERGÊNCIA: Enter na janela 'emergencia' (ou robo_emergencia.py --agora) = damp na hora."
+if [ "$ARMADO" = true ]; then
+    echo "  EMERGÊNCIA: Enter na janela 'emergencia' (ou robo_emergencia.py --agora) = damp na hora."
+fi
