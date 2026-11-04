@@ -36,8 +36,9 @@ para a operação completa do robô na demonstração.
   qualquer outro modo em pé (`G1Body.initialize`).
 - O `~/hhhh` tem o `unitree-start-joystick.service` (boot) que lê o controle e roda
   `~/hhhh/iniciar_robo.sh` no START; os combos F1+… são do `movimentos_militares.py`. O firmware usa
-  combos com L1/L2/R1/R2. Teclas no campo `keys` do `rt/wirelesscontroller` (o `~/hhhh` usa R2 =
-  `0x10`, A = `0x100`).
+  combos com L1/L2/R1/R2. Bits dos botões (doc oficial): F2 = `0x80` (o exemplo Python chama de
+  F3), UP = `0x1000`, DOWN = `0x4000`; o `~/hhhh` usa R2 = `0x10`, A = `0x100`. O código do
+  `~/hhhh` não está neste computador: se ele usa o F2, só dá para ver no robô.
 
 ## Comportamento
 
@@ -109,8 +110,11 @@ o launch aceita outro arquivo (`operacao_file`). A interface do passo 3 vai escr
 
 ### Partida pelo controle
 
-- Um programa nosso, **sem ROS**, lê o controle pelo SDK da Unitree (`rt/wirelesscontroller`) por
-  callback (sem laço ocupado; o do `~/hhhh` gasta ~80% de um núcleo).
+- Um programa nosso, **sem ROS**, lê o controle pelo SDK da Unitree por callback (sem laço ocupado;
+  o do `~/hhhh` gasta ~80% de um núcleo). No G1 o controle físico chega no `wireless_remote` do
+  `rt/lowstate` (doc oficial `250_remote_control_data`; usar a cópia de baixa frequência
+  `rt/lf/lowstate`, como o exemplo oficial), não no `rt/wirelesscontroller`, onde o `~/hhhh`
+  injeta toques virtuais.
 - **F2 + UP** sobe a rotina **armada**, com os parâmetros salvos (`operacao.yaml`); **F2 + DOWN** é
   a parada (ver "Parada de emergência com o robô solto"). Os dois combos são configuráveis. Disparo na borda (apertou), não enquanto segura; um segundo F2+UP com a rotina
   de pé não faz nada.

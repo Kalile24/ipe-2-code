@@ -6,7 +6,7 @@
 
 **Architecture:** Lógica pura nova em `core/` (filtro de estágios, laço de aproximação em pixels, detecção de combos), testada na CI. O body_node (ROS) assina as detecções e roda o laço a ~10 Hz durante a ação `/reaction/rotina`, antes da rotina filtrada; manda as velocidades ao body_worker por uma ordem nova do protocolo JSON que nunca espera postura. Um programa sem ROS (`scripts/robo_controle.py`) lê o controle pelo SDK e chama o script.
 
-**Tech Stack:** Python 3.8, ROS 2 Foxy (rclpy, vision_msgs), unitree_sdk2py (LocoClient, WirelessController), bash, systemd (unit de usuário).
+**Tech Stack:** Python 3.8, ROS 2 Foxy (rclpy, vision_msgs), unitree_sdk2py (LocoClient, LowState_ do unitree_hg), bash, systemd (unit de usuário).
 
 **Spec:** `docs/superpowers/specs/2026-11-04-aproximacao-e-estagios-design.md`
 
@@ -22,7 +22,7 @@
 - Desarmado: virar/aproximar só medem e registram por 2 s e dão o estágio como feito.
 - Pelo controle: sempre armado, só com o robô em FSM 801 (nunca damp → em pé); recusa falada "Não estou em equilíbrio, não vou começar."
 - F2+DOWN: velocidade zero na hora, cancela, a postura em andamento termina e os braços voltam.
-- Combos padrão F2+UP / F2+DOWN, teclas do `keys` do `rt/wirelesscontroller`: F2 = `0x80`, UP = `0x1000`, DOWN = `0x4000` (layout do SDK: R1 0x1, L1 0x2, START 0x4, SELECT 0x8, R2 0x10, L2 0x20, F1 0x40, F2 0x80, A 0x100, B 0x200, X 0x400, Y 0x800, UP 0x1000, RIGHT 0x2000, DOWN 0x4000, LEFT 0x8000; confirmar no robô).
+- Controle físico do G1: `wireless_remote` (40 bytes) do `rt/lf/lowstate` (`unitree_hg` `LowState_`), botões nos bytes 2–3 (`uint16` little-endian, `xKeySwitchUnion` da doc oficial `UNITREE_G1_base_documentacao/MD/unitree_official_G1_developer/250_remote_control_data.md`). Não usar `rt/wirelesscontroller`: é onde o `~/hhhh` injeta toques virtuais. Bits: R1 0x1, L1 0x2, START 0x4, SELECT 0x8, R2 0x10, L2 0x20, F1 0x40, F2 0x80 (o exemplo Python oficial chama de F3), A 0x100, B 0x200, X 0x400, Y 0x800, UP 0x1000, RIGHT 0x2000, DOWN 0x4000, LEFT 0x8000. Combos padrão F2+UP (`0x1080`) / F2+DOWN (`0x4080`).
 - Mensagens, nomes e comentários em português, como o resto do repositório.
 - Testes puros: `PYTHONPATH=. .venv/bin/python -m pytest tests -q --ignore=tests/test_enroll.py --ignore=tests/test_face_engine.py`. Testes ROS: no Docker Foxy, como em `docs/guides/ros2-docker.md` (build e test com `--build-base /tmp/b --install-base /tmp/i --log-base /tmp/l`, nunca dentro de `ros2_ws/`).
 
@@ -394,13 +394,14 @@ git commit -m "feat: operation file, stage selection and a non-interactive remot
 - Produces:
   - `F2, UP, DOWN = 0x80, 0x1000, 0x4000`; `INICIAR, PARAR = "iniciar", "parar"`.
   - `class Combos: __init__(self, combos: dict[str, int])` (nome → máscara de teclas), `update(self, keys: int) -> str | None` — devolve o nome do combo na borda em que **todas** as teclas dele ficam apertadas; segurar não repete; soltar e apertar de novo repete.
-  - `scripts/robo_controle.py [--iniciar 0x1080] [--parar 0x4080] [--mostrar] [--interface eth0]`: sem ROS; `ChannelFactoryInitialize(0, iface)`, `ChannelSubscriber("rt/wirelesscontroller", WirelessController_)` com callback (sem laço ocupado: a thread principal só espera um `threading.Event`). `INICIAR` → se a sessão tmux `rotina` não existe, `subprocess.Popen([repo/scripts/robo_rotina_cumprimento.sh, "--controle"])`; senão registra e ignora. `PARAR` → `tmux send-keys -t rotina:rotina C-c` (se a sessão existe). `--mostrar` imprime `keys` em hexa a cada mudança (para confirmar os bits no robô). Log em stdout (journal).
+  - `botoes(wireless_remote: bytes | list[int]) -> int` — `wireless_remote[2] | wireless_remote[3] << 8`.
+  - `scripts/robo_controle.py [--iniciar 0x1080] [--parar 0x4080] [--mostrar] [--interface eth0]`: sem ROS; `ChannelFactoryInitialize(0, iface)`, `ChannelSubscriber("rt/lf/lowstate", LowState_)` (`unitree_sdk2py.idl.unitree_hg.msg.dds_`) com callback que faz `combos.update(botoes(msg.wireless_remote))` (sem laço ocupado: a thread principal só espera um `threading.Event`). `INICIAR` → se a sessão tmux `rotina` não existe, `subprocess.Popen([repo/scripts/robo_rotina_cumprimento.sh, "--controle"])`; senão registra e ignora. `PARAR` → `tmux send-keys -t rotina:rotina C-c` (se a sessão existe). `--mostrar` imprime `keys` em hexa a cada mudança (para confirmar os bits no robô). Log em stdout (journal).
   - `ipe-controle.service`: unit de **usuário** (`~/.config/systemd/user/`), `ExecStart=/bin/bash -lc 'source %h/ipe-2-code/scripts/ambiente_robo.sh && exec python3 %h/ipe-2-code/scripts/robo_controle.py'`, `Restart=on-failure`, `WantedBy=default.target`.
 
 - [ ] **Step 1: Write the failing tests**
 
 ```python
-from core.remote_combos import DOWN, F2, INICIAR, PARAR, UP, Combos
+from core.remote_combos import DOWN, F2, INICIAR, PARAR, UP, Combos, botoes
 
 def _combos():
     return Combos({INICIAR: F2 | UP, PARAR: F2 | DOWN})
@@ -416,6 +417,10 @@ def test_release_and_press_again_fires_again():
 def test_extra_keys_do_not_block_the_combo():
     assert _combos().update(F2 | DOWN | 0x1) == PARAR
 
+def test_buttons_come_from_bytes_2_and_3_little_endian():
+    raw = [0x55, 0x51, 0x80, 0x10] + [0] * 36  # F2 no byte 2, UP no byte 3
+    assert botoes(raw) == F2 | UP
+
 def test_up_alone_or_f2_alone_does_nothing():
     c = _combos()
     assert [c.update(k) for k in [UP, 0, F2, 0]] == [None] * 4
@@ -429,6 +434,8 @@ Expected: FAIL (`ModuleNotFoundError`)
 - [ ] **Step 3: Implement `core/remote_combos.py`, `scripts/robo_controle.py` and the unit**
 
 `robo_controle.py` só importa o SDK dentro de `main()` (o módulo importa sem SDK). Se dois combos ficarem prontos no mesmo update, `PARAR` vence.
+
+**No robô, antes de instalar o serviço (registrar no guia, Task 7):** `grep -n "0x80\|>> 7\|F2\|F3" ~/hhhh/*.py` para ver se o `~/hhhh` já usa esse botão; se usar, trocar o padrão dos combos. E `robo_controle.py --mostrar` apertando F2, UP e DOWN para confirmar `0x80`, `0x1000`, `0x4000`.
 
 - [ ] **Step 4: Run to verify they pass**
 
