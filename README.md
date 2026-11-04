@@ -104,6 +104,7 @@ Guia completo (build, testes, troubleshooting, cadastro de pessoas):
 ```bash
 ~/ipe-2-code/scripts/robo_rotina_cumprimento.sh [--armado] && tmux attach -t rotina
 # webcam + reconhecimento + rotina militar (posturas + fala na caixa); sem --armado, posturas só no log
+# --estagios virar,aproximar,fala,posturas | --controle (combos F2+…) — teste: docs/guides/teste-no-robo.md
 ```
 
 Instalação nativa (ROS2 Foxy + venv Python 3.8 + `onnxruntime-gpu`), convivência com os outros

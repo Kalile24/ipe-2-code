@@ -1,6 +1,6 @@
 # Aproximação da pessoa, estágios e partida pelo controle — Design
 
-Data: 2026-11-04. Contexto: continua a rotina de cumprimento
+Data: 2026-11-04. Implementado em 2026-11-04 (testes puros e ROS no Docker); **ainda não testado no robô**: [`teste-no-robo.md`](../../guides/teste-no-robo.md). Contexto: continua a rotina de cumprimento
 (`2026-10-29-rotina-cumprimento-design.md`, revisada em 2026-11-04: ação `/reaction/rotina`,
 body_node + body_worker). Depois desta vem a interface web de monitoramento (passo 3).
 

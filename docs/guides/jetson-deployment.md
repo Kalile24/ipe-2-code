@@ -350,6 +350,13 @@ tmux attach -t rotina                                      # janelas: rotina, st
 - O descansar dá um impulso curto de caminhada para frente (0,12 m/s por ~1 s); `passo_descansar:=false`
   no `rotina.launch.py` o desliga.
 - Nome na fala: escreva como deve soar no Piper ("Nichinica"; "Nixinica" sai "ksi").
+- **Virar e andar até a pessoa, estágios e controle (2026-11-04):** antes da rotina o robô vira para
+  a pessoa e anda até a caixa do rosto ter `altura_caixa_alvo_px`; `--estagios virar,aproximar,fala,posturas`
+  escolhe o que roda; `--controle` é o modo dos combos F2+UP/RIGHT/LEFT/DOWN
+  (`scripts/robo_controle.py`); os números ficam em `config/operacao.yaml` (`OPERACAO=arquivo` usa
+  outro). Como testar no robô, passo a passo: [`teste-no-robo.md`](teste-no-robo.md).
+- O damp da janela `emergencia` é **só com o robô no suporte**; fora dele, ele cai. Andando, pare
+  com F2+DOWN ou com o próprio controle.
 
 ## Checklist
 

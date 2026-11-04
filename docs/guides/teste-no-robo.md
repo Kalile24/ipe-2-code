@@ -1,0 +1,146 @@
+# Mover e testar o robô — passo a passo
+
+Para testar no G1 o que ainda não rodou no robô: a ação `/reaction/rotina`, os estágios, virar e
+andar até a pessoa e os combos do controle. Vá na ordem: cada etapa só depois da anterior dar certo.
+Specs: [`2026-11-04-aproximacao-e-estagios-design.md`](../superpowers/specs/2026-11-04-aproximacao-e-estagios-design.md)
+e [`2026-10-29-rotina-cumprimento-design.md`](../superpowers/specs/2026-10-29-rotina-cumprimento-design.md).
+Instalação e ambiente: [`jetson-deployment.md`](jetson-deployment.md).
+
+**Sempre:** alguém com o controle da Unitree na mão; espaço livre em volta; ninguém apertando
+START nem F1+… (são do `~/hhhh`). Avise o autor do `~/hhhh` antes dos testes armados.
+
+## Paradas
+
+| Situação | Como parar |
+|---|---|
+| Robô **no suporte** | Enter na janela `emergencia` (damp: motores soltos, fica pendurado) |
+| Robô **fora do suporte** | **F2+DOWN** (para de andar na hora, braços voltam, fica em pé) ou o próprio controle da Unitree. **Nunca damp fora do suporte**: ele cai |
+| Qualquer um | Ctrl+C na janela `rotina` (termina o passo atual, para de andar, devolve os braços) |
+
+## 1. Atualizar e compilar
+
+```bash
+cd ~/ipe-2-code && git pull
+source scripts/ambiente_robo.sh
+cd ros2_ws && python3 -m colcon build --symlink-install
+```
+
+Tem que terminar com `3 packages finished`. O `robot_reaction_interfaces` é o primeiro pacote em
+C/CMake do projeto: se falhar, quase sempre falta algo do rosidl visível para o Python do venv
+(`empy`, `lark`, cabeçalhos do numpy). Mande a mensagem de erro.
+
+## 2. Conferir os botões do controle (sem mexer no robô)
+
+```bash
+grep -n "0x80\|>> 7\|F2\|F3" ~/hhhh/*.py         # o ~/hhhh já usa esse botão? Se usar, troque os combos
+python3 ~/ipe-2-code/scripts/robo_controle.py --mostrar
+```
+
+Aperte F2, UP, RIGHT, DOWN e LEFT, um de cada vez: tem que aparecer `0x0080`, `0x1000`, `0x2000`,
+`0x4000` e `0x8000` (o botão pode estar escrito F3 no controle). Ctrl+C para sair. Valores
+diferentes: use `--iniciar/--agora/--automatico/--parar` com as máscaras certas.
+
+## 3. Desarmado: reconhecimento, fala e calibrar a caixa
+
+O robô **não se mexe** desarmado.
+
+```bash
+~/ipe-2-code/scripts/robo_rotina_cumprimento.sh && tmux attach -t rotina
+```
+
+- Janela `deteccoes`: o Gil aparece com nome e nota quando fica na frente.
+- Janela `status`: `virar:`/`aproximar: desvio=… caixa=…px vx=… vyaw=…` por ~2 s (só medindo), depois
+  a rotina com as posturas como `dry_run` e a fala pela caixa.
+- **Escolher a distância de parada:** o Gil fica parado onde o robô deve parar. Leia o `caixa=…px`
+  no status; esse número vai em `altura_caixa_alvo_px` (passo 3a).
+- **Sentido do giro:** com o Gil à **direita** da imagem, `desvio` sai **positivo** e `vyaw`
+  **negativo** (virar à direita). Confirme no passo 5 que o robô vira para o lado dele; se virar
+  para o outro, `inverter_giro: true`.
+- `scripts/robo_liberar_cumprimento.sh gil` cumprimenta de novo sem esperar 5 min.
+
+### 3a. Seus valores
+
+```bash
+cp ~/ipe-2-code/ros2_ws/src/robot_reaction_ros/config/operacao.yaml ~/operacao.yaml
+nano ~/operacao.yaml        # altura_caixa_alvo_px, vx, vyaw_max...
+OPERACAO=~/operacao.yaml ~/ipe-2-code/scripts/robo_rotina_cumprimento.sh ...
+```
+
+Para o primeiro teste andando, comece devagar: `vx: 0.1`, `vyaw_max: 0.2`.
+
+## 4. Armado no suporte, sem andar
+
+Robô no suporte, em damp (ou já em equilíbrio). Só braços e fala:
+
+```bash
+~/ipe-2-code/scripts/robo_rotina_cumprimento.sh --armado --estagios fala,posturas
+```
+
+Responda `s` à pergunta do suporte. Confira: inicializa (~16 s) → `pronto` → o Gil aparece → a
+rotina dele inteira (sentido, continência, fala, desc_arma, descansar, 15 s, à vontade). Depois,
+de novo, e **Ctrl+C no meio da pausa de 15 s**: tem que fazer o à vontade e encerrar na hora.
+
+O descansar dá um passinho para frente (`passo_descansar`); no suporte isso é esperado.
+
+## 5. Fora do suporte: só virar
+
+Ponha o robô em pé e em equilíbrio **pelo controle**, fora do suporte. Suba sem perguntar pelo
+suporte e só com virar e falar:
+
+```bash
+~/ipe-2-code/scripts/robo_rotina_cumprimento.sh --controle --estagios virar,fala
+```
+
+O `--controle` sobe com as reações automáticas **desligadas**: aperte **F2+RIGHT** (ou rode
+`ros2 param set /reaction_node cumprimentar_agora agora`) com o Gil um pouco para o lado. O robô
+tem que girar no lugar até ficar de frente e então falar. Se girar para o lado errado: F2+DOWN,
+`inverter_giro: true` no seu `operacao.yaml`, e de novo.
+
+Se o robô não estava em equilíbrio, ele fala "Não estou em equilíbrio, não vou começar." e não faz
+nada: ponha-o em equilíbrio pelo controle e suba de novo.
+
+## 6. Fora do suporte: andar até a pessoa
+
+```bash
+OPERACAO=~/operacao.yaml ~/ipe-2-code/scripts/robo_rotina_cumprimento.sh --controle --estagios virar,aproximar,fala
+```
+
+O Gil a ~3 m, de frente para o robô. F2+RIGHT: o robô vira, anda devagar e para quando a caixa do
+rosto chega a `altura_caixa_alvo_px`; então fala. Confira também:
+
+- **F2+DOWN no meio da caminhada**: para na hora.
+- **O Gil sai da frente** no meio: para em 1 s (`perda_rosto_s`) e desiste em 5 s (`desistir_s`),
+  sem cumprimentar (`desistiu: rosto perdido` no status).
+- Parou longe ou perto demais: ajuste `altura_caixa_alvo_px` (maior = para mais perto).
+
+Só depois disso, a rotina completa andando: `--estagios virar,aproximar,fala,posturas` (ou sem
+`--estagios`).
+
+## 7. Pelo controle, sem terminal
+
+Instale o serviço **só depois de combinar com quem usa o robô** (ele fica de pé desde o boot):
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp ~/ipe-2-code/scripts/systemd/ipe-controle.service ~/.config/systemd/user/
+systemctl --user daemon-reload && systemctl --user enable --now ipe-controle
+sudo loginctl enable-linger unitree
+journalctl --user -u ipe-controle -f        # log dos combos
+```
+
+| Combo | Faz |
+|---|---|
+| F2 + UP | sobe tudo armado (só com o robô em equilíbrio), reações automáticas desligadas: ande com o robô pelo controle |
+| F2 + RIGHT | cumprimenta agora quem está sendo reconhecido ("Não reconheço ninguém." se ninguém do mapa) |
+| F2 + LEFT | liga/desliga as reações automáticas (o robô fala o estado) |
+| F2 + DOWN | para e encerra |
+
+Teste na ordem: F2+UP (o log mostra a sessão subindo; `tmux attach -t rotina` mostra as janelas),
+F2+RIGHT com o Gil na frente, F2+LEFT duas vezes (ouça "desligadas"/"ligadas"), F2+DOWN.
+Para tirar o serviço: `systemctl --user disable --now ipe-controle`.
+
+## O que mandar se algo der errado
+
+- A janela `status` (o que o body_node fez) e o log da janela `rotina`.
+- Em qual etapa deste guia, com quais `--estagios` e qual `operacao.yaml`.
+- Pelo controle: `journalctl --user -u ipe-controle --since "-10min"`.
