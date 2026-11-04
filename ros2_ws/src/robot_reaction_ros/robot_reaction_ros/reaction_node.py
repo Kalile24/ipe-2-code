@@ -44,6 +44,7 @@ class ReactionNode(Node):
         self.declare_parameter("person_cooldown_s", 300.0)
         self.declare_parameter("global_cooldown_s", 10.0)
         self.declare_parameter("absence_s", 5.0)
+        self.declare_parameter("espera_desistiu_s", 60.0)
         self.declare_parameter("liberar", "")
         self.declare_parameter("automatico", True)
         self.declare_parameter("cumprimentar_agora", "")
@@ -68,6 +69,7 @@ class ReactionNode(Node):
             person_cooldown_s=float(self.get_parameter("person_cooldown_s").value),
             global_cooldown_s=float(self.get_parameter("global_cooldown_s").value),
             absence_s=float(self.get_parameter("absence_s").value),
+            espera_desistiu_s=float(self.get_parameter("espera_desistiu_s").value),
         )
 
         detections_topic = self.get_parameter("detections_topic").value
@@ -162,8 +164,8 @@ class ReactionNode(Node):
         self.get_logger().info(f"rotina de {nome}: {'fim' if resultado.sucesso else resultado.mensagem}")
         if not resultado.sucesso and resultado.mensagem.startswith("desistiu"):
             # A aproximação desistiu (rosto perdido, tempo esgotado): não cumprimentou, então não
-            # conta. Sem isto o automático ficava 5 min sem tentar de novo.
-            self._policy.forget(nome)
+            # conta para os 5 min, mas espera um pouco para não andar até a pessoa sem parar.
+            self._policy.desistiu(nome, time.monotonic())
         self._em_andamento = None
 
 

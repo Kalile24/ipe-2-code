@@ -1,6 +1,8 @@
+import pytest
+
 from core.remote_combos import (
     AGORA, AUTOMATICO, DAMP, DOWN, F2, INICIAR, LEFT, LEVANTAR, PADRAO, PARAR, RIGHT, SEGURAR, UP, A, B, Combos,
-    botoes,
+    botoes, segue_apertado,
 )
 
 
@@ -32,3 +34,14 @@ def test_each_combo_maps_to_its_action_and_stop_wins():
 def test_single_buttons_do_nothing():
     c = Combos(PADRAO)
     assert [c.update(k) for k in [UP, 0, F2, 0, DOWN]] == [None] * 5
+
+
+@pytest.mark.parametrize("keys, recebido_em, agora, esperado", [
+    (F2 | B, 10.0, 10.1, True),         # apertado, leitura recente
+    (F2 | B | UP, 10.0, 10.1, True),    # outra tecla junto não solta o combo
+    (F2, 10.0, 10.1, False),            # soltou o B
+    (None, 0.0, 10.1, False),           # nunca chegou leitura
+    (F2 | B, 10.0, 10.3, False),        # leituras pararam de chegar: não dá para saber que segue apertado
+])
+def test_a_held_combo_needs_a_recent_reading(keys, recebido_em, agora, esperado):
+    assert segue_apertado(keys, F2 | B, recebido_em, agora) is esperado

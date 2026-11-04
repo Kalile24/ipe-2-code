@@ -56,9 +56,12 @@ def tocar(nome: str) -> None:
     """Toca o padrão `nome` em segundo plano. Sem paplay (ou sem som), não faz nada."""
     if shutil.which("paplay") is None:
         return
-    arquivo = tempfile.NamedTemporaryFile(prefix="ipe-bipe-", suffix=".wav", delete=False)
-    arquivo.write(wav(PADROES[nome]))
-    arquivo.close()
-    # O shell apaga o arquivo depois de tocar; o controle não espera.
-    subprocess.Popen(["sh", "-c", 'paplay "$1"; rm -f "$1"', "bipe", arquivo.name],
-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        arquivo = tempfile.NamedTemporaryFile(prefix="ipe-bipe-", suffix=".wav", delete=False)
+        arquivo.write(wav(PADROES[nome]))
+        arquivo.close()
+        # O shell apaga o arquivo depois de tocar; o controle não espera.
+        subprocess.Popen(["sh", "-c", 'paplay "$1"; rm -f "$1"', "bipe", arquivo.name],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError as exc:  # disco cheio, sem processos: o bipe nunca impede parar ou damp
+        print(f"bipe {nome} falhou: {exc!r}", flush=True)

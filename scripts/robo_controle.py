@@ -31,13 +31,15 @@ sys.path.insert(0, REPO)
 
 from core.bipes import tocar  # noqa: E402
 from core.remote_combos import (  # noqa: E402
-    AGORA, AUTOMATICO, DAMP, INICIAR, LEVANTAR, PADRAO, PARAR, SEGURAR, SEGURAR_S, Combos, botoes,
+    AGORA, AUTOMATICO, DAMP, INICIAR, LEVANTAR, PADRAO, PARAR, SEGURAR, SEGURAR_S, Combos, botoes, segue_apertado,
 )
 
 SESSAO = "rotina"  # a sessão tmux do robo_rotina_cumprimento.sh
 # A mesma trava do robo_rotina_cumprimento.sh: presa enquanto uma subida está em andamento.
 TRAVA_SUBIDA = os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp", "ipe-rotina-subida.lock")
 ESPERA_ENCERRAR_S = 90.0  # o body_node devolve os braços antes de sair (até ~60 s no pior caso)
+LEVANTAR_TIMEOUT_S = 120.0
+LEVANTANDO: subprocess.Popen | None = None  # o robo_levantar.py em andamento: o F2+DOWN pode abortá-lo
 
 
 def log(texto: str) -> None:
@@ -108,13 +110,20 @@ def parar() -> None:
 
 
 def _parar() -> None:
+    levantando = LEVANTANDO
+    if levantando is not None and levantando.poll() is None:
+        # Aborta a sequência onde estiver (o robô está no suporte); depois o F2+B segurado dá damp.
+        log("F2+DOWN: abortando o levantar")
+        levantando.terminate()
+        tocar("parar")
+        return
     if not sessao_de_pe():
         log("F2+DOWN: nenhuma rotina de pé")
         tocar("recusado")
         return
     log("F2+DOWN: parando (Ctrl+C na janela rotina)")
+    subprocess.run(["tmux", "send-keys", "-t", f"{SESSAO}:rotina", "C-c"])  # antes do bipe: parar vem primeiro
     tocar("parar")
-    subprocess.run(["tmux", "send-keys", "-t", f"{SESSAO}:rotina", "C-c"])
     # Só fecha a sessão depois que o launch saiu (braços devolvidos): fechar no meio mataria o
     # body_worker com o arm_sdk ativo. Sem fechar, o próximo F2+UP dizia "já está de pé".
     fim = time.monotonic() + ESPERA_ENCERRAR_S
@@ -150,17 +159,24 @@ def damp() -> None:
 
 
 def levantar() -> None:
+    global LEVANTANDO
     if corpo_ocupado():
         log("F2+A: recusado, a rotina está de pé")
         tocar("recusado")
         return
     log("F2+A: levantando (damp → em pé → equilíbrio)")
     tocar("iniciar")
-    saida = subprocess.run([sys.executable, os.path.join(REPO, "scripts", "robo_levantar.py")],
-                           capture_output=True, text=True, timeout=120)
-    linhas = [l for l in saida.stdout.splitlines() if l.startswith("levantar:")]
-    log("\n".join(linhas) or saida.stdout.strip()[-300:])
-    tocar("encerrada" if saida.returncode == 0 else "recusado")
+    LEVANTANDO = subprocess.Popen([sys.executable, os.path.join(REPO, "scripts", "robo_levantar.py")],
+                                  stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    try:
+        stdout, _ = LEVANTANDO.communicate(timeout=LEVANTAR_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        LEVANTANDO.kill()
+        stdout, _ = LEVANTANDO.communicate()
+    linhas = [l for l in stdout.splitlines() if l.startswith("levantar:")]
+    log("\n".join(linhas) or stdout.strip()[-300:])
+    tocar("encerrada" if LEVANTANDO.returncode == 0 else "recusado")
+    LEVANTANDO = None
 
 
 def main() -> int:
@@ -179,6 +195,7 @@ def main() -> int:
     combos = Combos({nome: getattr(args, nome) for nome in acoes})
     ocupado = threading.Lock()  # uma ação por vez; PARAR passa sempre
     ultimo = [None]
+    recebido_em = [0.0]
 
     def rodar(nome: str) -> None:
         try:
@@ -188,8 +205,8 @@ def main() -> int:
                 mascara = getattr(args, nome)
                 fim = time.monotonic() + SEGURAR_S
                 while time.monotonic() < fim:
-                    if (ultimo[0] or 0) & mascara != mascara:
-                        log(f"{nome}: soltou antes de {SEGURAR_S} s; cancelado")
+                    if not segue_apertado(ultimo[0], mascara, recebido_em[0], time.monotonic()):
+                        log(f"{nome}: soltou (ou o controle parou de chegar) antes de {SEGURAR_S} s; cancelado")
                         return
                     time.sleep(0.05)
             acoes[nome]()
@@ -203,7 +220,7 @@ def main() -> int:
         keys = botoes(msg.wireless_remote)
         if args.mostrar and keys != ultimo[0]:
             log(f"botões: {keys:#06x}")
-        ultimo[0] = keys
+        ultimo[0], recebido_em[0] = keys, time.monotonic()
         nome = combos.update(keys)
         if nome is None:
             return

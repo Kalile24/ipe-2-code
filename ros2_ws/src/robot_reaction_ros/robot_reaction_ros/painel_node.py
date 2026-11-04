@@ -281,11 +281,15 @@ class PainelNode(Node):
         return f"ação desconhecida {nome!r}"
 
     def operacao(self) -> dict:
-        caminho = self._operacao_file
-        if not os.path.exists(caminho):
-            caminho = os.path.join(get_package_share_directory("robot_reaction_ros"), "config", "operacao.yaml")
-        with open(caminho) as f:
-            return yaml.safe_load(f)["/**"]["ros__parameters"]
+        # O arquivo salvo por cima dos padrões do pacote: um salvo antes de um campo novo existir
+        # ainda mostra e salva esse campo.
+        padrao = os.path.join(get_package_share_directory("robot_reaction_ros"), "config", "operacao.yaml")
+        with open(padrao) as f:
+            valores = yaml.safe_load(f)["/**"]["ros__parameters"]
+        if os.path.exists(self._operacao_file):
+            with open(self._operacao_file) as f:
+                valores.update(yaml.safe_load(f)["/**"]["ros__parameters"])
+        return valores
 
     def salvar_operacao(self, novos: dict) -> str:
         atual = self.operacao()

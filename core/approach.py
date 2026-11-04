@@ -28,7 +28,7 @@ class ApproachConfig:
     vyaw_min: float = 0.3  # giro no lugar abaixo disso o G1 não executa (0,22 não girou; 0,3 girou)
     vx: float = 0.2
     kp_giro: float = 0.6
-    perda_rosto_s: float = 1.0
+    perda_rosto_s: float = 0.5  # sem imagem nova o robô não se mexe: com a última caixa ele chegava perto demais
     desistir_s: float = 5.0
     tempo_max_s: float = 20.0
 
@@ -72,7 +72,7 @@ def passo_aproximacao(
     if vx == 0.0 and vyaw != 0.0 and abs(vyaw) < cfg.vyaw_min:
         # Parado, o giro proporcional fino não sai do lugar: gira no mínimo que o G1 executa.
         # Andando, o giro fino funciona (o passo para frente já movimenta as pernas).
-        vyaw = math.copysign(cfg.vyaw_min, vyaw)
+        vyaw = math.copysign(min(cfg.vyaw_min, cfg.vyaw_max), vyaw)
     # Já perto: aceita centro_chegada. Exigir centro_ok ali prendia o robô até o tempo_max (no
     # G1, o giro fino de ~0,1 rad/s perto do centro não chega a girar).
     tolerancia = cfg.centro_chegada if aproximar and not longe else cfg.centro_ok

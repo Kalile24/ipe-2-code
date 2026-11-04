@@ -31,16 +31,14 @@ import time
 from typing import IO
 
 SEM_TORQUE_OU_DAMP = (0, 1)  # FSM_ID do G1 com os motores soltos: o damp não muda nada
-# FSM 801 em equilíbrio: MODE 0, ou 3 com o arm_sdk ativo (logo depois de outra rodada soltar os
-# braços); o ~/hhhh aceita os dois.
-MODOS_EQUILIBRIO = (0, 3)
 
 
 def em_equilibrio(fsm_id: object, fsm_mode: object) -> bool:
-    """FSM 801 = o controlador de equilíbrio. O MODE só diz se o arm_sdk está ativo; quando a
-    leitura dele falha (None: o RPC não respondeu, o que no robô acontecia logo depois de outra
-    rodada sair, e cada tentativa espera 5 s) o 801 basta. Em pé nunca há damp de qualquer jeito."""
-    return fsm_id == 801 and (fsm_mode in MODOS_EQUILIBRIO or fsm_mode is None)
+    """FSM 801 = o controlador de equilíbrio. MODE 3 = arm_sdk ainda ativo: os braços podem estar
+    fora do equilíbrio (worker morto no meio de uma continência) e a postura capturada viraria o
+    "equilíbrio" do à vontade, então não vale. Quando a leitura do MODE falha (None: o RPC não
+    respondeu, o que no robô acontecia logo depois de outra rodada sair) o 801 basta."""
+    return fsm_id == 801 and fsm_mode in (0, None)
 
 
 class G1Body:
@@ -78,7 +76,7 @@ class G1Body:
     INTERVALO_ESTADO_S = 0.5
 
     def ler_estado(self) -> tuple[object, object]:
-        """Lê o FSM até ele estar num estado estável (mole ou em equilíbrio), por até ESPERA_ESTADO_S.
+        """Lê o FSM até ele estar num estado estável (mole ou 801/0), por até ESPERA_ESTADO_S.
 
         Uma leitura só falhava às vezes (logo depois de conectar o LocoClient responde 3102 → None,
         ou o MODE ainda está mudando) e a partida pelo controle dizia "não estou em equilíbrio" com
@@ -87,7 +85,7 @@ class G1Body:
         fim = time.monotonic() + self.ESPERA_ESTADO_S
         while True:
             fsm_id, fsm_mode = self.robot.state("Antes de inicializar")
-            if em_equilibrio(fsm_id, fsm_mode) or fsm_id in SEM_TORQUE_OU_DAMP or time.monotonic() >= fim:
+            if (fsm_id, fsm_mode) == (801, 0) or fsm_id in SEM_TORQUE_OU_DAMP or time.monotonic() >= fim:
                 return fsm_id, fsm_mode
             time.sleep(self.INTERVALO_ESTADO_S)
 

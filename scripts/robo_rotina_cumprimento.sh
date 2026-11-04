@@ -34,7 +34,8 @@ while [ $# -gt 0 ]; do
     esac
     shift
 done
-VIDEO=${VIDEO:-$(ls /dev/v4l/by-id/*-video-index0 2>/dev/null | head -1)}
+# A webcam USB ligada, qualquer modelo; a RealSense também aparece aqui e não é a webcam.
+VIDEO=${VIDEO:-$(ls /dev/v4l/by-id/*-video-index0 2>/dev/null | grep -v RealSense | head -1)}
 case "$CAMERA" in
     usb) ARGS_CAMERA="camera:=v4l2 video_device:=${VIDEO:-/dev/video0}" ;;
     realsense) ARGS_CAMERA="camera:=none" ;;

@@ -71,14 +71,16 @@ def load_reactions(raw: object) -> dict[str, list[dict[str, str]]]:
 class ReactionPolicy:
     """Recebe os nomes vistos em cada frame e diz quando reagir.
 
-    - Confirmação: a pessoa precisa estar em `confirm_frames` frames seguidos; um frame sem ela
-      (inclusive vazio) zera a contagem.
+    - Confirmação: a pessoa precisa aparecer em `confirm_frames` frames; sumir por mais de
+      `falha_curta_s` zera a contagem (uma falha mais curta do reconhecimento, não).
     - Repetição: depois de reagir a uma pessoa, só reage a ela de novo quando as DUAS valerem:
       passaram `person_cooldown_s` desde a reação E ela saiu da frente da câmera por
       `absence_s` seguidos nesse meio-tempo. Quem fica parado na frente não é cumprimentado de
       novo; a ausência curta evita que uma falha do reconhecimento (rosto virado) conte como saída.
     - `global_cooldown_s` entre quaisquer duas reações.
     - Várias confirmadas no mesmo frame: só a de maior score; as outras continuam contando.
+    - `desistiu()`: a aproximação não chegou até a pessoa; tenta de novo só depois de
+      `espera_desistiu_s`, para o robô não andar até ela sem parar.
     - `release()`: o comando manual de teste; a pessoa (ou todas) pode ser cumprimentada já.
     """
 
@@ -90,6 +92,7 @@ class ReactionPolicy:
         global_cooldown_s: float = 10.0,
         absence_s: float = 5.0,
         falha_curta_s: float = 0.5,
+        espera_desistiu_s: float = 60.0,
     ) -> None:
         if confirm_frames < 1:
             raise ValueError(f"confirm_frames tem que ser >= 1, veio {confirm_frames}")
@@ -97,6 +100,8 @@ class ReactionPolicy:
         # Some por até isso (frames de "desconhecido" de longe): a contagem fica, não zera. No robô,
         # a 2-3 m o reconhecimento alternava gil/desconhecido e nunca juntava 5 frames seguidos.
         self._falha_curta_s = falha_curta_s
+        self._espera_desistiu_s = espera_desistiu_s
+        self._nao_antes: dict[str, float] = {}  # desistiu: só tenta de novo depois desta hora
         self._confirm_frames = confirm_frames
         self._person_cooldown_s = person_cooldown_s
         self._global_cooldown_s = global_cooldown_s
@@ -138,6 +143,8 @@ class ReactionPolicy:
         return nome, self._reactions[nome]
 
     def _may_repeat(self, nome: str, now: float) -> bool:
+        if now < self._nao_antes.get(nome, now):
+            return False
         if nome not in self._last_fired:
             return True
         return self._left[nome] and now - self._last_fired[nome] >= self._person_cooldown_s
@@ -160,11 +167,17 @@ class ReactionPolicy:
         self._last_fired.pop(nome, None)
         self._left.pop(nome, None)
 
+    def desistiu(self, nome: str, agora: float) -> None:
+        """A aproximação desistiu: não foi cumprimentada, mas só tenta de novo depois da espera."""
+        self.forget(nome)
+        self._nao_antes[nome] = agora + self._espera_desistiu_s
+
     def release(self, nome: str | None = None) -> None:
         """Libera a reação de `nome` (None = todos), sem esperar cooldown nem saída da frente."""
         if nome is not None and nome not in self._reactions:
             raise KeyError(f"{nome!r} não está no mapa de reações; nomes: {sorted(self._reactions)}")
-        for n in [nome] if nome is not None else list(self._last_fired):
+        for n in [nome] if nome is not None else self._reactions:
             self._last_fired.pop(n, None)
             self._left.pop(n, None)
+            self._nao_antes.pop(n, None)
         self._last_any = None

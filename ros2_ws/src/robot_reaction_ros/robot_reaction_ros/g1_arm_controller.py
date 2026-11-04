@@ -697,11 +697,16 @@ class G1ArmController:
         try:
             if self.initialized_801 or not permitir_damp:
                 fsm_id, fsm_mode = self.state("Estado atual")
-                # [ipe-2-code] em pé: relê por até 5 s (leitura que falha/MODE mudando) e aceita o
-                # MODE 3 (arm_sdk ativo), como a verificação do body_worker.
+                # [ipe-2-code] em pé: relê por até 5 s (leitura que falha/MODE mudando).
+                # MODE 3 (arm_sdk ativo) só com a postura já capturada: capturar agora guardaria
+                # braços que podem estar fora do equilíbrio, e o à vontade voltaria para eles.
                 # MODE None (o RPC do MODE não respondeu) com FSM 801 também é equilíbrio.
                 def equilibrio() -> bool:
-                    return fsm_id == 801 and (fsm_mode in (0, 3) or (not permitir_damp and fsm_mode is None))
+                    return fsm_id == 801 and (
+                        fsm_mode == 0
+                        or (fsm_mode == 3 and self.balance_pose is not None)
+                        or (not permitir_damp and fsm_mode is None)
+                    )
 
                 fim = time.time() + (0.0 if permitir_damp else 5.0)
                 while not equilibrio() and time.time() < fim:

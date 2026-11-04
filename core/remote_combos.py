@@ -18,10 +18,17 @@ PADRAO = {INICIAR: F2 | UP, AGORA: F2 | RIGHT, AUTOMATICO: F2 | LEFT, PARAR: F2 
 # o L2+B da Unitree não faz damp no modo de equilíbrio 801 (testado em 2026-11-05).
 SEGURAR = (DAMP, LEVANTAR)
 SEGURAR_S = 1.5
+LEITURA_RECENTE_S = 0.2  # o rt/lf/lowstate chega muitas vezes por segundo: mais velho que isso, parou
 
 
 def botoes(wireless_remote: bytes | list[int]) -> int:
     return wireless_remote[2] | wireless_remote[3] << 8
+
+
+def segue_apertado(keys: int | None, mascara: int, recebido_em: float, agora: float) -> bool:
+    """O combo continua apertado, segundo uma leitura recente? Sem leitura nova não dá para saber
+    que não soltou, e o damp derrubaria o robô: conta como solto."""
+    return keys is not None and keys & mascara == mascara and agora - recebido_em <= LEITURA_RECENTE_S
 
 
 class Combos:

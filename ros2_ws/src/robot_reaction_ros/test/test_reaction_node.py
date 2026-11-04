@@ -112,6 +112,19 @@ def _greeted(n):
     return [g.pessoa for g in n._rotina.goals]
 
 
+def test_gave_up_routine_is_not_retried_at_once(node):
+    # A aproximação desistiu com a pessoa ainda na frente: sem a espera, o robô andaria de novo
+    # até ela no quadro seguinte, para sempre.
+    node._rotina.hold = True
+    for _ in range(3):
+        node._on_detections(_array("gil"))
+    assert _greeted(node) == ["gil"]
+    node._rotina.results[0].finish(False, "desistiu: tempo esgotado")
+    for _ in range(6):
+        node._on_detections(_array("gil"))
+    assert _greeted(node) == ["gil"]
+
+
 def test_confirmed_person_gets_one_routine(node):
     for _ in range(6):
         node._on_detections(_array("gil", "desconhecido"))

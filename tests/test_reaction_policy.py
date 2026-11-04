@@ -158,6 +158,30 @@ def test_forget_lets_the_person_be_greeted_after_the_global_cooldown():
     assert p.update(GIL, 12.0) == ("gil", "rotina gil")  # sem sair da frente nem esperar 60 s
 
 
+def test_after_giving_up_it_waits_before_trying_the_same_person_again():
+    p = _policy()
+    assert _feed(p, [GIL] * 3)[-1] == ("gil", "rotina gil")  # disparo em t=2
+    p.desistiu("gil", agora=32.0)  # a aproximação esgotou os 30 s, com o gil ainda na frente
+    assert p.update(GIL, 33.0) is None
+    assert p.update(GIL, 91.0) is None  # espera padrão: 60 s
+    assert p.update(GIL, 92.0) == ("gil", "rotina gil")
+
+
+def test_giving_up_on_one_person_does_not_block_another():
+    p = _policy()
+    assert _feed(p, [GIL] * 3)[-1] == ("gil", "rotina gil")
+    p.desistiu("gil", agora=32.0)
+    assert _feed(p, [MARCOS] * 3, start=33.0)[-1] == ("marcos", "rotina marcos")
+
+
+def test_release_clears_the_wait_after_giving_up():
+    p = _policy()
+    _feed(p, [GIL] * 3)
+    p.desistiu("gil", agora=32.0)
+    p.release()
+    assert p.update(GIL, 33.0) == ("gil", "rotina gil")
+
+
 def test_no_fire_while_a_routine_runs_but_presence_is_tracked():
     p = _policy()
     assert _feed(p, [GIL] * 3)[-1] == ("gil", "rotina gil")  # disparo em t=2

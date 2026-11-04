@@ -4,7 +4,7 @@ Para testar no G1 o que ainda não rodou no robô: a ação `/reaction/rotina`, 
 andar até a pessoa e os combos do controle. Vá na ordem: cada etapa só depois da anterior dar certo.
 Specs: [`2026-11-04-aproximacao-e-estagios-design.md`](../superpowers/specs/2026-11-04-aproximacao-e-estagios-design.md)
 e [`2026-10-29-rotina-cumprimento-design.md`](../superpowers/specs/2026-10-29-rotina-cumprimento-design.md).
-Instalação e ambiente: [`jetson-deployment.md`](jetson-deployment.md).
+Instalação e ambiente: [`jetson-deployment.md`](jetson-deployment.md). Uso do dia a dia: [`operar-o-robo.md`](operar-o-robo.md).
 
 **Sempre:** alguém com o controle da Unitree na mão; espaço livre em volta; ninguém apertando
 START nem F1+… (são do `~/hhhh`). Avise o autor do `~/hhhh` antes dos testes armados.
@@ -77,10 +77,8 @@ Robô no suporte, em damp (ou já em equilíbrio). Só braços e fala:
 ```
 
 Responda `s` à pergunta do suporte. Confira: inicializa (~16 s) → `pronto` → o Gil aparece → a
-rotina dele inteira (sentido, continência, fala, desc_arma, descansar, 15 s, à vontade). Depois,
-de novo, e **Ctrl+C no meio da pausa de 15 s**: tem que fazer o à vontade e encerrar na hora.
-
-O descansar dá um passinho para frente (`passo_descansar`); no suporte isso é esperado.
+rotina dele inteira (sentido, continência, fala, desc_arma, à vontade). Depois, de novo, e
+**Ctrl+C no meio da rotina**: tem que terminar o passo atual, fazer o à vontade e encerrar.
 
 ## 5. Fora do suporte: só virar
 
@@ -109,7 +107,7 @@ O Gil a ~3 m, de frente para o robô. F2+RIGHT: o robô vira, anda devagar e par
 rosto chega a `altura_caixa_alvo_px`; então fala. Confira também:
 
 - **F2+DOWN no meio da caminhada**: para na hora.
-- **O Gil sai da frente** no meio: para em 1 s (`perda_rosto_s`) e desiste em 5 s (`desistir_s`),
+- **O Gil sai da frente** no meio: para em 0,5 s (`perda_rosto_s`) e desiste em 10 s (`desistir_s`),
   sem cumprimentar (`desistiu: rosto perdido` no status).
 - Parou longe ou perto demais: ajuste `altura_caixa_alvo_px` (maior = para mais perto).
 
