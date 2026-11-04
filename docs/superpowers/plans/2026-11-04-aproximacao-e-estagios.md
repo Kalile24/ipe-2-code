@@ -22,7 +22,8 @@
 - Desarmado: virar/aproximar só medem e registram por 2 s e dão o estágio como feito.
 - Pelo controle: sempre armado, só com o robô em FSM 801 (nunca damp → em pé); recusa falada "Não estou em equilíbrio, não vou começar."
 - F2+DOWN: velocidade zero na hora, cancela, a postura em andamento termina e os braços voltam.
-- Controle físico do G1: `wireless_remote` (40 bytes) do `rt/lf/lowstate` (`unitree_hg` `LowState_`), botões nos bytes 2–3 (`uint16` little-endian, `xKeySwitchUnion` da doc oficial `UNITREE_G1_base_documentacao/MD/unitree_official_G1_developer/250_remote_control_data.md`). Não usar `rt/wirelesscontroller`: é onde o `~/hhhh` injeta toques virtuais. Bits: R1 0x1, L1 0x2, START 0x4, SELECT 0x8, R2 0x10, L2 0x20, F1 0x40, F2 0x80 (o exemplo Python oficial chama de F3), A 0x100, B 0x200, X 0x400, Y 0x800, UP 0x1000, RIGHT 0x2000, DOWN 0x4000, LEFT 0x8000. Combos padrão F2+UP (`0x1080`) / F2+DOWN (`0x4080`).
+- Controle físico do G1: `wireless_remote` (40 bytes) do `rt/lf/lowstate` (`unitree_hg` `LowState_`), botões nos bytes 2–3 (`uint16` little-endian, `xKeySwitchUnion` da doc oficial `UNITREE_G1_base_documentacao/MD/unitree_official_G1_developer/250_remote_control_data.md`). Não usar `rt/wirelesscontroller`: é onde o `~/hhhh` injeta toques virtuais. Bits: R1 0x1, L1 0x2, START 0x4, SELECT 0x8, R2 0x10, L2 0x20, F1 0x40, F2 0x80 (o exemplo Python oficial chama de F3), A 0x100, B 0x200, X 0x400, Y 0x800, UP 0x1000, RIGHT 0x2000, DOWN 0x4000, LEFT 0x8000. Combos padrão: F2+UP (`0x1080`) sobe com reações automáticas desligadas; F2+RIGHT (`0x2080`) cumprimentar agora; F2+LEFT (`0x8080`) liga/desliga as reações automáticas; F2+DOWN (`0x4080`) para.
+- Falas exatas: "Não reconheço ninguém.", "Reações automáticas ligadas.", "Reações automáticas desligadas.", "Não estou em equilíbrio, não vou começar."
 - Mensagens, nomes e comentários em português, como o resto do repositório.
 - Testes puros: `PYTHONPATH=. .venv/bin/python -m pytest tests -q --ignore=tests/test_enroll.py --ignore=tests/test_face_engine.py`. Testes ROS: no Docker Foxy, como em `docs/guides/ros2-docker.md` (build e test com `--build-base /tmp/b --install-base /tmp/i --log-base /tmp/l`, nunca dentro de `ros2_ws/`).
 
@@ -355,7 +356,9 @@ git commit -m "feat: turn and approach before the routine, stages and immediate 
 - Consumes: parâmetros do body_node (Task 4).
 - Produces:
   - Launch args novos: `operacao_file` (padrão `share/robot_reaction_ros/config/operacao.yaml`), `estagios` (padrão `""` = o do arquivo), `so_equilibrio` (padrão `false`). O body_node recebe `[operacao_file, {armed, pausa_s, passo_descansar, so_equilibrio}]` mais `estagios` só se não for vazio.
-  - Script: `--estagios LISTA` repassa `estagios:=LISTA`; `--controle` = armado, sem a pergunta do suporte, `so_equilibrio:=true`, sem a janela `emergencia`, e falha (exit 1) sem esperar nada interativo. Sem a caixa, `--controle` continua (a recusa falada só não toca).
+  - Launch arg novo `automatico` (padrão `true`) repassado ao reaction_node (Task 5b).
+  - No Foxy, `-p` na linha de comando NÃO sobrescreve um `--params-file` (verificado na Task 4): o launch passa o arquivo primeiro e as sobrescritas como dict DEPOIS dele, na lista `parameters`.
+  - Script: `--estagios LISTA` repassa `estagios:=LISTA`; `--controle` = armado, sem a pergunta do suporte, `so_equilibrio:=true`, `automatico:=false`, sem a janela `emergencia`, e falha (exit 1) sem esperar nada interativo. Sem a caixa, `--controle` continua (a recusa falada só não toca).
   - `robo_emergencia.py`: docstring e o prompt do modo pronto dizem que o damp é só com o robô no suporte (fora dele, ele cai).
 
 - [ ] **Step 1: Verify the launch in the container**
@@ -363,10 +366,10 @@ git commit -m "feat: turn and approach before the routine, stages and immediate 
 Run (Docker Foxy, com o workspace compilado): `ros2 launch robot_reaction_ros rotina.launch.py --show-args`
 Expected: lista `operacao_file`, `estagios`, `so_equilibrio`.
 
-- [ ] **Step 2: Smoke test the body_node with the file**
+- [ ] **Step 2: Smoke test the launch with the file and an override**
 
-Run: `ros2 run robot_reaction_ros body_node --ros-args --params-file /tmp/i/share/robot_reaction_ros/config/operacao.yaml -p estagios:=fala` em segundo plano, depois `ros2 param get /body_node altura_caixa_alvo_px` e `ros2 param get /body_node estagios`
-Expected: `Double value is: 90.0` e `String value is: fala`.
+Run (Docker Foxy): `ros2 launch robot_reaction_ros rotina.launch.py camera:=none estagios:=fala` em segundo plano, depois `ros2 param get /body_node altura_caixa_alvo_px`, `ros2 param get /body_node estagios` e `ros2 param get /reaction_node automatico`
+Expected: `Double value is: 90.0`, `String value is: fala`, `Boolean value is: True`.
 
 - [ ] **Step 3: Check the script**
 
@@ -382,6 +385,84 @@ git commit -m "feat: operation file, stage selection and a non-interactive remot
 
 ---
 
+### Task 5b: reaction_node — reações automáticas e cumprimentar agora
+
+**Files:**
+- Modify: `ros2_ws/src/robot_reaction_ros/robot_reaction_ros/reaction_node.py`
+- Modify: `core/reaction_policy.py` (`ReactionPolicy`)
+- Test: `tests/test_reaction_policy.py`, `ros2_ws/src/robot_reaction_ros/test/test_reaction_node.py`
+
+**Interfaces:**
+- Consumes: `/reaction/rotina` (ação, como hoje); `core.piper_voice.say(texto, url, timeout_s)`.
+- Produces:
+  - `ReactionPolicy.now(seen: list[tuple[str, float]]) -> tuple[str, list[dict]] | None` — a pessoa do mapa de maior nota em `seen`, marcada como cumprimentada agora (`_last_fired`, `_left = False`, `_last_any`), sem olhar cooldown nem confirmação; ninguém do mapa → `None`.
+  - Parâmetros do reaction_node: `automatico` (bool, padrão `true`, mutável em execução; ao mudar fala "Reações automáticas ligadas." / "Reações automáticas desligadas."); `cumprimentar_agora` (str; qualquer escrita dispara, usando as detecções guardadas de até 1 s; sem ninguém do mapa fala "Não reconheço ninguém."; com rotina em andamento recusa o set com `reason` contendo "rotina em andamento"); `tts_url` e `tts_timeout_s` (mesmos padrões do body_node).
+  - Com `automatico` falso, `_on_detections` chama `update(..., allow_fire=False)` (só acompanha).
+  - A fala roda numa thread (não segura o callback do parâmetro); falha na fala só vai para o log.
+
+- [ ] **Step 1: Write the failing tests**
+
+```python
+# tests/test_reaction_policy.py
+def test_now_greets_the_best_mapped_person_ignoring_cooldowns():
+    p = _policy()
+    assert _feed(p, [GIL] * 3)[-1] == ("gil", "rotina gil")
+    assert p.now([("desconhecido", 0.9), ("gil", 0.5), ("marcos", 0.7)]) == ("marcos", "rotina marcos")
+    assert p.now(GIL) == ("gil", "rotina gil")  # mesmo dentro dos 5 min
+
+def test_now_with_nobody_mapped_returns_none():
+    assert _policy().now([("desconhecido", 0.9)]) is None
+```
+
+```python
+# test_reaction_node.py (a fixture troca a fala por um dublê que grava em node.spoken)
+def test_automatic_off_never_greets_but_greet_now_does(node):  # automatico:=false
+    for _ in range(10):
+        node._on_detections(_array("gil"))
+    assert _greeted(node) == []
+    assert node.set_parameters([Parameter("cumprimentar_agora", Parameter.Type.STRING, "x")])[0].successful
+    assert _greeted(node) == ["gil"]
+
+def test_greet_now_with_nobody_speaks(node):
+    node._on_detections(_array("desconhecido"))
+    node.set_parameters([Parameter("cumprimentar_agora", Parameter.Type.STRING, "x")])
+    assert node.spoken == ["Não reconheço ninguém."] and _greeted(node) == []
+
+def test_toggling_automatic_speaks_the_state(node):
+    node.set_parameters([Parameter("automatico", Parameter.Type.BOOL, False)])
+    node.set_parameters([Parameter("automatico", Parameter.Type.BOOL, True)])
+    assert node.spoken == ["Reações automáticas desligadas.", "Reações automáticas ligadas."]
+
+def test_greet_now_is_refused_while_a_routine_runs(node):
+    node._rotina.hold = True
+    for _ in range(3):
+        node._on_detections(_array("cmt"))
+    result = node.set_parameters([Parameter("cumprimentar_agora", Parameter.Type.STRING, "x")])[0]
+    assert not result.successful and "andamento" in result.reason
+```
+
+- [ ] **Step 2: Run to verify they fail**
+
+Run: o pure suite (`tests/test_reaction_policy.py`) e, no Docker Foxy, `colcon test --packages-select robot_reaction_ros`.
+Expected: FAIL nos testes novos.
+
+- [ ] **Step 3: Implement**
+
+O envio da rotina (hoje dentro de `_on_detections`) vira um método usado pelos dois caminhos (automático e agora). Detecções guardadas: a última lista `(nome, nota)` e o instante; "agora" só as usa se tiverem ≤ 1 s.
+
+- [ ] **Step 4: Run to verify they pass**
+
+Run: same as Step 2. Expected: PASS (todos).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add core/reaction_policy.py tests/test_reaction_policy.py ros2_ws/src/robot_reaction_ros/robot_reaction_ros/reaction_node.py ros2_ws/src/robot_reaction_ros/test/test_reaction_node.py
+git commit -m "feat: greet on demand and toggle automatic reactions"
+```
+
+---
+
 ### Task 6: Programa do controle (F2+UP / F2+DOWN)
 
 **Files:**
@@ -392,19 +473,19 @@ git commit -m "feat: operation file, stage selection and a non-interactive remot
 
 **Interfaces:**
 - Produces:
-  - `F2, UP, DOWN = 0x80, 0x1000, 0x4000`; `INICIAR, PARAR = "iniciar", "parar"`.
+  - `F2, UP, RIGHT, DOWN, LEFT = 0x80, 0x1000, 0x2000, 0x4000, 0x8000`; `INICIAR, AGORA, AUTOMATICO, PARAR = "iniciar", "agora", "automatico", "parar"`.
   - `class Combos: __init__(self, combos: dict[str, int])` (nome → máscara de teclas), `update(self, keys: int) -> str | None` — devolve o nome do combo na borda em que **todas** as teclas dele ficam apertadas; segurar não repete; soltar e apertar de novo repete.
   - `botoes(wireless_remote: bytes | list[int]) -> int` — `wireless_remote[2] | wireless_remote[3] << 8`.
-  - `scripts/robo_controle.py [--iniciar 0x1080] [--parar 0x4080] [--mostrar] [--interface eth0]`: sem ROS; `ChannelFactoryInitialize(0, iface)`, `ChannelSubscriber("rt/lf/lowstate", LowState_)` (`unitree_sdk2py.idl.unitree_hg.msg.dds_`) com callback que faz `combos.update(botoes(msg.wireless_remote))` (sem laço ocupado: a thread principal só espera um `threading.Event`). `INICIAR` → se a sessão tmux `rotina` não existe, `subprocess.Popen([repo/scripts/robo_rotina_cumprimento.sh, "--controle"])`; senão registra e ignora. `PARAR` → `tmux send-keys -t rotina:rotina C-c` (se a sessão existe). `--mostrar` imprime `keys` em hexa a cada mudança (para confirmar os bits no robô). Log em stdout (journal).
+  - `scripts/robo_controle.py [--iniciar 0x1080] [--agora 0x2080] [--automatico 0x8080] [--parar 0x4080] [--mostrar] [--interface eth0]`: sem ROS; `ChannelFactoryInitialize(0, iface)`, `ChannelSubscriber("rt/lf/lowstate", LowState_)` (`unitree_sdk2py.idl.unitree_hg.msg.dds_`) com callback que faz `combos.update(botoes(msg.wireless_remote))` (sem laço ocupado: a thread principal só espera um `threading.Event`). `INICIAR` → se a sessão tmux `rotina` não existe, `subprocess.Popen([repo/scripts/robo_rotina_cumprimento.sh, "--controle"])`; senão registra e ignora. `AGORA` → `ros2 param set /reaction_node cumprimentar_agora agora`; `AUTOMATICO` → `ros2 param get /reaction_node automatico` e escreve o contrário (os dois só com a sessão `rotina` de pé, em subprocesso sem esperar o callback do SDK). `PARAR` → `tmux send-keys -t rotina:rotina C-c` (se a sessão existe). `--mostrar` imprime `keys` em hexa a cada mudança (para confirmar os bits no robô). Log em stdout (journal).
   - `ipe-controle.service`: unit de **usuário** (`~/.config/systemd/user/`), `ExecStart=/bin/bash -lc 'source %h/ipe-2-code/scripts/ambiente_robo.sh && exec python3 %h/ipe-2-code/scripts/robo_controle.py'`, `Restart=on-failure`, `WantedBy=default.target`.
 
 - [ ] **Step 1: Write the failing tests**
 
 ```python
-from core.remote_combos import DOWN, F2, INICIAR, PARAR, UP, Combos, botoes
+from core.remote_combos import AGORA, AUTOMATICO, DOWN, F2, INICIAR, LEFT, PARAR, RIGHT, UP, Combos, botoes
 
 def _combos():
-    return Combos({INICIAR: F2 | UP, PARAR: F2 | DOWN})
+    return Combos({INICIAR: F2 | UP, AGORA: F2 | RIGHT, AUTOMATICO: F2 | LEFT, PARAR: F2 | DOWN})
 
 def test_fires_once_on_the_press_edge():
     c = _combos()
@@ -420,6 +501,10 @@ def test_extra_keys_do_not_block_the_combo():
 def test_buttons_come_from_bytes_2_and_3_little_endian():
     raw = [0x55, 0x51, 0x80, 0x10] + [0] * 36  # F2 no byte 2, UP no byte 3
     assert botoes(raw) == F2 | UP
+
+def test_each_combo_maps_to_its_action():
+    c = _combos()
+    assert [c.update(k) for k in [F2 | RIGHT, 0, F2 | LEFT, 0]] == [AGORA, None, AUTOMATICO, None]
 
 def test_up_alone_or_f2_alone_does_nothing():
     c = _combos()
