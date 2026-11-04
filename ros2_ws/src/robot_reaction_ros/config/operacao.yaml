@@ -1,6 +1,6 @@
 # Parâmetros de operação do body_node (padrões são chute: ajustar no robô).
 # Spec: docs/superpowers/specs/2026-11-04-aproximacao-e-estagios-design.md
-body_node:
+/**:  # chave curinga: com "body_node:" o Foxy ignoraria as sobrescritas do launch
   ros__parameters:
     estagios: "virar,aproximar,fala,posturas"  # quais estágios rodam (aproximar inclui virar)
     detections_topic: /face_recognition/detections
