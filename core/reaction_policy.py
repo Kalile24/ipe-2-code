@@ -89,10 +89,14 @@ class ReactionPolicy:
         person_cooldown_s: float = 300.0,
         global_cooldown_s: float = 10.0,
         absence_s: float = 5.0,
+        falha_curta_s: float = 0.5,
     ) -> None:
         if confirm_frames < 1:
             raise ValueError(f"confirm_frames tem que ser >= 1, veio {confirm_frames}")
         self._reactions = reactions
+        # Some por até isso (frames de "desconhecido" de longe): a contagem fica, não zera. No robô,
+        # a 2-3 m o reconhecimento alternava gil/desconhecido e nunca juntava 5 frames seguidos.
+        self._falha_curta_s = falha_curta_s
         self._confirm_frames = confirm_frames
         self._person_cooldown_s = person_cooldown_s
         self._global_cooldown_s = global_cooldown_s
@@ -111,7 +115,10 @@ class ReactionPolicy:
         for nome, score in seen:
             if nome in self._reactions:  # `desconhecido` e quem não está no mapa ficam fora
                 best[nome] = max(score, best.get(nome, score))
-        self._streak = {nome: self._streak.get(nome, 0) + 1 for nome in best}
+        streak = {nome: n for nome, n in self._streak.items()
+                  if nome not in best and now - self._last_seen.get(nome, now) <= self._falha_curta_s}
+        streak.update({nome: self._streak.get(nome, 0) + 1 for nome in best})
+        self._streak = streak
         for nome in best:
             self._last_seen[nome] = now
         for nome in self._last_fired:

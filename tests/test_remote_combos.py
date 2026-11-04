@@ -1,4 +1,18 @@
-from core.remote_combos import AGORA, AUTOMATICO, DOWN, F2, INICIAR, LEFT, PADRAO, PARAR, RIGHT, UP, Combos, botoes
+from core.remote_combos import (
+    AGORA, AUTOMATICO, DAMP, DOWN, F2, INICIAR, LEFT, LEVANTAR, PADRAO, PARAR, RIGHT, SEGURAR, UP, A, B, Combos,
+    botoes,
+)
+
+
+def test_damp_and_stand_up_are_f2_with_b_and_a_and_must_be_held():
+    c = Combos(PADRAO)
+    assert [c.update(k) for k in [F2 | B, 0, F2 | A]] == [DAMP, None, LEVANTAR]
+    assert set(SEGURAR) == {DAMP, LEVANTAR}
+
+
+def test_no_combo_collides_with_the_hhhh_select_f3():
+    from core.remote_combos import SELECT
+    assert all(not mascara & SELECT for mascara in PADRAO.values())
 
 
 def test_buttons_come_from_bytes_2_and_3_little_endian():

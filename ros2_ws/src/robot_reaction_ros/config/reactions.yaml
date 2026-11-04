@@ -10,8 +10,6 @@ gil:
     - postura: continencia
     - fala: "Olá, aspirante a oficial da reserva Gil, sou o Tenente Nichinica"
     - postura: desc_arma
-    - postura: descansar
-    - pausa: 15
     - postura: a_vontade
 marcos:
   passos:
@@ -19,6 +17,11 @@ marcos:
     - postura: continencia
     - fala: "Olá, aspirante a oficial da reserva Marcos, sou o Tenente Nichinica"
     - postura: desc_arma
-    - postura: descansar
-    - pausa: 15
+    - postura: a_vontade
+bianco:
+  passos:
+    - postura: sentido
+    - postura: continencia
+    - fala: "Olá, aspirante a oficial da reserva Bianco, sou o Tenente Nichinica"
+    - postura: desc_arma
     - postura: a_vontade

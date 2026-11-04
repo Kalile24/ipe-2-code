@@ -50,9 +50,22 @@ def generate_launch_description() -> LaunchDescription:
         package="v4l2_camera",
         executable="v4l2_camera_node",
         name="v4l2_camera_node",
-        parameters=[{"video_device": LaunchConfiguration("video_device"), "image_size": [640, 480]}],
+        # 15 quadros/s: o reconhecimento processa ~14-20/s, e metade do tráfego no hub USB 2.0 do
+        # robô (dividido com o Wi-Fi e o Bluetooth) onde a webcam caía dezenas de vezes por hora.
+        parameters=[{"video_device": LaunchConfiguration("video_device"), "image_size": [640, 480],
+                     "time_per_frame": [1, 15]}],
         remappings=[("/image_raw", LaunchConfiguration("image_topic"))],
         condition=IfCondition(PythonExpression(["'", LaunchConfiguration("camera"), "' == 'v4l2'"])),
+        # No robô a webcam trava (para de mandar quadros) ou reconecta pelo USB; o camera_vigia do
+        # robot_reaction_ros mata este nó quando o reconhecimento fica sem quadros, e ele volta aqui.
+        respawn=True,
+        respawn_delay=0.5,
+    )
+
+    threshold_arg = DeclareLaunchArgument(
+        "similarity_threshold",
+        default_value="0.45",
+        description="Score mínimo para dar nome ao rosto (abaixo: desconhecido). O rotina.launch.py usa 0,35",
     )
 
     face_recognition_node = Node(
@@ -61,6 +74,7 @@ def generate_launch_description() -> LaunchDescription:
         name="face_recognition_node",
         parameters=[
             {
+                "similarity_threshold": LaunchConfiguration("similarity_threshold"),
                 "model_name": LaunchConfiguration("model_name"),
                 "image_topic": LaunchConfiguration("image_topic"),
                 "image_qos": LaunchConfiguration("image_qos"),
@@ -73,6 +87,7 @@ def generate_launch_description() -> LaunchDescription:
     return LaunchDescription(
         [
             model_name_arg,
+            threshold_arg,
             model_root_arg,
             onnx_providers_arg,
             camera_arg,

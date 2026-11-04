@@ -5,6 +5,7 @@ docs/superpowers/specs/2026-11-04-aproximacao-e-estagios-design.md
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
@@ -21,8 +22,10 @@ class ApproachConfig:
     altura_caixa_alvo_px: float = 90.0
     inverter_giro: bool = False
     centro_ok: float = 0.15
-    centro_para_andar: float = 0.30
+    centro_para_andar: float = 0.45  # 0,30 fazia o anda-e-para com a pessoa oscilando perto do limite
+    centro_chegada: float = 0.30  # já perto: desvio aceito como "de frente" para cumprimentar
     vyaw_max: float = 0.3
+    vyaw_min: float = 0.3  # giro no lugar abaixo disso o G1 não executa (0,22 não girou; 0,3 girou)
     vx: float = 0.2
     kp_giro: float = 0.6
     perda_rosto_s: float = 1.0
@@ -66,6 +69,13 @@ def passo_aproximacao(
             vyaw = -vyaw
     longe = altura < cfg.altura_caixa_alvo_px
     vx = cfg.vx if aproximar and longe and abs(desvio) < cfg.centro_para_andar else 0.0
-    if abs(desvio) <= cfg.centro_ok and (not aproximar or not longe):
+    if vx == 0.0 and vyaw != 0.0 and abs(vyaw) < cfg.vyaw_min:
+        # Parado, o giro proporcional fino não sai do lugar: gira no mínimo que o G1 executa.
+        # Andando, o giro fino funciona (o passo para frente já movimenta as pernas).
+        vyaw = math.copysign(cfg.vyaw_min, vyaw)
+    # Já perto: aceita centro_chegada. Exigir centro_ok ali prendia o robô até o tempo_max (no
+    # G1, o giro fino de ~0,1 rad/s perto do centro não chega a girar).
+    tolerancia = cfg.centro_chegada if aproximar and not longe else cfg.centro_ok
+    if abs(desvio) <= tolerancia and (not aproximar or not longe):
         return Comando(0.0, 0.0, PRONTO)
     return Comando(vx, vyaw, ANDANDO)

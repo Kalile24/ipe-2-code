@@ -27,6 +27,31 @@ def test_ready_when_centred_and_box_tall_enough():
     assert _passo((320.0, 90.0)).estado == PRONTO
     assert _passo((320.0, 90.0)).vx == 0.0
 
+def test_turning_in_place_uses_at_least_vyaw_min():
+    # No robô: desvio -0,37 → 0,22 rad/s parado por 20 s sem girar; 0,3 girou.
+    c = _passo((320.0 - 0.37 * 320, 42.0), aproximar=False, cfg=ApproachConfig(vyaw_max=0.5))
+    assert c.vx == 0.0 and c.vyaw == pytest.approx(0.3)
+    c = _passo((320.0 + 0.37 * 320, 42.0), aproximar=False, cfg=ApproachConfig(vyaw_max=0.5, inverter_giro=True))
+    assert c.vyaw == pytest.approx(0.3)  # o sinal invertido é mantido
+
+def test_walking_keeps_the_fine_proportional_turn():
+    c = _passo((320.0 - 0.2 * 320, 42.0))  # desvio -0,2: anda e corrige de leve
+    assert c.vx == pytest.approx(0.2) and c.vyaw == pytest.approx(0.12)
+
+def test_keeps_walking_while_correcting_up_to_centro_para_andar():
+    c = _passo((320.0 - 0.35 * 320, 42.0))  # desvio -0,35: antes parava para girar; agora anda e gira
+    assert c.vx == pytest.approx(0.2) and c.vyaw > 0
+    assert _passo((320.0 - 0.5 * 320, 42.0)).vx == 0.0  # longe demais do centro: só gira
+
+def test_close_enough_accepts_the_walking_tolerance():
+    # No robô: caixa 94 px, desvio -0,17 → girava a 0,10 rad/s sem sair do lugar até o tempo_max.
+    assert _passo((320.0 - 0.17 * 320, 94.0)).estado == PRONTO
+    c = _passo((320.0 - 0.35 * 320, 94.0))  # perto, mas fora até da tolerância de andar: ainda gira
+    assert c.estado == ANDANDO and c.vx == 0.0 and c.vyaw > 0
+
+def test_turn_only_keeps_the_tight_tolerance():
+    assert _passo((320.0 - 0.17 * 320, 94.0), aproximar=False).estado == ANDANDO
+
 def test_turn_only_is_ready_once_centred():
     assert _passo((330.0, 10.0), aproximar=False).estado == PRONTO
     assert _passo((480.0, 10.0), aproximar=False).vx == 0.0

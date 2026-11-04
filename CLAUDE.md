@@ -2,7 +2,8 @@
 
 - A rotina do Gil em `ros2_ws/src/robot_reaction_ros/config/reactions.yaml` é a padronizada e não
   muda sem pedido explícito do usuário: sentido → continência → "Olá, aspirante a oficial da
-  reserva Gil, sou o Tenente Nichinica" → desc_arma → descansar → 15 s → à vontade.
+  reserva Gil, sou o Tenente Nichinica" → desc_arma → à vontade (o descansar e os 15 s saíram a
+  pedido do usuário em 2026-11-05: depois da continência ele volta à posição em que anda).
 
 <!-- ai-memory:start -->
 ## Long-term memory (ai-memory)

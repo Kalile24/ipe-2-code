@@ -681,23 +681,44 @@ class G1ArmController:
         self.log("ERRO: não chegou ao FSM 801 após as tentativas.")
         return False
 
-    def initialize_to_balance(self) -> bool:
+    def initialize_to_balance(self, permitir_damp: bool = True) -> bool:
         """
         Coloca o robô em FSM 801 e captura a postura equilibrada dos braços.
         Esta operação é protegida para não executar simultaneamente com outra.
+
+        [ipe-2-code] permitir_damp=False: o robô está em pé; se ele não confirmar FSM 801/0 aqui
+        (leitura falhou, modo de transição), recusa em vez de cair no damp abaixo, que o derrubaria
+        fora do suporte. Em 2026-11-05 o robô caiu em damp numa partida "só em equilíbrio".
         """
         if not self.action_lock.acquire(blocking=False):
             self.log("Outra operação já está em andamento.")
             return False
 
         try:
-            if self.initialized_801:
+            if self.initialized_801 or not permitir_damp:
                 fsm_id, fsm_mode = self.state("Estado atual")
-                if fsm_id == 801 and fsm_mode == 0:
+                # [ipe-2-code] em pé: relê por até 5 s (leitura que falha/MODE mudando) e aceita o
+                # MODE 3 (arm_sdk ativo), como a verificação do body_worker.
+                # MODE None (o RPC do MODE não respondeu) com FSM 801 também é equilíbrio.
+                def equilibrio() -> bool:
+                    return fsm_id == 801 and (fsm_mode in (0, 3) or (not permitir_damp and fsm_mode is None))
+
+                fim = time.time() + (0.0 if permitir_damp else 5.0)
+                while not equilibrio() and time.time() < fim:
+                    time.sleep(0.5)
+                    fsm_id, fsm_mode = self.state("Estado atual")
+                if equilibrio():
                     self.log("O robô já está em FSM 801 / equilíbrio.")
+                    self.initialized_801 = True
                     if self.balance_pose is None and self.wait_low_state():
                         self.balance_pose = self.current_all_arm_position()
                     return True
+                if not permitir_damp:
+                    self.log(
+                        f"ERRO: FSM_ID={fsm_id}, FSM_MODE={fsm_mode} ao confirmar o equilíbrio: "
+                        "não inicializo (o damp derrubaria o robô em pé)."
+                    )
+                    return False
 
             if not self.wait_low_state(timeout=8.0):
                 return False

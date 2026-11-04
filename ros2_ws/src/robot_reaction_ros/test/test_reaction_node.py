@@ -118,10 +118,12 @@ def test_confirmed_person_gets_one_routine(node):
     assert _greeted(node) == ["gil"]
 
 
-def test_empty_arrays_reset_the_count(node):
-    for msg in [_array("gil"), _array("gil"), _array(), _array("gil"), _array("gil")]:
+def test_a_short_empty_gap_keeps_the_count(node):
+    # Os frames chegam em microssegundos: o vazio no meio é uma falha curta (< 0,5 s) e não zera
+    # (de longe o reconhecimento falha um frame ou outro). Vazio longo zera: test_reaction_policy.
+    for msg in [_array("gil"), _array("gil"), _array(), _array("gil")]:
         node._on_detections(msg)
-    assert _greeted(node) == []
+    assert _greeted(node) == ["gil"]
 
 
 def test_routine_goes_to_the_body_node_as_an_action_goal(node):

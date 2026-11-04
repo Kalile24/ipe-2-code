@@ -40,6 +40,13 @@ case "$CAMERA" in
     realsense) ARGS_CAMERA="camera:=none" ;;
 esac
 
+# Uma subida por vez: a sessão só nasce depois da caixa e da voz (segundos), e dois F2+UP seguidos
+# passavam os dois pela checagem abaixo (2026-11-05). A trava vale até este script terminar.
+exec 9>"${XDG_RUNTIME_DIR:-/tmp}/ipe-rotina-subida.lock"
+if ! flock -n 9; then
+    echo "Outra subida da rotina já está em andamento: espere ela terminar."
+    exit 1
+fi
 if tmux has-session -t "$SESSAO" 2>/dev/null; then
     echo "A sessão '$SESSAO' já existe: entre com 'tmux attach -t $SESSAO' ou feche com 'tmux kill-session -t $SESSAO'."
     exit 1
@@ -78,7 +85,7 @@ else
 fi
 
 echo "[2/3] Servidor de voz (Piper)..."
-"$REPO/scripts/robo_voz.sh"
+"$REPO/scripts/robo_voz.sh" 9>&-
 
 if [ "$ARMADO" = true ] && [ "$CONTROLE" = false ]; then
     echo
@@ -90,16 +97,16 @@ fi
 echo "[3/3] Reconhecimento + reação + corpo (sessão tmux '$SESSAO')..."
 AMBIENTE="source $REPO/scripts/ambiente_robo.sh"
 rodar() { tmux send-keys -t "$SESSAO:$1" "$AMBIENTE" C-m "$2" C-m; }
-tmux new-session -d -s "$SESSAO" -n rotina "bash --norc"
-tmux new-window -t "$SESSAO:" -n status "bash --norc"
-tmux new-window -t "$SESSAO:" -n deteccoes "bash --norc"
+tmux new-session -d -s "$SESSAO" -n rotina "bash --norc" 9>&-
+tmux new-window -t "$SESSAO:" -n status "bash --norc" 9>&-
+tmux new-window -t "$SESSAO:" -n deteccoes "bash --norc" 9>&-
 if [ "$ARMADO" = true ] && [ "$CONTROLE" = false ]; then
     # Parada de emergência já conectada (damp: SÓ com o robô no suporte; fora dele, ele cai): Enter nesta janela = damp na hora.
-    tmux new-window -t "$SESSAO:" -n emergencia "bash --norc"
+    tmux new-window -t "$SESSAO:" -n emergencia "bash --norc" 9>&-
     tmux send-keys -t "$SESSAO:emergencia" "$REPO/.venv/bin/python $REPO/scripts/robo_emergencia.py" C-m
 fi
 if [ "$CAMERA" = realsense ]; then
-    tmux new-window -t "$SESSAO:" -n camera "bash --norc"
+    tmux new-window -t "$SESSAO:" -n camera "bash --norc" 9>&-
     rodar camera "ros2 launch realsense2_camera rs_launch.py"
 fi
 ARGS_MODO="so_equilibrio:=$CONTROLE automatico:=$([ "$CONTROLE" = true ] && echo false || echo true)"

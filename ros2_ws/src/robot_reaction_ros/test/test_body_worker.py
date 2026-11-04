@@ -199,20 +199,53 @@ class _FakeController:
         self.loco = _Loco()
 
     def state(self, label):
+        if isinstance(self.fsm, list):  # sequência de leituras: a última se repete
+            return self.fsm.pop(0) if len(self.fsm) > 1 else self.fsm[0]
         return self.fsm
 
     def log(self, text):
         self.logs.append(text)
 
-    def initialize_to_balance(self):
+    def initialize_to_balance(self, permitir_damp=True):
         self.inicializou = True
+        self.permitir_damp = permitir_damp
+        if not permitir_damp:
+            self.initialized_801 = True
         return True
 
 
 def _g1_body(fsm):
     body = G1Body.__new__(G1Body)  # sem o __init__: ele importaria o SDK da Unitree
     body.robot = _FakeController(fsm)
+    body.ESPERA_ESTADO_S = 0.2  # os testes não esperam os 5 s de releitura
+    body.INTERVALO_ESTADO_S = 0.01
     return body
+
+
+def test_balance_only_rereads_a_failed_first_reading():
+    # No robô: a 1ª leitura logo depois de conectar falhava (None) e dizia "não estou em equilíbrio".
+    body = _g1_body([(None, None), (801, 0)])
+    assert body.initialize(so_equilibrio=True) is True
+    assert body.robot.permitir_damp is False
+
+
+def test_balance_801_with_unanswered_mode_is_accepted_without_damp():
+    # No robô: FSM_ID=801, FSM_MODE=None (o RPC do MODE não respondeu) → "não estou em equilíbrio".
+    body = _g1_body((801, None))
+    assert body.initialize(so_equilibrio=True) is True
+    assert body.robot.permitir_damp is False
+
+
+@pytest.mark.parametrize("fsm", [(None, None), (4, None), (1, None)])
+def test_balance_only_still_refuses_without_801(fsm):
+    body = _g1_body(fsm)
+    assert body.initialize(so_equilibrio=True) is False
+
+
+def test_balance_with_arm_sdk_active_mode_3_is_accepted():
+    body = _g1_body((801, 3))
+    assert body.initialize(so_equilibrio=True) is True
+    assert body.robot.permitir_damp is False
 
 
 @pytest.mark.parametrize("fsm", [(0, 0), (1, 0)])
@@ -228,7 +261,7 @@ def test_initialize_already_balanced_skips_the_damp():
     assert body.robot.initialized_801  # o initialize_to_balance só captura a postura
 
 
-@pytest.mark.parametrize("fsm", [(4, 0), (500, 0), (801, 3), (None, None)])
+@pytest.mark.parametrize("fsm", [(4, 0), (500, 0), (801, 1), (None, None)])
 def test_initialize_refuses_when_standing_otherwise(fsm):
     body = _g1_body(fsm)
     assert body.initialize() is False
@@ -246,6 +279,31 @@ def test_initialize_balance_only_accepts_801():
     body = _g1_body((801, 0))
     assert body.initialize(so_equilibrio=True) is True
     assert body.robot.initialized_801
+
+
+def test_only_one_worker_holds_the_body(tmp_path):
+    from robot_reaction_ros.body_worker import travar_corpo
+
+    caminho = str(tmp_path / "trava")
+    primeiro = travar_corpo(caminho, espera_s=0.0)
+    assert primeiro is not None
+    assert travar_corpo(caminho, espera_s=0.6) is None  # o segundo espera e desiste
+    primeiro.close()  # o primeiro saiu
+    assert travar_corpo(caminho, espera_s=0.0) is not None
+
+
+@pytest.mark.parametrize("so_equilibrio", [False, True])
+def test_standing_robot_never_allows_the_damp(so_equilibrio):
+    body = _g1_body((801, 0))
+    body.initialize(so_equilibrio=so_equilibrio)
+    assert body.robot.permitir_damp is False
+
+
+@pytest.mark.parametrize("fsm", [(0, 0), (1, 0)])
+def test_limp_robot_still_allows_the_damp(fsm):
+    body = _g1_body(fsm)
+    body.initialize()
+    assert body.robot.permitir_damp is True
 
 
 def test_velocity_and_stop_drive_the_loco_client():

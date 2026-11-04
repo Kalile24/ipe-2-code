@@ -3,8 +3,9 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 
 
@@ -49,6 +50,11 @@ def generate_launch_description() -> LaunchDescription:
         default_value="false",
         description="true: armado só começa com o robô já em equilíbrio (FSM 801), nunca damp → em pé (controle)",
     )
+    # Antes do include do reconhecimento: vale para ele. 0,45 perdia o rosto de longe (a 2-3 m o
+    # Gil dava 0,41 e virava desconhecido, e a aproximação desistia); desconhecidos davam < 0,15.
+    threshold_arg = DeclareLaunchArgument(
+        "similarity_threshold", default_value="0.35", description="Limiar do reconhecimento na rotina"
+    )
     automatico_arg = DeclareLaunchArgument(
         "automatico",
         default_value="true",
@@ -62,10 +68,17 @@ def generate_launch_description() -> LaunchDescription:
             {"reactions_file": LaunchConfiguration("reactions_file"), "automatico": LaunchConfiguration("automatico")}
         ],
     )
+    # Reinicia a webcam quando o reconhecimento fica sem quadros (só com a webcam local: camera:=v4l2).
+    camera_vigia = Node(
+        package="robot_reaction_ros",
+        executable="camera_vigia",
+        name="camera_vigia",
+        condition=IfCondition(PythonExpression(["'", LaunchConfiguration("camera", default="v4l2"), "' == 'v4l2'"])),
+    )
     return LaunchDescription(
         [
             armed_arg, reactions_file_arg, pausa_arg, passo_arg, operacao_arg, estagios_arg, so_equilibrio_arg,
-            automatico_arg, recognition, reaction_node, OpaqueFunction(function=_body_node),
+            automatico_arg, threshold_arg, recognition, reaction_node, camera_vigia, OpaqueFunction(function=_body_node),
         ]
     )
 

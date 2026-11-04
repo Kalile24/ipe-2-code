@@ -36,7 +36,10 @@
     <div class="row"><span>Rotina</span><span id="rotina"></span></div>
     <div class="row"><span>Armado</span><span id="armado"></span></div>
     <div class="row"><span>Reações automáticas</span><span id="auto"></span></div>
-    <div class="row"><span>Câmera</span><span id="camera"></span></div>
+    <div class="row"><span>Webcam USB</span><span id="webcam"></span></div>
+    <div class="row"><span>Câmera (nó)</span><span id="camera"></span></div>
+    <div class="row"><span>Caixa de som</span><span id="caixa"></span></div>
+    <p id="webcam_aviso" class="bad" style="font-size:13px;margin:4px 0 0" hidden>A webcam reconectou e a imagem ainda não voltou. O robô reinicia a câmera sozinho em até ~30 s; se não voltar, aperte PARAR e suba de novo (F3+↓ e F3+↑).</p>
     <div class="row"><span>Reconhecimento</span><span id="recon"></span></div>
   </div>
   <div class="card">
@@ -51,6 +54,7 @@
       <button class="primario" onclick="if(confirm('Armado: o robô vai se mexer. Ele está em equilíbrio (FSM 801) e com espaço livre?')) acao('subir_armado')">Subir armado</button>
       <button onclick="acao('agora')">Cumprimentar agora</button>
       <button onclick="acao('automatico')">Liga/desliga automático</button>
+      <button onclick="acao('liberar')">Liberar cumprimentos</button>
       <button class="perigo" onclick="acao('parar')">PARAR</button>
     </div>
     <p id="msg" class="muted"></p>
@@ -89,7 +93,16 @@ async function atualizar() {
     $('rotina').innerHTML = sim(e.rotina_de_pe, 'de pé', 'parada');
     $('armado').innerHTML = e.rotina_de_pe ? (e.armado ? '<span class="warn">armado</span>' : 'desarmado') : '—';
     $('auto').innerHTML = e.automatico === null ? '—' : sim(e.automatico, 'ligadas', 'desligadas');
-    $('camera').innerHTML = sim(e.camera.ok, 'publicando', 'sem imagem');
+    const w = e.webcam;
+    $('webcam').innerHTML = (w.conectada ? `<span class="ok">conectada desde ${w.desde}</span>` : '<span class="bad">desconectada</span>')
+      + (w.quedas ? ` <span class="warn">(${w.quedas} queda${w.quedas > 1 ? 's' : ''})</span>` : '');
+    $('webcam_aviso').hidden = !w.reiniciar;
+    $('camera').innerHTML = sim(e.camera.ok, 'no ar', 'fora do ar');
+    const c = e.caixa || {};
+    $('caixa').innerHTML = c.conectada === null || c.conectada === undefined ? '<span class="muted">—</span>'
+      : !c.conectada ? '<span class="bad">desconectada (sem fala nem bipes)</span>'
+      : c.saida_padrao ? '<span class="ok">conectada</span>'
+      : '<span class="warn">conectada, mas não é a saída de som</span>';
     $('recon').innerHTML = e.reconhecimento.ok ? `<span class="ok">${e.reconhecimento.fps}/s</span>` : sim(false, '', e.reconhecimento.no ? 'parado' : 'fora do ar');
     $('vistos').innerHTML = e.vistos.length ? e.vistos.map(v => `<tr><td>${v.nome}</td><td>${v.nota}</td><td>caixa ${v.caixa_px}px</td></tr>`).join('') : '<tr><td class="muted">ninguém</td></tr>';
     $('status').innerHTML = e.status.map(s => `<li><span class="muted">${s.hora}</span> ${s.texto}</li>`).join('') || '<li class="muted">nada ainda</li>';
@@ -99,7 +112,7 @@ async function atualizar() {
 async function acao(nome) { $('msg').textContent = (await json('/acao/' + nome, {})).mensagem; atualizar(); }
 async function carregarOperacao() {
   const op = await json('/operacao');
-  const campos = ['estagios','altura_caixa_alvo_px','vx','vyaw_max','kp_giro','inverter_giro','centro_ok','centro_para_andar','perda_rosto_s','desistir_s','tempo_max_s'];
+  const campos = ['estagios','altura_caixa_alvo_px','vx','vyaw_max','vyaw_min','kp_giro','inverter_giro','centro_ok','centro_para_andar','centro_chegada','perda_rosto_s','desistir_s','tempo_max_s'];
   $('operacao').innerHTML = campos.map(c => typeof op[c] === 'boolean'
       ? `<label><span>${c}</span><select name="${c}"><option value="false"${op[c]?'':' selected'}>false</option><option value="true"${op[c]?' selected':''}>true</option></select></label>`
       : `<label><span>${c}</span><input name="${c}" value="${op[c]}"></label>`).join('') + '<button class="primario">Salvar</button> <span id="opmsg" class="muted"></span>';

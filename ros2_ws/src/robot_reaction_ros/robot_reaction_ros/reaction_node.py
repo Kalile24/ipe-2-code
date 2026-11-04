@@ -160,6 +160,10 @@ class ReactionNode(Node):
         # Rotina que falhou no meio também conta como cumprimento: repetir não consertaria o braço.
         resultado = future.result().result
         self.get_logger().info(f"rotina de {nome}: {'fim' if resultado.sucesso else resultado.mensagem}")
+        if not resultado.sucesso and resultado.mensagem.startswith("desistiu"):
+            # A aproximação desistiu (rosto perdido, tempo esgotado): não cumprimentou, então não
+            # conta. Sem isto o automático ficava 5 min sem tentar de novo.
+            self._policy.forget(nome)
         self._em_andamento = None
 
 

@@ -31,6 +31,16 @@ import time
 from typing import IO
 
 SEM_TORQUE_OU_DAMP = (0, 1)  # FSM_ID do G1 com os motores soltos: o damp não muda nada
+# FSM 801 em equilíbrio: MODE 0, ou 3 com o arm_sdk ativo (logo depois de outra rodada soltar os
+# braços); o ~/hhhh aceita os dois.
+MODOS_EQUILIBRIO = (0, 3)
+
+
+def em_equilibrio(fsm_id: object, fsm_mode: object) -> bool:
+    """FSM 801 = o controlador de equilíbrio. O MODE só diz se o arm_sdk está ativo; quando a
+    leitura dele falha (None: o RPC não respondeu, o que no robô acontecia logo depois de outra
+    rodada sair, e cada tentativa espera 5 s) o 801 basta. Em pé nunca há damp de qualquer jeito."""
+    return fsm_id == 801 and (fsm_mode in MODOS_EQUILIBRIO or fsm_mode is None)
 
 
 class G1Body:
@@ -62,6 +72,25 @@ class G1Body:
             "a_vontade": (None, self.robot.return_to_balance_and_release),
         }
 
+    # Cada leitura que o robô não responde espera 5 s por RPC (ID e MODE): 15 s dão ~2 tentativas
+    # inteiras. Com o robô respondendo, sai na 1ª leitura.
+    ESPERA_ESTADO_S = 15.0
+    INTERVALO_ESTADO_S = 0.5
+
+    def ler_estado(self) -> tuple[object, object]:
+        """Lê o FSM até ele estar num estado estável (mole ou em equilíbrio), por até ESPERA_ESTADO_S.
+
+        Uma leitura só falhava às vezes (logo depois de conectar o LocoClient responde 3102 → None,
+        ou o MODE ainda está mudando) e a partida pelo controle dizia "não estou em equilíbrio" com
+        o robô em pé (2026-11-05). Reler não mexe no robô.
+        """
+        fim = time.monotonic() + self.ESPERA_ESTADO_S
+        while True:
+            fsm_id, fsm_mode = self.robot.state("Antes de inicializar")
+            if em_equilibrio(fsm_id, fsm_mode) or fsm_id in SEM_TORQUE_OU_DAMP or time.monotonic() >= fim:
+                return fsm_id, fsm_mode
+            time.sleep(self.INTERVALO_ESTADO_S)
+
     def initialize(self, so_equilibrio: bool = False) -> bool:
         """F1+UP: damp → em pé (FSM 4) → equilíbrio (FSM 801). Robô no suporte.
 
@@ -70,12 +99,15 @@ class G1Body:
         qualquer outro modo, recusa — o damp derrubaria o robô fora do suporte.
         `so_equilibrio` (partida pelo controle, robô fora do suporte): só aceita FSM 801.
         """
-        fsm_id, fsm_mode = self.robot.state("Antes de inicializar")
-        if fsm_id == 801 and fsm_mode == 0:
-            self.robot.initialized_801 = True  # o initialize_to_balance só captura a postura
-        elif so_equilibrio:
+        fsm_id, fsm_mode = self.ler_estado()
+        if em_equilibrio(fsm_id, fsm_mode):
+            # Em pé: só captura a postura. Sem damp mesmo se a segunda leitura do initialize_to_balance
+            # não confirmar 801/0 (antes caía no damp e derrubava o robô).
+            return bool(self.robot.initialize_to_balance(permitir_damp=False))
+        if so_equilibrio:
             self.robot.log(
-                f"ERRO: robô em FSM_ID={fsm_id}: pelo controle só começo em equilíbrio (FSM 801)"
+                f"ERRO: robô em FSM_ID={fsm_id}, FSM_MODE={fsm_mode} depois de {self.ESPERA_ESTADO_S:.0f} s: "
+                "pelo controle só começo em equilíbrio (FSM 801)"
             )
             return False
         elif fsm_id not in SEM_TORQUE_OU_DAMP:
@@ -181,6 +213,29 @@ def serve(body: object, inp: IO[str], out: IO[str]) -> None:
         reply(final, True)
 
 
+TRAVA = os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp", "ipe-body_worker.lock")
+ESPERA_TRAVA_S = 20.0  # o worker anterior ainda pode estar devolvendo os braços
+
+
+def travar_corpo(caminho: str = TRAVA, espera_s: float = ESPERA_TRAVA_S) -> IO[str] | None:
+    """Um só body_worker comanda o robô por vez (em 2026-11-05 duas subidas sobrepostas
+    terminaram com o robô no chão). Espera o anterior soltar a trava; desiste depois de espera_s.
+    O sistema solta a trava quando o processo morre, mesmo morto à força."""
+    import fcntl
+
+    arquivo = open(caminho, "w")
+    fim = time.monotonic() + espera_s
+    while True:
+        try:
+            fcntl.flock(arquivo, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return arquivo
+        except BlockingIOError:
+            if time.monotonic() >= fim:
+                arquivo.close()
+                return None
+            time.sleep(0.5)
+
+
 def main() -> int:
     poses_dir, network_interface = sys.argv[1], sys.argv[2]
     rest_forward_pulse = len(sys.argv) < 4 or sys.argv[3] != "sem_passo"
@@ -191,6 +246,14 @@ def main() -> int:
     # resto vai para o stderr (que aparece no log do launch).
     protocolo = os.fdopen(os.dup(sys.stdout.fileno()), "w")
     os.dup2(sys.stderr.fileno(), sys.stdout.fileno())
+    # Linha a linha: antes o log do controlador (FSM lido etc.) só aparecia quando o worker saía, e a
+    # recusa "não está em equilíbrio" ficava sem o motivo no log da rotina.
+    sys.stdout.reconfigure(line_buffering=True)
+    trava = travar_corpo()  # guardada até o processo sair
+    if trava is None:
+        protocolo.write(json.dumps({"ok": False, "erro": "outro body_worker já comanda o robô"}) + "\n")
+        protocolo.flush()
+        return 1
     try:
         body = G1Body(poses_dir, network_interface, rest_forward_pulse)
     except Exception as exc:

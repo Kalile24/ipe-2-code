@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import array
 import base64
+import glob
 import json
 import os
 import subprocess
@@ -34,16 +35,70 @@ from std_msgs.msg import String
 from vision_msgs.msg import Detection2DArray
 
 from core.reaction_policy import load_reactions
+from core.stages import parse_stages
 from robot_reaction_interfaces.srv import Cadastrar
 
 REPO = os.path.expanduser(os.environ.get("IPE_REPO", "~/ipe-2-code"))
 SESSAO = "rotina"
 RECENTE_S = 2.0  # câmera/detecção mais velha que isso conta como parada
 CAMPOS_OPERACAO = (  # o que o formulário pode mudar no operacao.yaml (o resto fica como está)
-    "estagios", "altura_caixa_alvo_px", "vx", "vyaw_max", "kp_giro", "inverter_giro", "centro_ok",
-    "centro_para_andar", "perda_rosto_s", "desistir_s", "tempo_max_s",
+    "estagios", "altura_caixa_alvo_px", "vx", "vyaw_max", "vyaw_min", "kp_giro", "inverter_giro", "centro_ok",
+    "centro_para_andar", "centro_chegada", "perda_rosto_s", "desistir_s", "tempo_max_s",
 )
 FIM = ("fim", "falhou", "interrompida", "desistiu", "rejeitada")
+WEBCAM_GLOB = "/dev/v4l/by-id/*-video-index0"  # o mesmo que o robo_rotina_cumprimento.sh usa
+CAIXA = "A8:AA:CD:C6:5C:A3"  # caixa Bluetooth KD-833 (a mesma do robo_rotina_cumprimento.sh)
+CAIXA_CACHE_S = 3.0  # bluetoothctl/pactl a cada pedido pesariam no painel
+
+
+def caixa_de_som() -> dict:
+    """Caixa conectada pelo Bluetooth? E é a saída de som padrão (por onde saem fala e bipes)?"""
+    try:
+        info = subprocess.run(["bluetoothctl", "info", CAIXA], capture_output=True, text=True, timeout=3).stdout
+        padrao = subprocess.run(["pactl", "info"], capture_output=True, text=True, timeout=3).stdout
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return {"conectada": None, "saida_padrao": None}
+    return {"conectada": "Connected: yes" in info, "saida_padrao": CAIXA.replace(":", "_") in padrao}
+
+
+def webcam_usb() -> float | None:
+    """Quando a webcam USB (não a RealSense) apareceu pela última vez, ou None se não está conectada.
+
+    O link em /dev/v4l/by-id é recriado a cada reconexão: a hora dele é a da última reconexão.
+    """
+    for caminho in sorted(glob.glob(WEBCAM_GLOB)):
+        if "RealSense" in caminho:
+            continue
+        try:
+            return os.lstat(caminho).st_mtime
+        except OSError:  # sumiu entre o glob e o lstat
+            continue
+    return None
+
+
+def fechar_sessao_quando_terminar(espera_s: float = 90.0) -> None:
+    """Espera a janela 'rotina' voltar ao bash (o launch saiu) e fecha a sessão; se não sair a tempo,
+    deixa como está (fechar no meio mataria o body_worker com o arm_sdk ativo)."""
+    fim = time.monotonic() + espera_s
+    while time.monotonic() < fim:
+        saida = subprocess.run(["tmux", "display-message", "-p", "-t", f"{SESSAO}:rotina", "#{pane_current_command}"],
+                               capture_output=True, text=True)
+        if saida.returncode != 0:
+            return  # a sessão já não existe
+        if saida.stdout.strip() in ("bash", "sh"):
+            subprocess.run(["tmux", "kill-session", "-t", SESSAO])
+            return
+        time.sleep(0.5)
+
+
+def sessao_criada() -> float | None:
+    """Hora em que a sessão tmux da rotina subiu, ou None se ela não está de pé."""
+    try:
+        saida = subprocess.run(["tmux", "display-message", "-p", "-t", SESSAO, "#{session_created}"],
+                               capture_output=True, text=True)
+    except FileNotFoundError:
+        return None
+    return float(saida.stdout) if saida.returncode == 0 and saida.stdout.strip().isdigit() else None
 
 
 def estagio(status: str) -> str:
@@ -82,6 +137,9 @@ class PainelNode(Node):
         self._deteccoes: list[dict] = []
         self._deteccao_em = 0.0
         self._status: deque[tuple[float, str]] = deque(maxlen=40)
+        self._webcam_vista: float | None = webcam_usb()  # última hora de conexão observada
+        self._webcam_quedas = 0  # desconexões/reconexões vistas desde que o painel subiu
+        self._caixa: tuple[float, dict] = (0.0, {})  # (quando leu, resultado)
         self.create_subscription(Detection2DArray, self.get_parameter("detections_topic").value, self._on_detections, 1)
         self.create_subscription(String, "/reaction/rotina_status", self._on_status, 20)
         self._get = self.create_client(GetParameters, "/reaction_node/get_parameters")
@@ -136,6 +194,33 @@ class PainelNode(Node):
         return {"ok": resposta.ok, "mensagem": resposta.mensagem, "tem_rotina": nome in self.pessoas_com_rotina()}
 
     # ---- estado e operação ------------------------------------------------------------------
+    def webcam(self, rotina_desde: float | None) -> dict:
+        """Webcam USB conectada? Desde quando, quantas quedas, e se a rotina precisa subir de novo.
+
+        Uma reconexão troca o /dev/videoN: o v4l2_camera_node fica preso no antigo e para de mandar
+        imagem até a rotina subir de novo.
+        """
+        desde = webcam_usb()
+        with self._lock:
+            if desde != self._webcam_vista:
+                if self._webcam_vista is not None:  # estava conectada: caiu (e talvez já voltou)
+                    self._webcam_quedas += 1
+                self._webcam_vista = desde
+            quedas = self._webcam_quedas
+        return {
+            "conectada": desde is not None,
+            "desde": time.strftime("%H:%M:%S", time.localtime(desde)) if desde else None,
+            "quedas": quedas,
+            "reiniciar": desde is not None and rotina_desde is not None and desde > rotina_desde,
+        }
+
+    def caixa(self) -> dict:
+        lido_em, resultado = self._caixa
+        if time.monotonic() - lido_em > CAIXA_CACHE_S:
+            resultado = caixa_de_som()
+            self._caixa = (time.monotonic(), resultado)
+        return resultado
+
     def pessoas_com_rotina(self) -> list[str]:
         try:
             with open(os.path.join(get_package_share_directory("robot_reaction_ros"), "config", "reactions.yaml")) as f:
@@ -156,6 +241,9 @@ class PainelNode(Node):
         return {
             "rotina_de_pe": rotina,
             "camera": {"ok": self.count_publishers(self._image_topic) > 0},
+            # O camera_vigia reinicia a câmera sozinho: o aviso só vale se a imagem não voltou.
+            "webcam": {**(w := self.webcam(sessao_criada())), "reiniciar": w["reiniciar"] and not deteccao_viva},
+            "caixa": self.caixa(),
             "reconhecimento": {"ok": deteccao_viva, "no": "face_recognition_node" in nos,
                                "fps": round(len(quadros) / RECENTE_S, 1)},
             "vistos": deteccoes,
@@ -179,9 +267,14 @@ class PainelNode(Node):
             if not sessao_de_pe():
                 return "nenhuma rotina de pé"
             subprocess.run(["tmux", "send-keys", "-t", f"{SESSAO}:rotina", "C-c"])
-            return "parando"
+            # Como o F2+DOWN: fecha a sessão só depois que o launch saiu (braços devolvidos); sem
+            # isso o próximo "Subir" (ou F2+UP) dizia "a rotina já está de pé".
+            threading.Thread(target=fechar_sessao_quando_terminar, daemon=True).start()
+            return "parando (a sessão fecha quando os braços voltarem)"
         if nome == "agora":
             return self.set_reacao("cumprimentar_agora", "agora")
+        if nome == "liberar":  # todos podem ser cumprimentados de novo já (sem os 5 min)
+            return self.set_reacao("liberar", "todos")
         if nome == "automatico":
             atual = self.param_reacao("automatico")
             return "reaction_node não respondeu" if atual is None else self.set_reacao("automatico", not atual)
@@ -201,6 +294,9 @@ class PainelNode(Node):
                 tipo = type(atual[campo])
                 valor = novos[campo]
                 atual[campo] = (valor in (True, "true", "on", "1")) if tipo is bool else tipo(valor)
+                if campo == "estagios":
+                    # Um nome errado derrubaria o body_node na próxima subida: recusa já ao salvar.
+                    parse_stages(atual[campo])
         os.makedirs(os.path.dirname(self._operacao_file), exist_ok=True)
         with open(self._operacao_file, "w") as f:
             yaml.safe_dump({"/**": {"ros__parameters": atual}}, f, allow_unicode=True, sort_keys=False)

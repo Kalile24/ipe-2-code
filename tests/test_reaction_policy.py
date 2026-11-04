@@ -98,6 +98,14 @@ def test_a_frame_without_the_person_resets_the_count():
     assert _feed(_policy(), [GIL, GIL, [], GIL, GIL]) == [None] * 5
 
 
+def test_a_short_recognition_flicker_keeps_the_count():
+    # 10 frames/s: um "desconhecido" de 0,1 s no meio não zera (no robô, de longe, alternava).
+    p = _policy()
+    tempos = [0.0, 0.1, 0.2, 0.3]
+    vistos = [GIL, [("desconhecido", 0.4)], GIL, GIL]
+    assert [p.update(v, t) for v, t in zip(vistos, tempos)] == [None, None, None, ("gil", "rotina gil")]
+
+
 def test_unknown_and_unmapped_people_never_fire():
     assert _feed(_policy(), [[("desconhecido", 0.3), ("ze_batista", 0.9)]] * 10) == [None] * 10
 

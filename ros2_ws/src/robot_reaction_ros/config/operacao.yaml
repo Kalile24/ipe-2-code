@@ -9,10 +9,12 @@
     altura_caixa_alvo_px: 90.0  # para de andar com a caixa do rosto desta altura (escolher desarmado)
     inverter_giro: false  # troca o sinal do giro se ele for para o lado errado
     centro_ok: 0.15  # desvio aceito como "de frente" (fração da meia largura)
-    centro_para_andar: 0.30  # só anda para frente com desvio menor que este
+    centro_para_andar: 0.45  # só anda para frente com desvio menor que este (0,30 fazia anda-e-para)
+    centro_chegada: 0.30  # já perto: desvio aceito como "de frente" para cumprimentar
     vyaw_max: 0.3  # giro máximo (rad/s)
+    vyaw_min: 0.3  # giro mínimo parado (rad/s): abaixo disso o G1 não gira no lugar (0,22 não girou)
     vx: 0.2  # velocidade para frente (m/s, constante)
     kp_giro: 0.6  # ganho do giro (rad/s por desvio 1,0)
-    perda_rosto_s: 1.0  # rosto sumido por isso → para
-    desistir_s: 5.0  # rosto sumido por isso → desiste
-    tempo_max_s: 20.0  # aproximação mais longa que isso → desiste
+    perda_rosto_s: 2.0  # rosto sumido por isso → para (1,0 desistia à toa de longe)
+    desistir_s: 10.0  # rosto sumido por isso → desiste
+    tempo_max_s: 30.0  # aproximação mais longa que isso → desiste
