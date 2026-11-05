@@ -25,9 +25,9 @@ privado; apague suas cópias depois de instalar.
 | `data/known_faces/{gil,aderson}/` | **Não** | Fotos brutas: ficam fora do robô e só servem para refazer o banco com `apps.enroll` |
 | `SHA256SUMS` | Não | Confere o pacote inteiro |
 
-Pacote: SHA-256 `851a45877e6f700fd7c01e3bcbfb40f907ceebe351ee93ef62fe8b2286d01a8b`. No robô precisam existir, de instalações anteriores: `~/.insightface/models/buffalo_l` e
-`buffalo_sc`, o `.venv` e o `unitree_sdk2_python` ([`jetson-deployment.md`](jetson-deployment.md)). Sem eles, pare e
-instale antes.
+Pacote: SHA-256 `851a45877e6f700fd7c01e3bcbfb40f907ceebe351ee93ef62fe8b2286d01a8b`. No robô precisam existir, de instalações anteriores: `~/.insightface/models/buffalo_l`, o `.venv` e o
+`~/unitree_sdk2_python` ([`jetson-deployment.md`](jetson-deployment.md)). Sem eles, pare e instale antes. O modelo
+`buffalo_sc` só é necessário para quem for usá-lo; a rotina usa `buffalo_l`.
 
 **Antes:** rotina parada (F3+↓ ou PARAR) e combinado com quem usa o robô. Use o IP que estiver disponível: cabo
 `192.168.123.164`, hotspot `10.42.0.1` (derruba a transmissão da D435i do `~/cesar`) ou o IP do Wi-Fi.
@@ -42,14 +42,21 @@ houver alteração local que não seja sua, pare e pergunte. Guarde o banco atua
 cd ~/ipe-2-code && git fetch --prune origin && git switch master && git pull
 ```
 
-Sem internet no robô, de um computador com o repositório nessa branch:
+Sem internet no robô, de um computador com o repositório atualizado (`git fetch origin` antes):
 
 ```bash
 ROBO=unitree@IP_DO_ROBO
-git ls-files -z | rsync -av --from0 --files-from=- ./ $ROBO:ipe-2-code/
+git push ssh://$ROBO/home/unitree/ipe-2-code master:refs/heads/entrega \
+  origin/backup/robo-ultimo-teste-fisico:refs/heads/backup/robo-ultimo-teste-fisico
 ```
 
-Enviar assim deixa alterações locais no Git do robô. Para voltar à branch de backup abaixo, descarte-as antes: `git restore .`.
+e depois, no robô. O `stash` guarda as alterações locais, sem perdê-las; só é preciso se o `git status` mostrar alguma:
+
+```bash
+cd ~/ipe-2-code
+git -c user.name=robo -c user.email=robo@local stash push -u -m "antes da entrega"
+git switch master && git merge --ff-only entrega
+```
 
 **3. Banco de rostos.** Do computador com o pacote, e depois no robô:
 
@@ -117,7 +124,7 @@ Depois: `robo_hotspot.sh estado`, `desliga` (volta ao Wi-Fi anterior) ou `boot-d
 ### Se a versão nova der problema: voltar ao último teste físico
 
 ```bash
-cd ~/ipe-2-code && git fetch origin && git switch backup/robo-ultimo-teste-fisico
+cd ~/ipe-2-code && git switch backup/robo-ultimo-teste-fisico    # sem essa branch no robô: `git fetch origin` antes, ou envie como na seção acima
 source scripts/ambiente_robo.sh && cd ros2_ws && python3 -m colcon build --symlink-install
 systemctl --user restart ipe-controle ipe-painel
 ```
