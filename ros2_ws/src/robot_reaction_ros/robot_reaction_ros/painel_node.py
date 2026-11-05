@@ -6,7 +6,9 @@ controle (subir, cumprimentar agora, ligar/desligar automático, parar), o formu
 data/operacao.yaml e o cadastro de uma pessoa por foto (serviço ~/cadastrar do face_recognition_node).
 
 Só biblioteca padrão + rclpy (nada novo no Jetson). Sobe à parte da rotina (scripts/systemd/
-ipe-painel.service), para mostrar também "rotina parada". Sem login: a proteção é a senha do hotspot.
+ipe-painel.service), para mostrar também "rotina parada". Sem login: escuta em todas as redes do robô,
+então quem estiver numa delas consegue comandar (só pedidos de outro site são recusados). No hotspot,
+a proteção é a senha dele; em outro Wi-Fi, não há proteção: use em rede de confiança.
 Spec: docs/superpowers/specs/2026-11-04-painel-design.md
 """
 from __future__ import annotations
@@ -18,10 +20,12 @@ import json
 import os
 import re
 import subprocess
+import tempfile
 import threading
 import time
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlsplit
 
 import rclpy
 import yaml
@@ -35,6 +39,7 @@ from sensor_msgs.msg import CompressedImage
 from std_msgs.msg import String
 from vision_msgs.msg import Detection2DArray
 
+from core.approach import LIMITES_OPERACAO, validar_operacao
 from core.bipes import tocar
 from core.caixa import CAIXA_PADRAO, caixa_atual, ler_dispositivos, mac_valido, nome_do_sink
 from core.config import DB_PATH, MODEL_NAME
@@ -58,6 +63,32 @@ ARQ_REACOES = os.path.join(REPO, "data", "reactions.yaml")
 DB_BASE = DB_PATH
 NOME_VALIDO = re.compile(r"^[a-z0-9_]+$")
 CAIXA_CACHE_S = 3.0  # bluetoothctl/pactl a cada pedido pesariam no painel
+FORMATO_CACHE_S = 5.0
+PARAM_RETRY_S = 10.0  # nó que não respondeu um parâmetro fixo: só pergunta de novo depois disso
+FOTOS_MAX = 10
+CORPO_MAX = 64 * 1024 * 1024  # 10 fotos de 1280 px cabem com folga
+EVENTOS_NA_TELA = 30
+
+
+def registrar_status(status: deque, texto: str, agora: float) -> None:
+    """Acrescenta uma linha de status como [hora, texto, repetições].
+
+    A aproximação publica ~10 linhas/s: sem juntar, 40 linhas não chegavam a 4 s de histórico. Junta
+    as seguidas da mesma etapa e do mesmo estado; uma mudança (andando → sem_rosto) abre outra linha.
+    """
+    etapa = texto.split(":", 1)[0]
+    if etapa in ("aproximar", "virar") and status:
+        ultimo = status[-1]
+        if ultimo[1].split(":", 1)[0] == etapa and ultimo[1].rsplit("(", 1)[-1] == texto.rsplit("(", 1)[-1]:
+            ultimo[0], ultimo[1], ultimo[2] = agora, texto, ultimo[2] + 1
+            return
+    status.append([agora, texto, 1])
+
+
+def valor_param(v: object) -> object | None:
+    """O valor de um rcl_interfaces/ParameterValue, ou None se o tipo não é um dos usados aqui."""
+    return {ParameterType.PARAMETER_BOOL: v.bool_value, ParameterType.PARAMETER_STRING: v.string_value,
+            ParameterType.PARAMETER_DOUBLE: v.double_value, ParameterType.PARAMETER_INTEGER: v.integer_value}.get(v.type)
 
 
 def _comando(*args: str, timeout: float = 25.0) -> str:
@@ -101,6 +132,18 @@ def webcam_nome() -> str | None:
             nome = os.path.basename(caminho)
             return nome[len("usb-"):-len("-video-index0")].replace("_", " ") if nome.startswith("usb-") else nome
     return None
+
+
+def ler_formato_webcam(fmt: str, parm: str) -> dict | None:
+    """Tamanho e quadros/s reais, das saídas de `v4l2-ctl --get-fmt-video` e `--get-parm`.
+
+    O driver pode entregar outra coisa que não a pedida no launch (a Intelbras ignora os 15 q/s).
+    """
+    tamanho = re.search(r"Width/Height\s*:\s*(\d+)/(\d+)", fmt)
+    if not tamanho:
+        return None
+    fps = re.search(r"Frames per second:\s*([\d.]+)", parm)
+    return {"largura": int(tamanho[1]), "altura": int(tamanho[2]), "fps": round(float(fps[1])) if fps else None}
 
 
 def fechar_sessao_quando_terminar(espera_s: float = 90.0) -> None:
@@ -163,18 +206,27 @@ class PainelNode(Node):
         self._quadros: deque[float] = deque(maxlen=100)
         self._deteccoes: list[dict] = []
         self._deteccao_em = 0.0
-        self._status: deque[tuple[float, str]] = deque(maxlen=40)
+        self._status: deque[list] = deque(maxlen=200)  # [hora, texto, repetições]: registrar_status
+        self._armado: bool | None = None  # o que o body_node anunciou; None = ainda não se sabe
+        self._params: dict[str, tuple[object, float]] = {}  # nó → (parâmetro fixo, quando perguntou)
+        self._subindo = threading.Event()
+        self._parando = threading.Event()
+        self._subida_erro: str | None = None
+        self._operacao_alterada_em = 0.0
         self._webcam_vista: float | None = webcam_usb()  # última hora de conexão observada
         self._webcam_quedas = 0  # desconexões/reconexões vistas desde que o painel subiu
         self._caixa: tuple[float, dict] = (0.0, {})  # (quando leu, resultado)
+        self._formato: tuple[float, dict | None] = (0.0, None)  # (quando leu, formato da webcam)
         self.create_subscription(Detection2DArray, self.get_parameter("detections_topic").value, self._on_detections, 1)
         self.create_subscription(String, "/reaction/rotina_status", self._on_status, 20)
         self._get = self.create_client(GetParameters, "/reaction_node/get_parameters")
         self._set = self.create_client(SetParameters, "/reaction_node/set_parameters")
+        self._get_corpo = self.create_client(GetParameters, "/body_node/get_parameters")
+        self._get_rec = self.create_client(GetParameters, "/face_recognition_node/get_parameters")
         self._cadastrar = self.create_client(Cadastrar, "/face_recognition_node/cadastrar")
 
     def _on_detections(self, msg: Detection2DArray) -> None:
-        caixas = [{"nome": d.results[0].id, "nota": round(d.results[0].score, 2), "caixa_px": round(d.bbox.size_y)}
+        caixas = [{"nome": d.results[0].id, "nota": round(d.results[0].score, 2), "caixa_px": round(d.bbox.size_y), "x": round(d.bbox.center.x)}
                   for d in msg.detections if d.results]
         agora = time.monotonic()
         with self._lock:
@@ -183,7 +235,11 @@ class PainelNode(Node):
 
     def _on_status(self, msg: String) -> None:
         with self._lock:
-            self._status.append((time.time(), msg.data))
+            registrar_status(self._status, msg.data, time.time())
+            if msg.data.startswith(("inicializando", "pronto: em equilíbrio")):
+                self._armado = True
+            elif msg.data.startswith("desarmado"):
+                self._armado = False
 
     # ---- chamadas aos outros nós (do thread do HTTP; o executor gira no principal) ----------
     def _chamar(self, cliente: object, pedido: object, timeout_s: float) -> object | None:
@@ -199,8 +255,37 @@ class PainelNode(Node):
         resposta = self._chamar(self._get, GetParameters.Request(names=[nome]), 2.0)
         if resposta is None or not resposta.values:
             return None
-        v = resposta.values[0]
-        return {ParameterType.PARAMETER_BOOL: v.bool_value, ParameterType.PARAMETER_STRING: v.string_value}.get(v.type)
+        return valor_param(resposta.values[0])
+
+    def _param_fixo(self, no: str, cliente: object, nome: str, nos: set) -> object | None:
+        """Parâmetro que não muda enquanto o nó vive: pergunta uma vez, sem pesar a cada 1 s do painel."""
+        if no not in nos:
+            self._params.pop(no, None)
+            return None
+        valor, perguntou_em = self._params.get(no, (None, float("-inf")))
+        if valor is None and time.monotonic() - perguntou_em >= PARAM_RETRY_S:
+            resposta = self._chamar(cliente, GetParameters.Request(names=[nome]), 1.0)
+            valor = valor_param(resposta.values[0]) if resposta is not None and resposta.values else None
+            self._params[no] = (valor, time.monotonic())
+        return valor
+
+    def armado(self, nos: set) -> bool | None:
+        """O robô está armado? None = não deu para saber (a tela trata como "pode estar").
+
+        Vale o que o body_node anunciou por último. Olhar se a linha "pronto" ainda está no histórico
+        dizia "desarmado" com o robô andando (a linha saía) e "armado" numa subida desarmada (a antiga
+        ficava). Se o painel subiu depois do anúncio, pergunta ao nó: `armed` não muda enquanto ele vive.
+        """
+        if "body_node" not in nos:
+            with self._lock:
+                self._armado = None
+            return False
+        with self._lock:
+            anunciado = self._armado
+        if anunciado is not None:
+            return anunciado
+        valor = self._param_fixo("body_node", self._get_corpo, "armed", nos)
+        return None if valor is None else str(valor).lower() == "true"
 
     def set_reacao(self, nome: str, valor: object) -> str:
         if isinstance(valor, bool):
@@ -213,14 +298,27 @@ class PainelNode(Node):
         r = resposta.results[0]
         return "ok" if r.successful else r.reason
 
-    def cadastrar(self, nome: str, fotos_b64: list[str]) -> dict:
+    def cadastrar(self, nome: str, fotos_b64: list[str], adicionar: bool = False) -> dict:
+        if len(fotos_b64) > FOTOS_MAX:
+            return {"ok": False, "mensagem": f"{len(fotos_b64)} fotos: o máximo é {FOTOS_MAX} por envio. Nada foi alterado."}
         fotos = [CompressedImage(format="jpeg", data=array.array("B", base64.b64decode(f.split(",", 1)[-1]))) for f in fotos_b64]
-        resposta = self._chamar(self._cadastrar, Cadastrar.Request(nome=nome, fotos=fotos), 60.0)
+        resposta = self._chamar(self._cadastrar, Cadastrar.Request(nome=nome, fotos=fotos, adicionar=adicionar), 90.0)
         if resposta is None:
             return {"ok": False, "mensagem": "face_recognition_node não respondeu (a rotina está de pé?)"}
         return {"ok": resposta.ok, "mensagem": resposta.mensagem, "tem_rotina": nome in self.pessoas_com_rotina()}
 
     # ---- estado e operação ------------------------------------------------------------------
+    def formato_webcam(self) -> dict | None:
+        """Só leitura (não disputa a câmera com o nó). None sem webcam ou sem o v4l2-ctl: a tela só não mostra."""
+        lido_em, resultado = self._formato
+        if time.monotonic() - lido_em > FORMATO_CACHE_S:
+            caminho = next((c for c in sorted(glob.glob(WEBCAM_GLOB)) if "RealSense" not in c), None)
+            resultado = None if caminho is None else ler_formato_webcam(
+                _comando("v4l2-ctl", "-d", caminho, "--get-fmt-video", timeout=2.0),
+                _comando("v4l2-ctl", "-d", caminho, "--get-parm", timeout=2.0))
+            self._formato = (time.monotonic(), resultado)
+        return resultado
+
     def webcam(self, rotina_desde: float | None) -> dict:
         """Webcam USB conectada? Desde quando, quantas quedas, e se a rotina precisa subir de novo.
 
@@ -236,6 +334,7 @@ class PainelNode(Node):
             quedas = self._webcam_quedas
         return {
             "nome": webcam_nome(),
+            "formato": self.formato_webcam(),
             "conectada": desde is not None,
             "desde": time.strftime("%H:%M:%S", time.localtime(desde)) if desde else None,
             "quedas": quedas,
@@ -369,40 +468,92 @@ class PainelNode(Node):
             deteccao_viva = agora - self._deteccao_em <= RECENTE_S
             status = list(self._status)
         nos = set(self.get_node_names())
-        ultimo = status[-1][1] if status else ""
+        desde = sessao_criada()
+        # Status de uma subida anterior não diz nada sobre esta.
+        ultimo = status[-1][1] if status and (desde is None or status[-1][0] >= desde) else ""
         rotina = sessao_de_pe() or "body_node" in nos  # também quando o launch subiu à mão
+        fase = "parando" if self._parando.is_set() else estagio(ultimo) if rotina and ultimo else "subindo" if rotina or self._subindo.is_set() else "rotina parada"
         return {
             "rotina_de_pe": rotina,
             "camera": {"ok": self.count_publishers(self._image_topic) > 0},
             # O camera_vigia reinicia a câmera sozinho: o aviso só vale se a imagem não voltou.
-            "webcam": {**(w := self.webcam(sessao_criada())), "reiniciar": w["reiniciar"] and not deteccao_viva},
+            "rotina_ha_s": round(time.time() - desde) if desde else None,
+            "subindo": self._subindo.is_set(),
+            "parando": self._parando.is_set(),
+            "subida_erro": self._subida_erro,
+            "operacao_pendente": bool(rotina and desde and self._operacao_alterada_em > desde),
+            "webcam": {**(w := self.webcam(desde)), "reiniciar": w["reiniciar"] and not deteccao_viva},
             "caixa": self.caixa(),
             "reconhecimento": {"ok": deteccao_viva, "no": "face_recognition_node" in nos,
-                               "fps": round(len(quadros) / RECENTE_S, 1)},
+                               "fps": round(len(quadros) / RECENTE_S, 1),
+                               "limiar": self._param_fixo("face_recognition_node", self._get_rec, "similarity_threshold", nos)},
             "vistos": deteccoes,
-            "estagio": estagio(ultimo) if rotina else "rotina parada",
+            "estagio": fase,
             "body_node": "body_node" in nos,
             "automatico": self.param_reacao("automatico") if "reaction_node" in nos else None,
-            "armado": any("pronto: em equilíbrio" in s or "inicializando" in s for _, s in status),
-            "status": [{"hora": time.strftime("%H:%M:%S", time.localtime(t)), "texto": s} for t, s in status[-15:]][::-1],
+            "reaction_node": "reaction_node" in nos,
+            "armado": self.armado(nos),
+            "status": _linhas_status(status[-EVENTOS_NA_TELA:]),
             "pessoas": self.pessoas(),
         }
+
+    def _subir(self, args: list[str]) -> None:
+        """Roda o script de subida e guarda o motivo se ele parar: sem isto a tela ficava em "subindo…".
+
+        Saída em arquivo, não em pipe: o servidor de voz e o tmux que o script deixa de pé herdariam o
+        pipe, e esperar por ele nunca terminaria.
+        """
+        try:
+            with tempfile.TemporaryFile("w+") as saida:
+                codigo = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=saida, stderr=subprocess.STDOUT).wait()
+                saida.seek(0)
+                linhas = saida.read().strip().splitlines()
+            if linhas:
+                self.get_logger().info("subida:\n" + "\n".join(linhas))
+            if codigo != 0:
+                self._falha_subida(linhas[-1] if linhas else f"o script terminou com erro {codigo}")
+        except Exception as exc:
+            self._falha_subida(repr(exc))
+        finally:
+            self._subindo.clear()
+
+    def _falha_subida(self, motivo: str) -> None:
+        self._subida_erro = motivo
+        with self._lock:
+            registrar_status(self._status, f"falha ao subir: {motivo}", time.time())
+
+    def _encerrar_sessao(self) -> None:
+        try:
+            fechar_sessao_quando_terminar()
+        finally:
+            self._parando.clear()
 
     def acao(self, nome: str) -> str:
         script = os.path.join(REPO, "scripts", "robo_rotina_cumprimento.sh")
         if nome in ("subir_desarmado", "subir_armado"):
-            if sessao_de_pe():
+            if sessao_de_pe() or "body_node" in self.get_node_names():
                 return "a rotina já está de pé"
+            if self._subindo.is_set():
+                return "já está subindo: aguarde"
+            self._subindo.set()
+            self._subida_erro = None
             args = [script] + (["--controle"] if nome == "subir_armado" else [])
-            subprocess.Popen(args, stdin=subprocess.DEVNULL)
+            threading.Thread(target=self._subir, args=(args,), daemon=True).start()
             return "subindo… (acompanhe o estágio)"
         if nome == "parar":
             if not sessao_de_pe():
+                if _comando("pgrep", "-f", "robo_levantar.py", timeout=3.0).strip():
+                    return "o robô está levantando: para abortar, use o combo de parar do controle"
+                if "body_node" in self.get_node_names():
+                    return "a rotina foi iniciada à mão: pare com Ctrl+C no terminal dela"
                 return "nenhuma rotina de pé"
+            if self._parando.is_set():
+                return "já está parando: aguarde os braços voltarem"
+            self._parando.set()
             subprocess.run(["tmux", "send-keys", "-t", f"{SESSAO}:rotina", "C-c"])
             # Como o F2+DOWN: fecha a sessão só depois que o launch saiu (braços devolvidos); sem
             # isso o próximo "Subir" (ou F2+UP) dizia "a rotina já está de pé".
-            threading.Thread(target=fechar_sessao_quando_terminar, daemon=True).start()
+            threading.Thread(target=self._encerrar_sessao, daemon=True).start()
             return "parando (a sessão fecha quando os braços voltarem)"
         if nome == "agora":
             return self.set_reacao("cumprimentar_agora", "agora")
@@ -413,12 +564,18 @@ class PainelNode(Node):
             return "reaction_node não respondeu" if atual is None else self.set_reacao("automatico", not atual)
         return f"ação desconhecida {nome!r}"
 
+    def _operacao_padrao(self) -> dict:
+        with open(os.path.join(get_package_share_directory("robot_reaction_ros"), "config", "operacao.yaml")) as f:
+            return yaml.safe_load(f)["/**"]["ros__parameters"]
+
+    def operacao_info(self) -> dict:
+        """Para a tela mostrar o padrão e a faixa de cada campo; quem decide é o salvar_operacao."""
+        return {"padrao": self._operacao_padrao(), "limites": LIMITES_OPERACAO}
+
     def operacao(self) -> dict:
         # O arquivo salvo por cima dos padrões do pacote: um salvo antes de um campo novo existir
         # ainda mostra e salva esse campo.
-        padrao = os.path.join(get_package_share_directory("robot_reaction_ros"), "config", "operacao.yaml")
-        with open(padrao) as f:
-            valores = yaml.safe_load(f)["/**"]["ros__parameters"]
+        valores = self._operacao_padrao()
         if os.path.exists(self._operacao_file):
             with open(self._operacao_file) as f:
                 valores.update(yaml.safe_load(f)["/**"]["ros__parameters"])
@@ -427,6 +584,7 @@ class PainelNode(Node):
     def restaurar_operacao(self) -> str:
         if os.path.exists(self._operacao_file):
             os.remove(self._operacao_file)
+        self._operacao_alterada_em = time.time()
         return "padrões restaurados; valem na próxima subida"
 
     def salvar_operacao(self, novos: dict) -> str:
@@ -435,14 +593,42 @@ class PainelNode(Node):
             if campo in novos:
                 tipo = type(atual[campo])
                 valor = novos[campo]
-                atual[campo] = (valor in (True, "true", "on", "1")) if tipo is bool else tipo(valor)
+                try:
+                    atual[campo] = (valor in (True, "true", "on", "1")) if tipo is bool else tipo(valor)
+                except ValueError:
+                    raise ValueError(f"{campo}: {valor!r} não é um valor válido") from None
                 if campo == "estagios":
                     # Um nome errado derrubaria o body_node na próxima subida: recusa já ao salvar.
                     parse_stages(atual[campo])
+        validar_operacao(atual)
         os.makedirs(os.path.dirname(self._operacao_file), exist_ok=True)
         with open(self._operacao_file, "w") as f:
             yaml.safe_dump({"/**": {"ros__parameters": atual}}, f, allow_unicode=True, sort_keys=False)
+        self._operacao_alterada_em = time.time()
         return f"salvo em {self._operacao_file}; vale na próxima subida da rotina"
+
+    def diagnostico(self) -> str:
+        """Tudo de uma vez, em texto, para olhar ou mandar para alguém quando não há cabo."""
+        with self._lock:
+            status = list(self._status)
+        eventos = "\n".join(f"{s['hora']}  {s['texto']}" + (f"  (x{s['repeticoes']})" if s["repeticoes"] > 1 else "")
+                            for s in _linhas_status(status))
+        tela = _comando("tmux", "capture-pane", "-p", "-t", f"{SESSAO}:rotina", "-S", "-200", timeout=3.0)
+        return (f"Diagnóstico do G1, {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+                f"== Estado ==\n{json.dumps(self.estado(), ensure_ascii=False, indent=2)}\n\n"
+                f"== Operação salva ==\n{json.dumps(self.operacao(), ensure_ascii=False, indent=2)}\n\n"
+                f"== Eventos ==\n{eventos or '(nenhum)'}\n\n"
+                f"== Janela rotina (tmux) ==\n{tela.strip() or '(sem sessão)'}\n")
+
+
+def _linhas_status(status: list) -> list[dict]:
+    """Do mais novo para o mais velho, como a tela mostra."""
+    return [{"hora": time.strftime("%H:%M:%S", time.localtime(t)), "texto": s, "repeticoes": n} for t, s, n in status][::-1]
+
+
+def mesma_origem(origem: str | None, host: str | None) -> bool:
+    """Um POST de outro site (a página aberta no celular conectado ao robô) traz o Origin dele."""
+    return origem is None or urlsplit(origem).netloc == host
 
 
 def handler(painel: PainelNode) -> type:
@@ -461,7 +647,10 @@ def handler(painel: PainelNode) -> type:
             self.wfile.write(corpo)
 
         def _corpo(self) -> dict:
-            return json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+            tamanho = int(self.headers.get("Content-Length", 0))
+            if tamanho > CORPO_MAX:
+                raise ValueError("pedido grande demais")
+            return json.loads(self.rfile.read(tamanho) or b"{}")
 
         def do_GET(self) -> None:
             try:
@@ -473,23 +662,39 @@ def handler(painel: PainelNode) -> type:
             if self.path == "/":
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")  # o celular não fica com a página antiga
                 self.end_headers()
                 self.wfile.write(pagina)
             elif self.path == "/estado":
                 self._json(painel.estado())
             elif self.path == "/operacao":
                 self._json(painel.operacao())
+            elif self.path == "/operacao/info":
+                self._json(painel.operacao_info())
+            elif self.path == "/diagnostico":
+                corpo = painel.diagnostico().encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.send_header("Content-Length", str(len(corpo)))
+                self.end_headers()
+                self.wfile.write(corpo)
             elif self.path == "/caixas":
                 self._json(painel.caixas())
             else:
                 self._json({"erro": "não existe"}, 404)
 
         def do_POST(self) -> None:
+            if not mesma_origem(self.headers.get("Origin"), self.headers.get("Host")):
+                self._json({"mensagem": "pedido de outra origem recusado"}, 403)
+                return
             try:
                 if self.path.startswith("/acao/"):
                     self._json({"mensagem": painel.acao(self.path[len("/acao/"):])})
                 elif self.path == "/operacao":
-                    self._json({"mensagem": painel.salvar_operacao(self._corpo())})
+                    try:
+                        self._json({"ok": True, "mensagem": painel.salvar_operacao(self._corpo())})
+                    except ValueError as exc:
+                        self._json({"ok": False, "mensagem": str(exc)})
                 elif self.path == "/operacao/restaurar":
                     self._json({"mensagem": painel.restaurar_operacao()})
                 elif self.path == "/pessoa":
@@ -506,7 +711,7 @@ def handler(painel: PainelNode) -> type:
                     self._json({"mensagem": "bipe enviado; ouviu?"})
                 elif self.path == "/cadastrar":
                     dados = self._corpo()
-                    self._json(painel.cadastrar(str(dados.get("nome", "")), list(dados.get("fotos", []))))
+                    self._json(painel.cadastrar(str(dados.get("nome", "")), list(dados.get("fotos", [])), dados.get("adicionar") is True))
                 else:
                     self._json({"erro": "não existe"}, 404)
             except Exception as exc:  # um pedido ruim não derruba o painel

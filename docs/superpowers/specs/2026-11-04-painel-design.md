@@ -4,6 +4,13 @@ Data: 2026-11-04. Implementado no mesmo dia (verificado no Docker Foxy; **ainda 
 [`teste-no-robo.md`](../../guides/teste-no-robo.md), passo 8). Contexto: passo 3 depois da rotina
 (`2026-10-29-…`) e da aproximação (`2026-11-04-aproximacao-e-estagios-design.md`).
 
+**Revisão de 2026-11-05 (pedido do usuário, painel como local de acompanhamento sem cabo):** abas Operar, Calibrar, Pessoas
+e Sistema; `armado` vem do anúncio do `body_node` e do parâmetro `armed`, não mais do histórico; aviso de conexão perdida;
+faixas de segurança ao salvar (`core.approach.validar_operacao`) e teto no `body_worker`; POST de outra origem recusado;
+`Cadastrar.srv` ganhou `adicionar`; até 10 fotos; falha de subida visível; eventos agrupados; diagnóstico em texto; calibração
+guiada da distância de parada. Com isso, o que está abaixo sobre a "proteção" e o formulário vale só como histórico. Guia:
+`docs/guides/operar-o-robo.md`.
+
 ## Decisões do usuário (2026-11-04)
 
 - Uma interface para ver as funções críticas: em que estágio o robô está, quem está sendo

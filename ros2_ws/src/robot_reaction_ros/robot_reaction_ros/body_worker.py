@@ -128,9 +128,9 @@ class G1Body:
             self.robot.max_joint_speed = anterior
 
     def velocity(self, vx: float, vyaw: float) -> None:
-        # Última barreira antes do robô: nunca para trás, nunca NaN/inf (vira parado).
-        vx = max(0.0, vx) if math.isfinite(vx) else 0.0
-        vyaw = vyaw if math.isfinite(vyaw) else 0.0
+        # Última barreira antes do robô: nunca para trás, nunca acima do teto, nunca NaN/inf (vira parado).
+        vx = min(max(0.0, vx), VX_MAX) if math.isfinite(vx) else 0.0
+        vyaw = max(-VYAW_MAX, min(VYAW_MAX, vyaw)) if math.isfinite(vyaw) else 0.0
         self.robot.loco.SetVelocity(vx, 0.0, vyaw, 0.5)
 
     def stop(self) -> None:
@@ -212,6 +212,7 @@ def serve(body: object, inp: IO[str], out: IO[str]) -> None:
 
 
 TRAVA = os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp", "ipe-body_worker.lock")
+VX_MAX, VYAW_MAX = 0.5, 0.8  # m/s e rad/s: os mesmos tetos de core.approach.LIMITES_OPERACAO
 ESPERA_TRAVA_S = 20.0  # o worker anterior ainda pode estar devolvendo os braços
 
 

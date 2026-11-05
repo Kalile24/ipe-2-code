@@ -1,4 +1,5 @@
 """Testes do nó sem câmera nem modelo: FaceEngine é substituído por um dublê."""
+import cv2
 import numpy as np
 import pytest
 import rclpy
@@ -113,3 +114,33 @@ def test_boxes_fully_outside_are_dropped_and_engine_errors_do_not_kill_node(node
     monkeypatch.setattr(node._engine, "extract_faces", boom)
     node._on_image(_image("f2"))  # não deve lançar
     assert len(published) == 1  # frame com erro não publica nada
+
+
+def _pedido_cadastro(nome, n, adicionar):
+    from robot_reaction_interfaces.srv import Cadastrar
+    from sensor_msgs.msg import CompressedImage
+
+    ok, jpeg = cv2.imencode(".jpg", np.zeros((8, 8, 3), np.uint8))
+    assert ok
+    foto = CompressedImage(format="jpeg", data=jpeg.tobytes())
+    return Cadastrar.Request(nome=nome, fotos=[foto] * n, adicionar=adicionar), Cadastrar.Response()
+
+
+def test_enrollment_adds_to_or_replaces_the_person_and_keeps_the_others(node, monkeypatch):
+    monkeypatch.setattr(_FakeEngine, "faces", [_Face((0, 0, 10, 10))])
+    node._on_cadastrar(*_pedido_cadastro("aderson", 2, False))
+    node._on_cadastrar(*_pedido_cadastro("gil", 1, False))
+    resposta = node._on_cadastrar(*_pedido_cadastro("aderson", 3, True))
+    assert resposta.ok and resposta.fotos_usadas == 3 and "5 no total" in resposta.mensagem
+    assert len(node._store.embeddings["aderson"]) == 5
+    node._on_cadastrar(*_pedido_cadastro("aderson", 1, False))
+    assert len(node._store.embeddings["aderson"]) == 1
+    assert len(node._store.embeddings["gil"]) == 1
+
+
+def test_enrollment_without_a_face_changes_nothing_even_when_replacing(node, monkeypatch):
+    monkeypatch.setattr(_FakeEngine, "faces", [_Face((0, 0, 10, 10))])
+    node._on_cadastrar(*_pedido_cadastro("gil", 2, False))
+    monkeypatch.setattr(_FakeEngine, "faces", [])
+    resposta = node._on_cadastrar(*_pedido_cadastro("gil", 1, False))
+    assert resposta.ok is False and len(node._store.embeddings["gil"]) == 2

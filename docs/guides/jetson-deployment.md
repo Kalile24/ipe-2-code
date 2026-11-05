@@ -18,7 +18,7 @@ mesmo Ubuntu 20.04 / Python 3.8 / ROS2 Foxy (`docker/ros2.Dockerfile`).
 | Sistema | JetPack 5.1.1 (`R35 REVISION: 3.1`), Ubuntu 20.04.6, kernel 5.10.104-tegra, Python 3.8.10 |
 | GPU | CUDA (`/usr/local/cuda`) e TensorRT 8.5.2 instalados |
 | Recursos | 15 GB de RAM (12 livres em repouso), disco de 1,9 TB (3% usado) |
-| Câmeras | D435i na USB (`8086:0b3a`, fixa na cabeça, inclinada para baixo) + webcam USB nossa (`2bc5:0529`, "webcamproduct") |
+| Câmeras | D435i na USB (`8086:0b3a`, fixa na cabeça, inclinada para baixo) + webcam USB nossa (`2bc5:0529`, "webcamproduct"; em teste desde 2026-11-05: Intelbras FHD WCI1080P, `1d6c:0103`, ver `operar-o-robo.md`, seção 6) |
 | Rede | `eth0` = 192.168.123.164 (conexão `unitree1`, rede interna do robô); `wlan0` = Wi-Fi (também é um dispositivo USB) |
 | ROS | **Foxy e Noetic** em `/opt/ros` (instalador comunitário fishros); repositório apt do ROS configurado |
 | Python global | `numpy 1.24.4`, `opencv-python 4.13`, `torch 2.4.1`, `unitree_sdk2py 1.0.1`, `cyclonedds 0.10.2`, `pyrealsense2 2.55.1` |
@@ -352,14 +352,14 @@ tmux attach -t rotina                                      # janelas: rotina, st
 - Nome na fala: escreva como deve soar no Piper ("Nichinica"; "Nixinica" sai "ksi").
 - **Virar e andar até a pessoa, estágios e controle (2026-11-04):** antes da rotina o robô vira para
   a pessoa e anda até a caixa do rosto ter `altura_caixa_alvo_px`; `--estagios virar,aproximar,fala,posturas`
-  escolhe o que roda; `--controle` é o modo dos combos F2+UP/RIGHT/LEFT/DOWN
+  escolhe o que roda; `--controle` é o modo dos combos F3+UP/RIGHT/LEFT/DOWN
   (`scripts/robo_controle.py`); os números ficam em `config/operacao.yaml` (`OPERACAO=arquivo` usa
   outro). Como testar no robô, passo a passo: [`teste-no-robo.md`](teste-no-robo.md).
 - **Painel web** (`painel_node`, porta 8080; serviço `ipe-painel`) e **hotspot** do robô
   (`scripts/robo_hotspot.sh`): estágio, câmera, quem está na frente, comandos, operação e cadastro por
   foto. Ver [`teste-no-robo.md`](teste-no-robo.md), passo 8. O hotspot para a transmissão do `~/cesar`.
 - O damp da janela `emergencia` é **só com o robô no suporte**; fora dele, ele cai. Andando, pare
-  com F2+DOWN ou com o próprio controle.
+  com F3+DOWN ou com o próprio controle.
 
 ## Checklist
 

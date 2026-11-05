@@ -92,3 +92,24 @@ def test_package_config_stops_within_one_second():
 def test_vyaw_max_wins_over_vyaw_min():
     c = _passo((480.0, 50.0), aproximar=False, cfg=ApproachConfig(vyaw_max=0.2))
     assert c.vyaw == pytest.approx(-0.2)
+
+
+def test_valid_operation_values_pass():
+    from core.approach import validar_operacao
+
+    validar_operacao({"vx": 0.2, "vyaw_max": 0.3, "centro_ok": 0.15, "centro_para_andar": 0.45, "centro_chegada": 0.3,
+                      "perda_rosto_s": 1.0, "desistir_s": 10.0, "tempo_max_s": 30.0, "altura_caixa_alvo_px": 90.0})
+
+
+@pytest.mark.parametrize("valores", [
+    {"vx": 2.0},                                         # o "0.2" digitado errado
+    {"vx": float("nan")},
+    {"centro_ok": 0.5, "centro_para_andar": 0.45},       # parado entre os dois até o tempo_max
+    {"centro_ok": 0.4, "centro_chegada": 0.3},
+    {"perda_rosto_s": 5.0, "desistir_s": 2.0},
+])
+def test_unsafe_operation_values_are_refused(valores):
+    from core.approach import validar_operacao
+
+    with pytest.raises(ValueError):
+        validar_operacao(valores)

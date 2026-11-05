@@ -52,6 +52,8 @@ def generate_launch_description() -> LaunchDescription:
         name="v4l2_camera_node",
         # 15 quadros/s: o reconhecimento processa ~14-20/s, e metade do tráfego no hub USB 2.0 do
         # robô (dividido com o Wi-Fi e o Bluetooth) onde a webcam caía dezenas de vezes por hora.
+        # É um pedido: a Intelbras FHD só oferece 30 ou 60 q/s em 640x480 e o driver sobe para 30.
+        # Largura aqui e `largura_imagem` do operacao.yaml têm que bater (o painel avisa se não).
         parameters=[{"video_device": LaunchConfiguration("video_device"), "image_size": [640, 480],
                      "time_per_frame": [1, 15]}],
         remappings=[("/image_raw", LaunchConfiguration("image_topic"))],

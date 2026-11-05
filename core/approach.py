@@ -16,6 +16,39 @@ DESISTIU_ROSTO = "desistiu: rosto perdido"
 DESISTIU_TEMPO = "desistiu: tempo esgotado"
 
 
+# Faixa aceita ao salvar no painel (mínimo, máximo). O teto de velocidade é repetido em body_worker.py,
+# a última barreira, e um teste confere que os dois batem.
+LIMITES_OPERACAO = {
+    "altura_caixa_alvo_px": (20.0, 400.0),
+    "vx": (0.05, 0.5),
+    "vyaw_max": (0.1, 0.8),
+    "vyaw_min": (0.0, 0.8),
+    "kp_giro": (0.1, 3.0),
+    "centro_ok": (0.02, 0.8),
+    "centro_para_andar": (0.05, 1.0),
+    "centro_chegada": (0.02, 0.8),
+    "perda_rosto_s": (0.2, 5.0),
+    "desistir_s": (1.0, 60.0),
+    "tempo_max_s": (5.0, 120.0),
+}
+
+
+def validar_operacao(valores: dict) -> None:
+    """ValueError com um texto para o operador se algum valor deixaria o robô rápido demais ou preso.
+
+    Só olha os campos presentes: um arquivo antigo pode não ter todos.
+    """
+    for campo, (minimo, maximo) in LIMITES_OPERACAO.items():
+        if campo in valores and not minimo <= valores[campo] <= maximo:
+            raise ValueError(f"{campo} = {valores[campo]} fora da faixa aceita ({minimo} a {maximo})")
+    # Desvio entre os dois valores, sem giro e sem passo: ficaria parado até o tempo_max_s.
+    for menor, maior in (("centro_ok", "centro_para_andar"), ("centro_ok", "centro_chegada")):
+        if menor in valores and maior in valores and valores[menor] > valores[maior]:
+            raise ValueError(f"{menor} ({valores[menor]}) tem que ser no máximo {maior} ({valores[maior]})")
+    if "perda_rosto_s" in valores and "desistir_s" in valores and valores["perda_rosto_s"] > valores["desistir_s"]:
+        raise ValueError(f"perda_rosto_s ({valores['perda_rosto_s']}) tem que ser no máximo desistir_s ({valores['desistir_s']})")
+
+
 @dataclass(frozen=True)
 class ApproachConfig:
     largura_imagem: int = 640

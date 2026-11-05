@@ -2,6 +2,7 @@
 # As fotos não são guardadas: só os embeddings dos rostos entram no banco.
 string nome
 sensor_msgs/CompressedImage[] fotos
+bool adicionar  # true: soma às fotos que a pessoa já tem; false: substitui
 ---
 bool ok
 string mensagem

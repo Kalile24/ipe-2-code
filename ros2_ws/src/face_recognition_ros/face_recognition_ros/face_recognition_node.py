@@ -103,8 +103,8 @@ class FaceRecognitionNode(Node):
         self.create_service(Cadastrar, "~/cadastrar", self._on_cadastrar)
 
     def _on_cadastrar(self, request: Cadastrar.Request, response: Cadastrar.Response) -> Cadastrar.Response:
-        """(Re)cadastra `nome` com o maior rosto de cada foto e salva o banco. Substitui as fotos
-        antigas da pessoa; as outras pessoas não mudam. As fotos não são guardadas."""
+        """(Re)cadastra `nome` com o maior rosto de cada foto e salva o banco: soma às fotos da pessoa
+        (`adicionar`) ou as substitui; as outras pessoas não mudam. As fotos não são guardadas."""
         nome = request.nome.strip()
         if not NOME_VALIDO.match(nome) or nome == "desconhecido":
             response.ok, response.mensagem = False, f"nome inválido {nome!r}: use minúsculas, números e _"
@@ -123,11 +123,13 @@ class FaceRecognitionNode(Node):
         if not embeddings:
             response.ok, response.mensagem = False, "nenhum rosto aproveitado; " + "; ".join(avisos)
             return response
-        self._store.embeddings.pop(nome, None)
+        if not request.adicionar:
+            self._store.embeddings.pop(nome, None)
         self._store.enroll(nome, embeddings)
         self._store.save()
         response.ok, response.fotos_usadas = True, len(embeddings)
-        response.mensagem = f"{nome} cadastrado com {len(embeddings)} foto(s)" + (f"; {'; '.join(avisos)}" if avisos else "")
+        response.mensagem = f"{nome} cadastrado: {len(embeddings)} foto(s) aproveitada(s), {len(self._store.embeddings[nome])} no total"
+        response.mensagem += f"; {'; '.join(avisos)}" if avisos else ""
         self.get_logger().info(f"cadastro: {response.mensagem}")
         return response
 

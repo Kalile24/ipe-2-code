@@ -14,7 +14,7 @@ START nem F1+… (são do `~/hhhh`). Avise o autor do `~/hhhh` antes dos testes 
 | Situação | Como parar |
 |---|---|
 | Robô **no suporte** | Enter na janela `emergencia` (damp: motores soltos, fica pendurado) |
-| Robô **fora do suporte** | **F2+DOWN** (para de andar na hora, braços voltam, fica em pé) ou o próprio controle da Unitree. **Nunca damp fora do suporte**: ele cai |
+| Robô **fora do suporte** | **F3+DOWN** (para de andar na hora, braços voltam, fica em pé) ou o próprio controle da Unitree. **Nunca damp fora do suporte**: ele cai |
 | Qualquer um | Ctrl+C na janela `rotina` (termina o passo atual, para de andar, devolve os braços) |
 
 ## 1. Atualizar e compilar
@@ -36,8 +36,8 @@ grep -n "0x80\|>> 7\|F2\|F3" ~/hhhh/*.py         # o ~/hhhh já usa esse botão?
 python3 ~/ipe-2-code/scripts/robo_controle.py --mostrar
 ```
 
-Aperte F2, UP, RIGHT, DOWN e LEFT, um de cada vez: tem que aparecer `0x0080`, `0x1000`, `0x2000`,
-`0x4000` e `0x8000` (o botão pode estar escrito F3 no controle). Ctrl+C para sair. Valores
+Aperte F3, UP, RIGHT, DOWN e LEFT, um de cada vez: tem que aparecer `0x0080`, `0x1000`, `0x2000`,
+`0x4000` e `0x8000`. Ctrl+C para sair. Valores
 diferentes: use `--iniciar/--agora/--automatico/--parar` com as máscaras certas.
 
 ## 3. Desarmado: reconhecimento, fala e calibrar a caixa
@@ -89,9 +89,9 @@ suporte e só com virar e falar:
 ~/ipe-2-code/scripts/robo_rotina_cumprimento.sh --controle --estagios virar,fala
 ```
 
-O `--controle` sobe com as reações automáticas **desligadas**: aperte **F2+RIGHT** (ou rode
+O `--controle` sobe com as reações automáticas **desligadas**: aperte **F3+RIGHT** (ou rode
 `ros2 param set /reaction_node cumprimentar_agora agora`) com o Gil um pouco para o lado. O robô
-tem que girar no lugar até ficar de frente e então falar. Se girar para o lado errado: F2+DOWN,
+tem que girar no lugar até ficar de frente e então falar. Se girar para o lado errado: F3+DOWN,
 `inverter_giro: true` no seu `operacao.yaml`, e de novo.
 
 Se o robô não estava em equilíbrio, ele fala "Não estou em equilíbrio, não vou começar." e não faz
@@ -103,10 +103,10 @@ nada: ponha-o em equilíbrio pelo controle e suba de novo.
 OPERACAO=~/operacao.yaml ~/ipe-2-code/scripts/robo_rotina_cumprimento.sh --controle --estagios virar,aproximar,fala
 ```
 
-O Gil a ~3 m, de frente para o robô. F2+RIGHT: o robô vira, anda devagar e para quando a caixa do
+O Gil a ~3 m, de frente para o robô. F3+RIGHT: o robô vira, anda devagar e para quando a caixa do
 rosto chega a `altura_caixa_alvo_px`; então fala. Confira também:
 
-- **F2+DOWN no meio da caminhada**: para na hora.
+- **F3+DOWN no meio da caminhada**: para na hora.
 - **O Gil sai da frente** no meio: para em 1 s (`perda_rosto_s`) e desiste em 10 s (`desistir_s`),
   sem cumprimentar (`desistiu: rosto perdido` no status).
 - Parou longe ou perto demais: ajuste `altura_caixa_alvo_px` (maior = para mais perto).
@@ -128,13 +128,13 @@ journalctl --user -u ipe-controle -f        # log dos combos
 
 | Combo | Faz |
 |---|---|
-| F2 + UP | sobe tudo armado (só com o robô em equilíbrio), reações automáticas desligadas: ande com o robô pelo controle |
-| F2 + RIGHT | cumprimenta agora quem está sendo reconhecido ("Não reconheço ninguém." se ninguém do mapa) |
-| F2 + LEFT | liga/desliga as reações automáticas (o robô fala o estado) |
-| F2 + DOWN | para e encerra |
+| F3 + UP | sobe tudo armado (só com o robô em equilíbrio), reações automáticas desligadas: ande com o robô pelo controle |
+| F3 + RIGHT | cumprimenta agora quem está sendo reconhecido ("Não reconheço ninguém." se ninguém do mapa) |
+| F3 + LEFT | liga/desliga as reações automáticas (o robô fala o estado) |
+| F3 + DOWN | para e encerra |
 
-Teste na ordem: F2+UP (o log mostra a sessão subindo; `tmux attach -t rotina` mostra as janelas),
-F2+RIGHT com o Gil na frente, F2+LEFT duas vezes (ouça "desligadas"/"ligadas"), F2+DOWN.
+Teste na ordem: F3+UP (o log mostra a sessão subindo; `tmux attach -t rotina` mostra as janelas),
+F3+RIGHT com o Gil na frente, F3+LEFT duas vezes (ouça "desligadas"/"ligadas"), F3+DOWN.
 Para tirar o serviço: `systemctl --user disable --now ipe-controle`.
 
 ## 8. Painel web e hotspot
@@ -150,19 +150,23 @@ systemctl --user daemon-reload && systemctl --user enable --now ipe-painel
 
 No celular ou notebook, conecte-se à `IPE-G1` e abra `http://10.42.0.1:8080`. Confira:
 
-- Com a rotina parada: "rotina parada", câmera e reconhecimento vermelhos.
-- **Subir desarmado**: em ~1 min a câmera fica verde, o reconhecimento mostra o ritmo, e quem está na
-  frente aparece com a altura da caixa.
-- **Cadastrar pessoa** com 3 a 5 fotos de frente: "… cadastrado com N foto(s)" e a pessoa passa a
-  ser reconhecida na hora. Para ela ser cumprimentada, ponha uma rotina dela no `reactions.yaml`.
-  **Não copie depois o banco do notebook para o robô**: ele apaga quem foi cadastrado pelo painel.
-- **Operação**: mude `altura_caixa_alvo_px`, salve, **Parar** e suba de novo: vale na nova subida.
-- **Subir armado** só com o robô em equilíbrio (FSM 801), como o F2+UP.
+- Com a rotina parada: faixa **PARADO**, câmera e reconhecimento com `—`.
+- **Subir desarmado**: faixa **DESARMADO**; em ~1 min o reconhecimento mostra o ritmo, a webcam mostra o formato real
+  (640×480), e quem está na frente aparece com nota, altura e desvio.
+- **Pessoas**: com uma foto de teste em **Adicionar às fotos atuais**, a mensagem mostra as aproveitadas e o total. Depois
+  disso, copiar o banco do notebook para o robô apaga o que foi cadastrado pelo painel.
+- **Calibrar**: siga os 4 passos da distância de parada; depois do **Salvar distância**, o topo avisa do ajuste pendente até
+  **PARAR** e subir de novo. Tente salvar `vx` = 2: tem que ser recusado.
+- **Sem conexão**: saia do Wi-Fi com o painel aberto. Em ~5 s a faixa vira **SEM CONEXÃO**.
+- **Armado andando**: a faixa continua **ARMADO** durante toda a caminhada.
+- **Baixar diagnóstico** gera o arquivo de texto.
+- **Subir armado** só com o robô em equilíbrio (FSM 801), como o F3+UP.
 - `robo_hotspot.sh desliga` volta o robô para a rede de antes.
 
 ## O que mandar se algo der errado
 
 - A janela `status` (o que o body_node fez) e o log da janela `rotina`.
 - Em qual etapa deste guia, com quais `--estagios` e qual `operacao.yaml`.
+- O arquivo do **Baixar diagnóstico**, do painel.
 - Pelo controle: `journalctl --user -u ipe-controle --since "-10min"`.
 - Painel: `journalctl --user -u ipe-painel --since "-10min"`.

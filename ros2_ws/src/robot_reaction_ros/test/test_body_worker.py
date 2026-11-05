@@ -320,3 +320,16 @@ def test_velocity_and_stop_drive_the_loco_client():
     body.velocity(0.1, -0.2)
     body.stop()
     assert body.robot.loco.calls == [("SetVelocity", 0.1, 0.0, -0.2, 0.5), "StopMove"]
+
+
+def test_velocity_ceiling_matches_the_panel_limits_and_reaches_the_sdk():
+    from core.approach import LIMITES_OPERACAO
+    from robot_reaction_ros import body_worker
+
+    assert body_worker.VX_MAX == LIMITES_OPERACAO["vx"][1]
+    assert body_worker.VYAW_MAX == LIMITES_OPERACAO["vyaw_max"][1]
+    corpo = G1Body.__new__(G1Body)
+    corpo.robot = _FakeController(801)
+    corpo.velocity(5.0, -5.0)
+    corpo.velocity(0.2, 0.3)
+    assert corpo.robot.loco.calls == [("SetVelocity", 0.5, 0.0, -0.8, 0.5), ("SetVelocity", 0.2, 0.0, 0.3, 0.5)]
