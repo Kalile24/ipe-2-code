@@ -13,7 +13,7 @@ do `~/hhhh`).
 
 ### Entrega dos testes finais (2026-11-05): o que instalar
 
-Código e guias: branch `entrega-testes-finais`, no GitHub. **Fotos e bancos de rostos não estão no GitHub, e não devem entrar:**
+Código e guias: branch `master`, no GitHub. **Fotos e bancos de rostos não estão no GitHub, e não devem entrar:**
 o repositório é público e são dados biométricos. Vêm no pacote `ipe-g1-dados-robo-2026-11-05.tar.gz`, que o responsável entrega por canal
 privado; apague suas cópias depois de instalar.
 
@@ -39,7 +39,7 @@ houver alteração local que não seja sua, pare e pergunte. Guarde o banco atua
 **2. Código.** Com internet no robô:
 
 ```bash
-cd ~/ipe-2-code && git fetch --prune origin && git switch entrega-testes-finais && git pull
+cd ~/ipe-2-code && git fetch --prune origin && git switch master && git pull
 ```
 
 Sem internet no robô, de um computador com o repositório nessa branch:
