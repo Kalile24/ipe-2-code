@@ -12,6 +12,7 @@ from rcl_interfaces.msg import SetParametersResult
 from rclpy.action import ActionClient
 from rclpy.node import Node
 from rclpy.qos import QoSProfile
+from std_msgs.msg import String
 from vision_msgs.msg import Detection2DArray
 
 from core.approach import DESISTIU_TEMPO
@@ -36,6 +37,9 @@ class ReactionNode(Node):
     Operador (combos do controle, scripts/robo_controle.py): `automatico` liga/desliga os
     cumprimentos sozinhos (desligado, só acompanha quem está na frente); escrever qualquer valor em
     `cumprimentar_agora` cumprimenta já a pessoa do mapa que está sendo reconhecida.
+    Depois de uma rotina com meia-volta o robô fica de costas para a pessoa: não cumprimenta mais
+    sozinho (só acompanha quem aparece) até o operador usar `liberar`, ligar `automatico` ou
+    `cumprimentar_agora`.
     """
 
     def __init__(self) -> None:
@@ -80,6 +84,8 @@ class ReactionNode(Node):
         detections_topic = self.get_parameter("detections_topic").value
         self._rotina = ActionClient(self, Rotina, "/reaction/rotina")
         self._em_andamento: str | None = None  # pessoa cuja rotina o body_node está executando
+        self._aguardando_operador = False  # meia-volta feita: só o operador libera os cumprimentos
+        self._status_pub = self.create_publisher(String, "/reaction/rotina_status", 10)
         self._subscription = self.create_subscription(
             Detection2DArray, detections_topic, self._on_detections, QoSProfile(depth=1)
         )
@@ -102,6 +108,8 @@ class ReactionNode(Node):
         for p in params:
             if p.name == "automatico":
                 self._automatico = p.value is True
+                if self._automatico:
+                    self._aguardando_operador = False
                 self._falar(f"Reações automáticas {'ligadas' if self._automatico else 'desligadas'}.")
                 continue
             if p.name == "cumprimentar_agora":
@@ -113,6 +121,7 @@ class ReactionNode(Node):
                 if hit is None:
                     self._falar("Não reconheço ninguém.")
                 else:
+                    self._aguardando_operador = False
                     self._enviar(*hit)
                 continue
             if p.name != "liberar":
@@ -122,6 +131,7 @@ class ReactionNode(Node):
                 self._policy.release(None if nome in ("", TODOS) else nome)
             except KeyError as exc:
                 return SetParametersResult(successful=False, reason=str(exc))
+            self._aguardando_operador = False
             self.get_logger().info(f"liberado: {nome or TODOS} pode ser cumprimentado de novo")
         return SetParametersResult(successful=True)
 
@@ -132,7 +142,7 @@ class ReactionNode(Node):
             # body_node morreu no meio: o resultado nunca vai chegar
             self.get_logger().warn(f"rotina de {self._em_andamento}: o body_node sumiu")
             self._em_andamento = None
-        livre = self._automatico and self._em_andamento is None
+        livre = self._automatico and self._em_andamento is None and not self._aguardando_operador
         hit = self._policy.update(seen, time.monotonic(), allow_fire=livre)
         if hit is not None:
             self._enviar(*hit)
@@ -176,6 +186,10 @@ class ReactionNode(Node):
             else:
                 self._policy.forget(nome)
         self._em_andamento = None
+        if resultado.sucesso and resultado.mensagem.startswith("meia_volta"):
+            # De costas para a pessoa: não cumprimenta de novo até o operador liberar.
+            self._aguardando_operador = True
+            self._status_pub.publish(String(data="aguardando o operador (Liberar cumprimentos)"))
 
 
 def main(args: list[str] | None = None) -> None:
