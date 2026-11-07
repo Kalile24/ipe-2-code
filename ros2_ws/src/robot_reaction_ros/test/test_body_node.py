@@ -32,6 +32,8 @@ class _FakeBody:
         self.gate = None  # threading.Event: segura uma postura em andamento
         self.so_equilibrio = None
         self.stop_em = None  # instante do primeiro stop
+        self.meia_volta_gate = None  # threading.Event: segura a meia-volta; stop() a solta
+        self.meia_volta_res = (True, "")
 
     def initialize(self, so_equilibrio=False):
         self.calls.append("initialize")
@@ -45,12 +47,21 @@ class _FakeBody:
         self.calls.append("stop")
         if self.stop_em is None:
             self.stop_em = time.monotonic()
+        if self.meia_volta_gate is not None:
+            self.meia_volta_gate.set()
 
     def posture(self, nome):
         self.calls.append(nome)
         if self.gate is not None:
             self.gate.wait(5)
         return True
+
+    def meia_volta(self, cfg):
+        self.calls.append("meia_volta")
+        if self.meia_volta_gate is not None:
+            self.meia_volta_gate.wait(5)
+            return False, "interrompida"
+        return self.meia_volta_res
 
     def shutdown(self):
         self.calls.append("shutdown")
@@ -392,3 +403,78 @@ def test_balance_only_failure_speaks_and_rejects_routines(make_node):
     assert spoken == ["Não estou em equilíbrio, não vou começar."]
     assert not env.send()[0]
     assert not [s for s in status if s.startswith("dry_run")]
+
+
+MV = "posturas,meia_volta"
+POSTURA = [{"postura": "a_vontade"}]
+
+
+def test_armado_faz_meia_volta_depois_da_rotina(make_node):
+    make, status, _ = make_node
+    body = _FakeBody()
+    env = make(body=body, armed=True, estagios=MV)
+    r = env.run(passos=POSTURA)
+    assert body.calls == ["initialize", "a_vontade", "meia_volta"]
+    assert r.sucesso and r.mensagem == "meia_volta: fim"
+    assert status[-2:] == ["meia_volta: fim", "rotina de gil: fim"]
+
+
+def test_meia_volta_que_falha_ainda_conta_como_cumprimento(make_node):
+    make, status, _ = make_node
+    body = _FakeBody()
+    body.meia_volta_res = (False, "tempo esgotado")
+    r = make(body=body, armed=True, estagios=MV).run(passos=POSTURA)
+    assert r.sucesso and r.mensagem == "meia_volta: falhou (tempo esgotado)"
+    assert status[-2:] == ["meia_volta: falhou (tempo esgotado)", "rotina de gil: fim"]
+
+
+def test_rotina_que_falha_nao_faz_meia_volta(make_node):
+    make, _, _ = make_node
+    body = _FakeBody()
+    body.posture = lambda nome: False
+    r = make(body=body, armed=True, estagios=MV).run(passos=POSTURA)
+    assert not r.sucesso and "meia_volta" not in body.calls
+
+
+def test_desarmado_so_registra_meia_volta(make_node):
+    make, status, _ = make_node
+    r = make(estagios=MV).run(passos=POSTURA)
+    assert "dry_run meia_volta" in status
+    assert r.sucesso and r.mensagem == "meia_volta: dry_run"
+
+
+def test_sem_estagio_nao_faz_meia_volta(make_node):
+    make, _, _ = make_node
+    body = _FakeBody()
+    r = make(body=body, armed=True, estagios="posturas").run(passos=POSTURA)
+    assert r.sucesso and r.mensagem == "" and "meia_volta" not in body.calls
+
+
+def test_cancelar_durante_meia_volta_para_o_corpo(make_node):
+    make, status, _ = make_node
+    body = _FakeBody()
+    env = make(body=body, armed=True, estagios=MV)
+    body.meia_volta_gate = threading.Event()
+    aceita, resultado, handle = env.send(passos=POSTURA)
+    assert aceita
+    _until(lambda: "meia_volta" in body.calls)
+    _wait(handle.cancel_goal_async())
+    final = _wait(resultado)
+    assert "stop" in body.calls
+    assert final.result.sucesso and final.result.mensagem == "meia_volta: falhou (interrompida)"
+    assert final.status == 5  # STATUS_CANCELED
+    assert "meia_volta: falhou (interrompida)" in status
+
+
+def test_shutdown_durante_meia_volta_para_o_corpo(make_node):
+    make, _, _ = make_node
+    body = _FakeBody()
+    env = make(body=body, armed=True, estagios=MV)
+    body.meia_volta_gate = threading.Event()
+    aceita, _, _ = env.send(passos=POSTURA)
+    assert aceita
+    _until(lambda: "meia_volta" in body.calls)
+    inicio = time.monotonic()
+    env.node.shutdown(timeout_s=5)
+    assert "stop" in body.calls and time.monotonic() - inicio < 3
+    assert body.calls[-1] == "shutdown"

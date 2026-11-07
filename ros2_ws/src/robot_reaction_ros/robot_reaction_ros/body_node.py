@@ -9,7 +9,7 @@ import subprocess
 import sys
 import threading
 import time
-from dataclasses import fields
+from dataclasses import asdict, fields
 from typing import Callable
 
 import rclpy
@@ -25,6 +25,7 @@ from vision_msgs.msg import Detection2DArray
 
 from core.approach import DESISTIU_ROSTO, DESISTIU_TEMPO, PRONTO, ApproachConfig, escolher_caixa, passo_aproximacao
 from core.pessoas import nome_falado
+from core.meia_volta import MeiaVoltaConfig
 from core.piper_voice import DEFAULT_URL, say
 from core.reaction_policy import ReactionConfigError, validate_steps
 from core.routine import run_routine
@@ -172,12 +173,14 @@ class BodyNode(Node):
         self.declare_parameter("passo_descansar", True)
         self.declare_parameter("tts_url", DEFAULT_URL)
         self.declare_parameter("tts_timeout_s", 60.0)
-        self.declare_parameter("estagios", "virar,aproximar,fala,posturas")
+        self.declare_parameter("estagios", "virar,aproximar,fala,posturas,meia_volta")
         self.declare_parameter("detections_topic", "/face_recognition/detections")
         # true: inicializa só se já estiver em equilíbrio (FSM 801), sem damp → em pé (partida pelo controle)
         self.declare_parameter("so_equilibrio", False)
         self.declare_parameter("avisos_voz", True)  # depuração: "Perdi <nome> de vista" ao desistir
         for campo in fields(ApproachConfig):
+            self.declare_parameter(campo.name, campo.default)
+        for campo in fields(MeiaVoltaConfig):
             self.declare_parameter(campo.name, campo.default)
         # ValueError com os estágios válidos: derruba o nó na partida
         self._estagios = parse_stages(str(self.get_parameter("estagios").value))
@@ -187,6 +190,9 @@ class BodyNode(Node):
             if isinstance(c.default, bool)
             else type(c.default)(self.get_parameter(c.name).value)
             for c in fields(ApproachConfig)
+        })
+        self._meia_volta = MeiaVoltaConfig(**{
+            c.name: type(c.default)(self.get_parameter(c.name).value) for c in fields(MeiaVoltaConfig)
         })
         self._so_equilibrio = self.get_parameter("so_equilibrio").value is True
         self._avisos_voz = self.get_parameter("avisos_voz").value is True
@@ -355,6 +361,7 @@ class BodyNode(Node):
             self._interromper.clear()
         try:
             pessoa, passos = self._parse(goal_handle.request)
+            mensagem = ""
 
             def log(text: str) -> None:
                 self._publish(text)
@@ -377,6 +384,8 @@ class BodyNode(Node):
                 )
                 interrompida = not ok and self._interromper.is_set()
                 fim = "fim" if ok else "interrompida" if interrompida else "falhou"
+                if ok and "meia_volta" in self._estagios and not self._interromper.is_set():
+                    mensagem = self._fazer_meia_volta(log)
             else:  # desistiu ou interrompida na aproximação: não cumprimenta
                 ok, fim = False, estado
                 if estado == DESISTIU_ROSTO and self._avisos_voz:
@@ -386,18 +395,33 @@ class BodyNode(Node):
                         log(f"fala falhou: {exc!r}")
             self._publish(f"rotina de {pessoa}: {fim}")
             try:
-                if ok:
-                    goal_handle.succeed()
-                elif goal_handle.is_cancel_requested:
+                if goal_handle.is_cancel_requested:  # nunca succeed() num goal em cancelamento
                     goal_handle.canceled()
+                elif ok:
+                    goal_handle.succeed()
                 else:
                     goal_handle.abort()
             except Exception:  # Ctrl+C no meio: ninguém espera mais o resultado
                 pass
-            return Rotina.Result(sucesso=ok, mensagem="" if ok else fim)
+            return Rotina.Result(sucesso=ok, mensagem=mensagem if ok else fim)
         finally:
             self._busy.release()
             self._idle.set()
+
+    def _fazer_meia_volta(self, log: Callable[[str], None]) -> str:
+        """Meia-volta à esquerda + passo curto. Devolve a mensagem do resultado (nunca falha a rotina)."""
+        if not self._ready:
+            self._publish("dry_run meia_volta")
+            return "meia_volta: dry_run"
+        try:
+            ok, erro = self._body.meia_volta(asdict(self._meia_volta))
+        except Exception as exc:
+            ok, erro = False, repr(exc)
+        if not ok and self._interromper.is_set():
+            erro = "interrompida"
+        texto = "meia_volta: fim" if ok else f"meia_volta: falhou ({erro})"
+        log(texto)
+        return texto
 
     def _posture(self, nome: str) -> bool:
         if not self._ready:
