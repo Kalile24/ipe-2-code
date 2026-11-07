@@ -1,6 +1,6 @@
 import pytest
 
-from core.stages import ESTAGIOS, filter_steps, migrar_estagios, parse_stages
+from core.stages import ESTAGIOS, filter_steps, migrar_estagios, override_estagios, parse_stages
 
 GIL = [
     {"postura": "sentido"}, {"postura": "continencia"},
@@ -44,3 +44,9 @@ def test_migra_estagios_nao_mexe_em_arquivo_novo():
 
 def test_migra_estagios_nao_duplica():
     assert migrar_estagios({"estagios": "fala,meia_volta"})["estagios"] == "fala,meia_volta"
+
+
+def test_override_estagios():
+    assert override_estagios({"estagios": "virar,fala"}) == "virar,fala,meia_volta"
+    assert override_estagios({"estagios": "fala", "vyaw_meia_volta": 0.5}) is None
+    assert override_estagios({}) is None

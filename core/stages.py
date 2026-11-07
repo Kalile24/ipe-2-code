@@ -4,6 +4,8 @@ Puro. Spec: docs/superpowers/specs/2026-11-04-aproximacao-e-estagios-design.md
 """
 from __future__ import annotations
 
+import sys
+
 ESTAGIOS = ("virar", "aproximar", "fala", "posturas", "meia_volta")
 
 
@@ -32,3 +34,29 @@ def migrar_estagios(valores: dict) -> dict:
         if "meia_volta" not in nomes:
             novos["estagios"] = ",".join(nomes + ["meia_volta"])
     return novos
+
+
+def override_estagios(valores: dict) -> str | None:
+    """Lista de `estagios` migrada para sobrescrever o arquivo, ou None se não precisa."""
+    novo = migrar_estagios(valores).get("estagios")
+    return novo if novo != valores.get("estagios") else None
+
+
+def main(argv: list[str] | None = None) -> int:
+    """`python3 -m core.stages arquivo.yaml`: imprime a lista migrada, ou nada. Nunca atrapalha a partida."""
+    argv = sys.argv[1:] if argv is None else argv
+    try:
+        import yaml
+
+        with open(argv[0]) as f:
+            valores = (yaml.safe_load(f) or {}).get("/**", {}).get("ros__parameters", {})
+        lista = override_estagios(valores)
+        if lista:
+            print(lista)
+    except Exception:  # arquivo ausente ou ilegível: sem sobrescrita
+        pass
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

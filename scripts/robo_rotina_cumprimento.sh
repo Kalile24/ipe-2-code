@@ -117,6 +117,11 @@ ARGS_MODO="so_equilibrio:=$CONTROLE automatico:=$([ "$CONTROLE" = true ] && echo
 # O painel salva em data/operacao.yaml; OPERACAO=arquivo escolhe outro; sem nenhum, o do pacote.
 [ -z "${OPERACAO:-}" ] && [ -f "$REPO/data/operacao.yaml" ] && OPERACAO=$REPO/data/operacao.yaml
 [ -n "${OPERACAO:-}" ] && ARGS_MODO="$ARGS_MODO operacao_file:=$OPERACAO"
+# Arquivo salvo antes da meia_volta: o core acrescenta o estágio à lista (o launch roda no python do sistema, sem o core).
+if [ -z "$ESTAGIOS" ] && [ -n "${OPERACAO:-}" ]; then
+    LISTA=$(cd "$REPO" && python3 -m core.stages "$OPERACAO" 2>/dev/null || true)
+    [ -n "$LISTA" ] && ARGS_MODO="$ARGS_MODO estagios:=$LISTA"
+fi
 rodar rotina "ros2 launch robot_reaction_ros rotina.launch.py armed:=$ARMADO $ARGS_MODO $ARGS_CAMERA \
 onnx_providers:=TensorrtExecutionProvider,CUDAExecutionProvider,CPUExecutionProvider"
 rodar status "ros2 topic echo /reaction/rotina_status"

@@ -117,5 +117,9 @@ def test_unsafe_operation_values_are_refused(valores):
 
 def test_limites_da_meia_volta():
     assert LIMITES_OPERACAO["vyaw_meia_volta"] == (0.3, 0.8)
+    assert LIMITES_OPERACAO["tolerancia_meia_volta_graus"] == (2.0, 30.0)
+    assert LIMITES_OPERACAO["passo_m"] == (0.0, 0.5)
+    assert LIMITES_OPERACAO["vx_passo"] == (0.05, 0.3)
+    assert LIMITES_OPERACAO["tempo_max_meia_volta_s"] == (5.0, 30.0)
     with pytest.raises(ValueError):
         validar_operacao({"passo_m": 0.6})

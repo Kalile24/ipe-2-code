@@ -1,7 +1,4 @@
 import os
-from pathlib import Path
-
-import yaml
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -10,8 +7,6 @@ from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
-
-from core.stages import migrar_estagios
 
 
 def generate_launch_description() -> LaunchDescription:
@@ -104,14 +99,6 @@ def _body_node(context: object) -> list:
     estagios = LaunchConfiguration("estagios").perform(context)
     if estagios:
         sobrescritas["estagios"] = estagios
-    else:
-        # Arquivo salvo antes da meia_volta: acrescenta o estágio à lista (o painel regrava depois).
-        arquivo = Path(LaunchConfiguration("operacao_file").perform(context))
-        if arquivo.is_file():
-            valores = (yaml.safe_load(arquivo.read_text()) or {}).get("/**", {}).get("ros__parameters", {})
-            migrados = migrar_estagios(valores)
-            if migrados.get("estagios") != valores.get("estagios"):
-                sobrescritas["estagios"] = migrados["estagios"]
     body_node = Node(
         package="robot_reaction_ros",
         executable="body_node",
