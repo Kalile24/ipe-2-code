@@ -282,7 +282,7 @@ na próxima subida. O painel recusa valores fora da faixa e combinações que de
 
 | Grupo | Ajuste no painel | Campo | Padrão | Faixa | O que faz |
 |---|---|---|---|---|---|
-| O que o robô faz | Virar, Aproximar, Falar, Gestos | `estagios` | todos | | Etapas que rodam. Aproximar inclui virar |
+| O que o robô faz | Virar, Aproximar, Falar, Gestos, Meia-volta | `estagios` | todos | | Etapas que rodam. Aproximar inclui virar. Meia-volta: gira 180° pela esquerda, passo à frente, depois espera Liberar cumprimentos |
 | Distância de parada | Altura do rosto para parar | `altura_caixa_alvo_px` | 90 | 20–400 | Calibração acima |
 | Velocidade | Velocidade para frente | `vx` | 0,2 | 0,05–0,5 | m/s, constante. Comece com 0,1 no primeiro teste andando |
 | | Giro máximo | `vyaw_max` | 0,3 | 0,1–0,8 | rad/s |
@@ -295,7 +295,23 @@ na próxima subida. O painel recusa valores fora da faixa e combinações que de
 | Perder a pessoa e tempo limite | Parar sem ver o rosto | `perda_rosto_s` | 1 | 0,2–5 | s. Para e espera; retoma se o rosto voltar |
 | | Desistir sem ver o rosto | `desistir_s` | 10 | 1–60 | s. Desiste sem cumprimentar. Não pode ser menor que `perda_rosto_s` |
 | | Tempo máximo da aproximação | `tempo_max_s` | 30 | 5–120 | s. Desiste mesmo vendo a pessoa |
+| Meia-volta | Giro da meia-volta | `vyaw_meia_volta` | 0,5 | | rad/s. Comece com 0,5 |
+| | Tolerância do ângulo | `tolerancia_meia_volta_graus` | 10 | | Graus. Para ao chegar a 180° menos isso |
+| | Passo à frente | `passo_m` | 0,2 | | m. 0 = sem passo |
+| | Velocidade do passo | `vx_passo` | 0,2 | | m/s |
+| | Tempo máximo da meia-volta | `tempo_max_meia_volta_s` | 12 | | s. Passou disso, falha |
 | Voz | Falar "Perdi <nome> de vista" | `avisos_voz` | sim | | Desmarque na apresentação |
+
+### Meia-volta
+
+Depois de um cumprimento com sucesso, o robô gira 180° pela **esquerda**, dá um passo à frente (~0,2 m) e
+fica em **"aguardando o operador"** (durante o giro: **"fazendo meia-volta"**). Para continuar: **Liberar
+cumprimentos** no painel, ou desligar e ligar o automático (F3+←, duas vezes), ou **cumprimentar agora**.
+Desarmado, só registra `dry_run meia_volta` (e também espera o operador). **PARAR** ou F3+↓ interrompe o giro
+e o passo na hora. O passo é **cego**: deixe ~1 m livre atrás de onde o robô começa. Para não usar, desmarque
+**Meia-volta** nos estágios e salve (ajustes antigos ganham o estágio na próxima subida; desmarcado e salvo, fica
+desmarcado). Primeiro uso: meça o giro com `scripts/robo_medir_giro.py`
+([`teste-no-robo.md`](teste-no-robo.md), seção 0).
 
 **Restaurar padrões** desfaz tudo.
 
@@ -334,6 +350,8 @@ Ele não gira para procurar a pessoa. Depois de desistir: no manual, aperte **F3
 | Celular não entra no hotspot | Esqueça a rede no celular e conecte de novo |
 | "A webcam reconectou" no painel | A imagem não volta sozinha: **PARAR** (ou F3+↓) e suba de novo. Sem imagem, o robô para em 1 s |
 | Automático não cumprimenta | Automático ligado? O nome aparece em **Na frente agora**? A pessoa tem foto e rotina em **Pessoas**? Depois, **Liberar cumprimentos** |
+| `meia_volta: falhou (...)` | `tempo esgotado`: aumente `tempo_max_meia_volta_s` ou confira o piso. `sem angulo`: o IMU não chegou. `interrompida`: PARAR. `girou para o lado errado`: ele parou sozinho; **avise o autor** e não arme de novo. Depois, Liberar cumprimentos |
+| Ficou parado "aguardando o operador" | É o esperado depois da meia-volta: **Liberar cumprimentos** (ou automático desligado e ligado, ou cumprimentar agora) |
 | Aparece `desconhecido` | Mais luz, pessoa mais perto, foto melhor (seção 5) |
 | Sem som | **Testar som**. Veja se a caixa está conectada e é a saída padrão no painel |
 
