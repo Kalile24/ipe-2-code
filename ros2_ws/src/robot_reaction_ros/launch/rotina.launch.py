@@ -105,9 +105,9 @@ def _body_node(context: object) -> list:
         name="body_node",
         parameters=[LaunchConfiguration("operacao_file"), sobrescritas],
         # No Ctrl+C o body_node termina o passo atual, faz o a_vontade e solta os braços. Pior caso
-        # (tempos em body_node.py): ESPERA_ROTINA_S 250 + SHUTDOWN_TIMEOUT_S 60 + ESPERA_PROCESSO_S
-        # 10 = 320 s. O padrão do launch (SIGTERM depois de 5 s) cortaria isso no meio.
-        sigterm_timeout="330",
+        # (tempos em body_node.py): ESPERA_ROTINA_S 310 + SHUTDOWN_TIMEOUT_S 60 + ESPERA_PROCESSO_S
+        # 10 = 380 s. O padrão do launch (SIGTERM depois de 5 s) cortaria isso no meio.
+        sigterm_timeout="390",
         sigkill_timeout="10",
     )
     return [body_node]

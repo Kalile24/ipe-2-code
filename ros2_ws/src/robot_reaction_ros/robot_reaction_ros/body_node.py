@@ -35,7 +35,8 @@ from robot_reaction_interfaces.action import Rotina
 # a postura em andamento + o a_vontade + a ordem de shutdown + a espera do processo.
 POSTURA_TIMEOUT_S = 120.0
 INICIALIZACAO_TIMEOUT_S = 120.0
-ESPERA_ROTINA_S = 2 * POSTURA_TIMEOUT_S + 10.0
+MEIA_VOLTA_TIMEOUT_S = 60.0
+ESPERA_ROTINA_S = 2 * POSTURA_TIMEOUT_S + MEIA_VOLTA_TIMEOUT_S + 10.0
 SHUTDOWN_TIMEOUT_S = 60.0
 ESPERA_PROCESSO_S = 10.0
 # Desarmado o robô não se mexe: virar/aproximar só medem (status com a caixa do rosto) por isto.
@@ -90,15 +91,19 @@ class SubprocessBody:
                 return resposta
             # resposta atrasada de uma ordem em que já desistimos de esperar: descartada
 
-    def _call(self, ordem: dict, timeout_s: float) -> bool:
+    def _call_erro(self, ordem: dict, timeout_s: float) -> tuple[bool, str]:
         with self._lock:
             if self._proc.poll() is not None:
-                return False
+                return False, "body_worker morto"
             self._next_id += 1
             ordem = {"id": self._next_id, **ordem}
             if not self._write(ordem):
-                return False
-            return bool(self._read(timeout_s, ordem["id"]).get("ok"))
+                return False, "body_worker morto"
+            resposta = self._read(timeout_s, ordem["id"])
+            return bool(resposta.get("ok")), str(resposta.get("erro", ""))
+
+    def _call(self, ordem: dict, timeout_s: float) -> bool:
+        return self._call_erro(ordem, timeout_s)[0]
 
     def _write(self, ordem: dict) -> bool:
         with self._escrita:
@@ -122,6 +127,9 @@ class SubprocessBody:
 
     def posture(self, nome: str) -> bool:
         return self._call({"cmd": "posture", "nome": nome}, timeout_s=self._posture_timeout_s)
+
+    def meia_volta(self, cfg: dict) -> tuple[bool, str]:
+        return self._call_erro({"cmd": "meia_volta", "cfg": cfg}, timeout_s=MEIA_VOLTA_TIMEOUT_S)
 
     def shutdown(self) -> None:
         try:
