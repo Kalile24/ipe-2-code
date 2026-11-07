@@ -14,6 +14,8 @@ CHEGOU = "chegou"
 FALHOU_TEMPO = "tempo esgotado"
 FALHOU_SENTIDO = "girou para o lado errado"
 FALHOU_SEM_ANGULO = "sem angulo"
+SEM_GIRO_S = 2.0  # depois disto girando, menos de SEM_GIRO_GRAUS é IMU parada
+SEM_GIRO_GRAUS = 5.0
 
 
 @dataclass(frozen=True)
@@ -40,6 +42,8 @@ def passo_giro(cfg: MeiaVoltaConfig, girado: Optional[float], decorrido_s: float
         return 0.0, CHEGOU
     if girado <= -tol:
         return 0.0, FALHOU_SENTIDO
+    if decorrido_s >= SEM_GIRO_S and abs(girado) < math.radians(SEM_GIRO_GRAUS):
+        return 0.0, FALHOU_SEM_ANGULO  # comandou o giro e o yaw não saiu do lugar: IMU parada
     if decorrido_s >= cfg.tempo_max_meia_volta_s:
         return 0.0, FALHOU_TEMPO
     return cfg.vyaw_meia_volta, GIRANDO

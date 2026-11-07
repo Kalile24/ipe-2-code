@@ -23,7 +23,15 @@ from rclpy.qos import QoSProfile
 from std_msgs.msg import String
 from vision_msgs.msg import Detection2DArray
 
-from core.approach import DESISTIU_ROSTO, DESISTIU_TEMPO, PRONTO, ApproachConfig, escolher_caixa, passo_aproximacao
+from core.approach import (
+    DESISTIU_ROSTO,
+    DESISTIU_TEMPO,
+    PRONTO,
+    ApproachConfig,
+    escolher_caixa,
+    passo_aproximacao,
+    validar_operacao,
+)
 from core.meia_volta import MeiaVoltaConfig
 from core.pessoas import nome_falado
 from core.piper_voice import DEFAULT_URL, say
@@ -208,6 +216,7 @@ class BodyNode(Node):
         self._meia_volta = MeiaVoltaConfig(**{
             c.name: type(c.default)(self.get_parameter(c.name).value) for c in fields(MeiaVoltaConfig)
         })
+        validar_operacao(asdict(self._meia_volta))  # fora da faixa: o nó não sobe, como parse_stages
         self._so_equilibrio = self.get_parameter("so_equilibrio").value is True
         self._avisos_voz = self.get_parameter("avisos_voz").value is True
         self._pausa_s = float(self.get_parameter("pausa_s").value)
@@ -427,6 +436,7 @@ class BodyNode(Node):
         if not self._ready:
             self._publish("dry_run meia_volta")
             return "meia_volta: dry_run"
+        log("meia_volta: girando")
         try:
             ok, erro = self._body.meia_volta(asdict(self._meia_volta), self._interromper.is_set)
         except Exception as exc:

@@ -22,7 +22,7 @@ START nem F1+… (são do `~/hhhh`). Avise o autor do `~/hhhh` antes dos testes 
 Só leitura: o script lê o yaw do IMU e **não manda nenhum comando** ao robô.
 
 ```bash
-cd ~/ipe-2-code && PYTHONPATH=. python3 scripts/robo_medir_giro.py          # --interface eth0 é o padrão
+cd ~/ipe-2-code && python3 scripts/robo_medir_giro.py          # --interface eth0 é o padrão
 ```
 
 Imprime, a ~10 Hz, o `yaw` em graus e o `girado` acumulado (+ = esquerda). Robô em pé, **pelo
@@ -193,7 +193,7 @@ robô começa. Operador com o controle na mão.
    (F3+RIGHT). Confira: estado "fazendo meia-volta" e giro à esquerda; depois o passo; depois
    "aguardando o operador".
 3. **Liberar:** botão **Liberar cumprimentos** no painel, ou desligar e ligar o automático (F3+LEFT duas
-   vezes), ou **cumprimentar agora**.
+   vezes), ou **cumprimentar agora** (só libera se alguém for reconhecido).
 4. **PARAR / F3+DOWN no meio do giro e do passo:** têm que parar na hora.
 5. Se falhar, o log diz `meia_volta: falhou (tempo esgotado | girou para o lado errado | sem angulo |
    interrompida)`. Se girar para o lado errado ele para sozinho: avise o autor.

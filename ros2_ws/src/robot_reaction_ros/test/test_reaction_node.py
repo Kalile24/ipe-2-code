@@ -324,11 +324,14 @@ def test_depois_da_meia_volta_nao_cumprimenta_sozinho(node):
 
 def test_liberar_volta_a_cumprimentar(node):
     _meia_volta(node)
+    publicado = []
+    node._status_pub = type("P", (), {"publish": lambda _s, m: publicado.append(m.data)})()
     for _ in range(5):
         node._on_detections(_array("gil"))
     assert node.set_parameters([Parameter("liberar", Parameter.Type.STRING, "")])[0].successful
     node._on_detections(_array("gil"))
     assert _greeted(node) == ["cmt", "gil"]  # a política seguiu contando enquanto esperava
+    assert publicado == ["pronto: cumprimentos liberados"]
 
 
 def test_ligar_automatico_volta_a_cumprimentar(node):

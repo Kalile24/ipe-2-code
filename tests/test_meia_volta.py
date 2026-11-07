@@ -41,6 +41,13 @@ def test_sem_angulo_nao_gira():
     assert passo_giro(MeiaVoltaConfig(), None, 0.0) == (0.0, FALHOU_SEM_ANGULO)
 
 
+def test_imu_parada_depois_de_2s_falha_sem_angulo():
+    cfg = MeiaVoltaConfig()
+    assert passo_giro(cfg, math.radians(4), 2.0) == (0.0, FALHOU_SEM_ANGULO)
+    assert passo_giro(cfg, math.radians(4), 1.9) == (0.5, GIRANDO)
+    assert passo_giro(cfg, math.radians(6), 2.0) == (0.5, GIRANDO)
+
+
 def test_duracao_do_passo():
     assert duracao_passo(MeiaVoltaConfig()) == pytest.approx(1.0)
     assert duracao_passo(MeiaVoltaConfig(passo_m=0.0)) == 0.0

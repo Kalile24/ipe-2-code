@@ -295,18 +295,18 @@ na próxima subida. O painel recusa valores fora da faixa e combinações que de
 | Perder a pessoa e tempo limite | Parar sem ver o rosto | `perda_rosto_s` | 1 | 0,2–5 | s. Para e espera; retoma se o rosto voltar |
 | | Desistir sem ver o rosto | `desistir_s` | 10 | 1–60 | s. Desiste sem cumprimentar. Não pode ser menor que `perda_rosto_s` |
 | | Tempo máximo da aproximação | `tempo_max_s` | 30 | 5–120 | s. Desiste mesmo vendo a pessoa |
-| Meia-volta | Giro da meia-volta | `vyaw_meia_volta` | 0,5 | | rad/s. Comece com 0,5 |
-| | Tolerância do ângulo | `tolerancia_meia_volta_graus` | 10 | | Graus. Para ao chegar a 180° menos isso |
-| | Passo à frente | `passo_m` | 0,2 | | m. 0 = sem passo |
-| | Velocidade do passo | `vx_passo` | 0,2 | | m/s |
-| | Tempo máximo da meia-volta | `tempo_max_meia_volta_s` | 12 | | s. Passou disso, falha |
+| Meia-volta | Giro da meia-volta | `vyaw_meia_volta` | 0,5 | 0,3–0,8 | rad/s. Comece com 0,5 |
+| | Tolerância do giro | `tolerancia_meia_volta_graus` | 10 | 2–30 | Graus. Para ao chegar a 180° menos isso |
+| | Passo à frente | `passo_m` | 0,2 | 0–0,5 | m. 0 = sem passo |
+| | Velocidade do passo | `vx_passo` | 0,2 | 0,05–0,3 | m/s |
+| | Tempo máximo da meia-volta | `tempo_max_meia_volta_s` | 12 | 5–30 | s. Passou disso, falha |
 | Voz | Falar "Perdi <nome> de vista" | `avisos_voz` | sim | | Desmarque na apresentação |
 
 ### Meia-volta
 
 Depois de um cumprimento com sucesso, o robô gira 180° pela **esquerda**, dá um passo à frente (~0,2 m) e
 fica em **"aguardando o operador"** (durante o giro: **"fazendo meia-volta"**). Para continuar: **Liberar
-cumprimentos** no painel, ou desligar e ligar o automático (F3+←, duas vezes), ou **cumprimentar agora**.
+cumprimentos** no painel, ou desligar e ligar o automático (F3+←, duas vezes), ou **cumprimentar agora** (só libera se alguém for reconhecido).
 Desarmado, só registra `dry_run meia_volta` (e também espera o operador). **PARAR** ou F3+↓ interrompe o giro
 e o passo na hora. O passo é **cego**: deixe ~1 m livre atrás de onde o robô começa. Para não usar, desmarque
 **Meia-volta** nos estágios e salve (ajustes antigos ganham o estágio na próxima subida; desmarcado e salvo, fica

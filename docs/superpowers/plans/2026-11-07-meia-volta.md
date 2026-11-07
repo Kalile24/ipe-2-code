@@ -25,7 +25,7 @@ ação. O `reaction_node` vê esse resultado e para de cumprimentar até o opera
 - Só move armado e inicializado; desarmado publica `dry_run meia_volta` e não chama o corpo.
 - PARAR/cancelamento/Ctrl+C interrompem giro e passo na hora; ao sair por qualquer motivo, `StopMove`.
 - Textos de status (o painel depende dos prefixos): `meia_volta: girando (girado=+93°)`,
-  `meia_volta: passo`, `meia_volta: fim`, `meia_volta: falhou (<motivo>)`, `dry_run meia_volta`;
+  `meia_volta: fim`, `meia_volta: falhou (<motivo>)`, `dry_run meia_volta`;
   no `reaction_node`: `aguardando o operador (Liberar cumprimentos)`.
 - Resultado da ação com meia-volta: `sucesso=True` (a pessoa foi cumprimentada) e
   `mensagem="meia_volta: fim"` ou `"meia_volta: falhou (<motivo>)"` ou `"meia_volta: dry_run"`.

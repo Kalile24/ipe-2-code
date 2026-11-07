@@ -104,12 +104,17 @@ class ReactionNode(Node):
 
         threading.Thread(target=falar, daemon=True).start()
 
+    def _fim_da_espera(self) -> None:
+        if self._aguardando_operador:
+            self._aguardando_operador = False
+            self._status_pub.publish(String(data="pronto: cumprimentos liberados"))
+
     def _on_set_parameters(self, params: list) -> SetParametersResult:
         for p in params:
             if p.name == "automatico":
                 self._automatico = p.value is True
                 if self._automatico:
-                    self._aguardando_operador = False
+                    self._fim_da_espera()
                 self._falar(f"Reações automáticas {'ligadas' if self._automatico else 'desligadas'}.")
                 continue
             if p.name == "cumprimentar_agora":
@@ -121,7 +126,7 @@ class ReactionNode(Node):
                 if hit is None:
                     self._falar("Não reconheço ninguém.")
                 else:
-                    self._aguardando_operador = False
+                    self._fim_da_espera()
                     self._enviar(*hit)
                 continue
             if p.name != "liberar":
@@ -131,7 +136,7 @@ class ReactionNode(Node):
                 self._policy.release(None if nome in ("", TODOS) else nome)
             except KeyError as exc:
                 return SetParametersResult(successful=False, reason=str(exc))
-            self._aguardando_operador = False
+            self._fim_da_espera()
             self.get_logger().info(f"liberado: {nome or TODOS} pode ser cumprimentado de novo")
         return SetParametersResult(successful=True)
 

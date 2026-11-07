@@ -422,6 +422,18 @@ def test_armado_faz_meia_volta_depois_da_rotina(make_node):
     assert status[-2:] == ["meia_volta: fim", "rotina de gil: fim"]
 
 
+def test_armado_publica_girando_antes_do_fim(make_node):
+    make, status, _ = make_node
+    make(body=_FakeBody(), armed=True, estagios=MV).run(passos=POSTURA)
+    assert status.index("meia_volta: girando") < status.index("meia_volta: fim")
+
+
+def test_passo_fora_da_faixa_para_o_no(make_node):
+    make, _, _ = make_node
+    with pytest.raises(ValueError, match="passo_m"):
+        make(params=["passo_m:=3.0"])
+
+
 def test_meia_volta_que_falha_ainda_conta_como_cumprimento(make_node):
     make, status, _ = make_node
     body = _FakeBody()

@@ -297,7 +297,7 @@ def test_real_webcam_format_is_read_and_missing_tool_is_not_an_error():
 
 def test_half_turn_status_lines_have_a_stage_name():
     assert painel_mod.estagio("meia_volta: girando (girado=+93°)") == "fazendo meia-volta"
-    assert painel_mod.estagio("meia_volta: passo") == "fazendo meia-volta"
+    assert painel_mod.estagio("pronto: cumprimentos liberados") == "pronto"
     assert painel_mod.estagio("dry_run meia_volta") == "fazendo meia-volta"
     assert painel_mod.estagio("aguardando o operador (Liberar cumprimentos)") == "aguardando o operador"
 

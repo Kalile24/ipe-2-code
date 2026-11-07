@@ -8,8 +8,12 @@ from __future__ import annotations
 
 import argparse
 import math
+import os
 import sys
 import time
+
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, REPO)
 
 from core.meia_volta import acumular
 
@@ -24,7 +28,7 @@ def main() -> int:
 
     ultimo = [None]  # último yaw (rad) recebido
     ChannelFactoryInitialize(0, args.interface)
-    sub = ChannelSubscriber("rt/lf/lowstate", LowState_)
+    sub = ChannelSubscriber("rt/lowstate", LowState_)
     sub.Init(lambda msg: ultimo.__setitem__(0, float(msg.imu_state.rpy[2])), 10)
 
     girado, anterior = 0.0, None
