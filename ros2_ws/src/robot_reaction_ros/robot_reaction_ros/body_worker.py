@@ -165,6 +165,8 @@ class G1Body:
                     break
                 if estado != GIRANDO:
                     return estado
+                if interromper.is_set():
+                    break
                 self.velocity(0.0, vyaw)
                 if agora - ultimo_log >= 0.5:
                     ultimo_log = agora
@@ -222,7 +224,6 @@ def serve(body: object, inp: IO[str], out: IO[str]) -> None:
                 elif cmd == "posture":
                     reply(ordem, bool(body.posture(ordem["nome"])))
                 elif cmd == "meia_volta" and hasattr(body, "meia_volta"):
-                    interromper.clear()
                     erro = body.meia_volta(
                         MeiaVoltaConfig(**ordem["cfg"]), interromper, lambda t: print(t, file=sys.stderr)
                     )
@@ -249,12 +250,15 @@ def serve(body: object, inp: IO[str], out: IO[str]) -> None:
                 final = ordem
                 break
             else:
+                if cmd == "meia_volta":
+                    interromper.clear()  # aqui, não na executora: um `parar` já lido não pode ser apagado
                 fila.put(ordem)
         except Exception as exc:
             if isinstance(ordem, dict) and ordem.get("cmd") in ("velocidade", "parar"):
                 print(f"body_worker: {ordem['cmd']} falhou: {exc!r}", file=sys.stderr)  # sem resposta
             else:
                 reply(ordem if isinstance(ordem, dict) else {}, False, repr(exc))
+    interromper.set()  # a meia_volta em andamento não segue sem supervisão
     try:  # entrada fechada ou shutdown: para de andar já, antes de esperar a postura em andamento
         body.stop()
     except Exception as exc:

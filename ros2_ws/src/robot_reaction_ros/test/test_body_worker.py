@@ -133,6 +133,8 @@ FAKE_WORKER = textwrap.dedent(
                 time.sleep(1.0)
             return nome != "falha"
         def shutdown(self): print("shutdown", file=sys.stderr)
+        def meia_volta(self, cfg, interromper, log):
+            return "tempo esgotado" if cfg.passo_m == 0.3 else ""
     print(json.dumps({"ok": True}), flush=True)
     serve(Body(), sys.stdin, sys.stdout)
     """
@@ -381,10 +383,11 @@ def test_parar_interrompe_meia_volta():
 
 class _FakeLoco:
     def __init__(self, robot):
-        self.robot, self.comandos = robot, []
+        self.robot, self.comandos, self.velocidades = robot, [], []
 
     def SetVelocity(self, vx, vy, vyaw, duracao):
         self.comandos.append("SetVelocity")
+        self.velocidades.append((vx, vy, vyaw))
         if self.robot.low_state is not None:
             self.robot.low_state.imu_state.rpy[2] += 0.1
 
@@ -422,3 +425,79 @@ def test_g1body_meia_volta_para_ao_chegar():
     body.robot = _FakeRobotImu()
     assert body.meia_volta(_cfg(passo_m=0.0), threading.Event(), lambda t: None) == ""
     assert body.robot.loco.comandos[-1] == "StopMove"
+    assert all(vx == 0.0 and vyaw > 0 for vx, _, vyaw in body.robot.loco.velocidades)  # esquerda
+
+
+def test_g1body_meia_volta_com_passo():
+    body = G1Body.__new__(G1Body)
+    body.robot = _FakeRobotImu()
+    assert body.meia_volta(_cfg(passo_m=0.04), threading.Event(), lambda t: None) == ""
+    c = body.robot.loco.comandos
+    i = c.index("StopMove")  # fim do giro
+    assert set(c[:i]) == {"SetVelocity"} and c[-1] == "StopMove" and i < len(c) - 1
+    v = body.robot.loco.velocidades
+    assert v[-1] == (0.2, 0.0, 0.0) and all(x[0] == 0.0 for x in v[: i])
+
+
+def test_g1body_meia_volta_interrompida_no_passo():
+    body = G1Body.__new__(G1Body)
+    body.robot = _FakeRobotImu()
+    interromper = threading.Event()
+    orig = body.robot.loco.SetVelocity
+
+    def seta(vx, vy, vyaw, d):
+        orig(vx, vy, vyaw, d)
+        if vx > 0:
+            interromper.set()
+
+    body.robot.loco.SetVelocity = seta
+    assert body.meia_volta(_cfg(passo_m=1.0), interromper, lambda t: None) == "interrompida"
+    assert body.robot.loco.comandos[-1] == "StopMove"
+
+
+def _abre(body):
+    r, w = os.pipe()
+    inp, entrada = os.fdopen(r), os.fdopen(w, "w")
+    out = io.StringIO()
+    worker = threading.Thread(target=serve, args=(body, inp, out), daemon=True)
+    worker.start()
+    return entrada, out, worker
+
+
+def test_entrada_fechada_interrompe_meia_volta():
+    body = _FakeBody()
+    entrada, out, worker = _abre(body)
+    entrada.write(json.dumps({"id": 1, "cmd": "meia_volta", "cfg": {**_CFG, "passo_m": 0.42}}) + "\n")
+    entrada.flush()
+    while not body.calls:
+        time.sleep(0.01)
+    t0 = time.monotonic()
+    entrada.close()
+    worker.join(5.0)
+    assert time.monotonic() - t0 < 2.0
+    assert json.loads(out.getvalue().splitlines()[0]) == {"id": 1, "ok": False, "erro": "interrompida"}
+
+
+def test_parar_logo_depois_da_meia_volta_enfileirada_nao_se_perde():
+    body = _FakeBody()
+    entrada, out, worker = _abre(body)
+    entrada.write(json.dumps({"id": 1, "cmd": "posture", "nome": "lenta"}) + "\n")
+    entrada.flush()
+    while not body.calls:
+        time.sleep(0.01)
+    entrada.write(json.dumps({"id": 2, "cmd": "meia_volta", "cfg": {**_CFG, "passo_m": 0.42}}) + "\n")
+    entrada.write(json.dumps({"cmd": "parar"}) + "\n")
+    entrada.flush()
+    time.sleep(0.2)
+    body.solta_lenta.set()
+    entrada.close()
+    worker.join(5.0)
+    respostas = [json.loads(line) for line in out.getvalue().splitlines()]
+    assert {"id": 2, "ok": False, "erro": "interrompida"} in respostas
+
+
+def test_subprocess_body_meia_volta():
+    body = SubprocessBody("", "", command=[sys.executable, "-c", FAKE_WORKER])
+    assert body.meia_volta(_CFG) == (True, "")
+    assert body.meia_volta({**_CFG, "passo_m": 0.3}) == (False, "tempo esgotado")
+    body.shutdown()
