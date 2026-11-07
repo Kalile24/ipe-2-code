@@ -56,7 +56,9 @@ class _FakeBody:
             self.gate.wait(5)
         return True
 
-    def meia_volta(self, cfg):
+    def meia_volta(self, cfg, deve_parar):
+        if deve_parar():  # como o SubprocessBody: interrompida antes da escrita, nada é mandado
+            return False, "interrompida"
         self.calls.append("meia_volta")
         if self.meia_volta_gate is not None:
             self.meia_volta_gate.wait(5)
@@ -140,12 +142,13 @@ def make_node(monkeypatch):
         executor.add_node(client_node)
         threading.Thread(target=executor.spin, daemon=True).start()
         assert client.wait_for_server(timeout_sec=5)
-        cleanup.append((executor, n, client_node))
+        cleanup.append((executor, n, client_node, client))
         return _Env(n, client)
 
     yield make, status, spoken
-    for executor, n, client_node in cleanup:
+    for executor, n, client_node, client in cleanup:
         executor.shutdown()
+        client.destroy()
         client_node.destroy_node()
         n.destroy_node()
     rclpy.shutdown()
@@ -478,3 +481,27 @@ def test_shutdown_durante_meia_volta_para_o_corpo(make_node):
     env.node.shutdown(timeout_s=5)
     assert "stop" in body.calls and time.monotonic() - inicio < 3
     assert body.calls[-1] == "shutdown"
+
+
+def test_cancelamento_depois_da_rotina_nao_manda_a_meia_volta(make_node):
+    make, status, _ = make_node
+    body = _FakeBody()
+    env = make(body=body, armed=True, estagios=MV)
+    original = body.posture
+
+    def posture(nome):  # o cancelamento chega logo depois da última postura
+        original(nome)
+        env.node._interromper.set()
+        return True
+
+    body.posture = posture
+    r = env.run(passos=POSTURA)
+    assert "meia_volta" not in body.calls
+    assert r.sucesso is False or r.mensagem != "meia_volta: fim"
+
+
+def test_desarmado_nao_chama_o_corpo_na_meia_volta(make_node):
+    make, _, _ = make_node
+    body = _FakeBody()
+    make(body=body, armed=False, estagios=MV).run(passos=POSTURA)
+    assert "meia_volta" not in body.calls

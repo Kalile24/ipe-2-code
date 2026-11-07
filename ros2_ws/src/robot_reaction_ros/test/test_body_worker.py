@@ -498,6 +498,18 @@ def test_parar_logo_depois_da_meia_volta_enfileirada_nao_se_perde():
 
 def test_subprocess_body_meia_volta():
     body = SubprocessBody("", "", command=[sys.executable, "-c", FAKE_WORKER])
-    assert body.meia_volta(_CFG) == (True, "")
-    assert body.meia_volta({**_CFG, "passo_m": 0.3}) == (False, "tempo esgotado")
+    assert body.meia_volta(_CFG, lambda: False) == (True, "")
+    assert body.meia_volta({**_CFG, "passo_m": 0.3}, lambda: False) == (False, "tempo esgotado")
     body.shutdown()
+
+
+def test_meia_volta_interrompida_antes_da_escrita_nao_manda_a_ordem(tmp_path):
+    log = tmp_path / "ordens"
+    worker = FAKE_WORKER.replace(
+        "serve(Body(), sys.stdin, sys.stdout)",
+        f"serve(Body(), (open({str(log)!r}, 'a').write(l) or l for l in sys.stdin), sys.stdout)",
+    )
+    body = SubprocessBody("", "", command=[sys.executable, "-c", worker])
+    assert body.meia_volta(_CFG, lambda: True) == (False, "interrompida")
+    body.shutdown()
+    assert "meia_volta" not in log.read_text()

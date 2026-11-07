@@ -24,8 +24,8 @@ from std_msgs.msg import String
 from vision_msgs.msg import Detection2DArray
 
 from core.approach import DESISTIU_ROSTO, DESISTIU_TEMPO, PRONTO, ApproachConfig, escolher_caixa, passo_aproximacao
-from core.pessoas import nome_falado
 from core.meia_volta import MeiaVoltaConfig
+from core.pessoas import nome_falado
 from core.piper_voice import DEFAULT_URL, say
 from core.reaction_policy import ReactionConfigError, validate_steps
 from core.routine import run_routine
@@ -92,27 +92,38 @@ class SubprocessBody:
                 return resposta
             # resposta atrasada de uma ordem em que já desistimos de esperar: descartada
 
-    def _call_erro(self, ordem: dict, timeout_s: float) -> tuple[bool, str]:
+    def _call_erro(
+        self, ordem: dict, timeout_s: float, deve_parar: Callable[[], bool] | None = None
+    ) -> tuple[bool, str]:
         with self._lock:
             if self._proc.poll() is not None:
                 return False, "body_worker morto"
             self._next_id += 1
             ordem = {"id": self._next_id, **ordem}
-            if not self._write(ordem):
-                return False, "body_worker morto"
+            with self._escrita:
+                # Conferido com a escrita presa: o stop() também escreve sob este lock, então ou a
+                # ordem nunca sai ou o "parar" vem depois dela (o leitor do worker limparia um anterior).
+                if deve_parar is not None and deve_parar():
+                    return False, "interrompida"
+                if not self._write_preso(ordem):
+                    return False, "body_worker morto"
             resposta = self._read(timeout_s, ordem["id"])
             return bool(resposta.get("ok")), str(resposta.get("erro", ""))
 
     def _call(self, ordem: dict, timeout_s: float) -> bool:
         return self._call_erro(ordem, timeout_s)[0]
 
+    def _write_preso(self, ordem: dict) -> bool:
+        """Escreve a linha; quem chama já segura `_escrita`."""
+        try:
+            self._proc.stdin.write((json.dumps(ordem) + "\n").encode())
+        except BrokenPipeError:
+            return False
+        return True
+
     def _write(self, ordem: dict) -> bool:
         with self._escrita:
-            try:
-                self._proc.stdin.write((json.dumps(ordem) + "\n").encode())
-            except BrokenPipeError:
-                return False
-        return True
+            return self._write_preso(ordem)
 
     def initialize(self, so_equilibrio: bool = False) -> bool:
         return self._call(
@@ -129,8 +140,11 @@ class SubprocessBody:
     def posture(self, nome: str) -> bool:
         return self._call({"cmd": "posture", "nome": nome}, timeout_s=self._posture_timeout_s)
 
-    def meia_volta(self, cfg: dict) -> tuple[bool, str]:
-        return self._call_erro({"cmd": "meia_volta", "cfg": cfg}, timeout_s=MEIA_VOLTA_TIMEOUT_S)
+    def meia_volta(self, cfg: dict, deve_parar: Callable[[], bool]) -> tuple[bool, str]:
+        """Não manda a ordem se `deve_parar()` já vale: ver _call_erro."""
+        return self._call_erro(
+            {"cmd": "meia_volta", "cfg": cfg}, timeout_s=MEIA_VOLTA_TIMEOUT_S, deve_parar=deve_parar
+        )
 
     def shutdown(self) -> None:
         try:
@@ -414,7 +428,7 @@ class BodyNode(Node):
             self._publish("dry_run meia_volta")
             return "meia_volta: dry_run"
         try:
-            ok, erro = self._body.meia_volta(asdict(self._meia_volta))
+            ok, erro = self._body.meia_volta(asdict(self._meia_volta), self._interromper.is_set)
         except Exception as exc:
             ok, erro = False, repr(exc)
         if not ok and self._interromper.is_set():
