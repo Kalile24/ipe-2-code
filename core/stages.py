@@ -1,10 +1,10 @@
-"""Estágios da reação a uma pessoa: virar, aproximar, fala e posturas.
+"""Estágios da reação a uma pessoa: virar, aproximar, fala, posturas e meia_volta.
 
 Puro. Spec: docs/superpowers/specs/2026-11-04-aproximacao-e-estagios-design.md
 """
 from __future__ import annotations
 
-ESTAGIOS = ("virar", "aproximar", "fala", "posturas")
+ESTAGIOS = ("virar", "aproximar", "fala", "posturas", "meia_volta")
 
 
 def parse_stages(texto: str) -> frozenset[str]:
@@ -22,3 +22,13 @@ def parse_stages(texto: str) -> frozenset[str]:
 def filter_steps(passos: list[dict], estagios: frozenset[str]) -> list[dict]:
     """Mantém falas se há `fala`, e posturas e pausas se há `posturas`. Não revalida os passos."""
     return [p for p in passos if ("fala" in p and "fala" in estagios) or ("fala" not in p and "posturas" in estagios)]
+
+
+def migrar_estagios(valores: dict) -> dict:
+    """Cópia dos valores salvos; arquivo antigo (sem `vyaw_meia_volta`) ganha `meia_volta` em `estagios`."""
+    novos = dict(valores)
+    if "estagios" in novos and "vyaw_meia_volta" not in novos:
+        nomes = [n.strip() for n in str(novos["estagios"]).split(",") if n.strip()]
+        if "meia_volta" not in nomes:
+            novos["estagios"] = ",".join(nomes + ["meia_volta"])
+    return novos

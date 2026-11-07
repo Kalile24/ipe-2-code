@@ -2,7 +2,7 @@
 # Spec: docs/superpowers/specs/2026-11-04-aproximacao-e-estagios-design.md
 /**:  # chave curinga: com "body_node:" o Foxy ignoraria as sobrescritas do launch
   ros__parameters:
-    estagios: "virar,aproximar,fala,posturas"  # quais estágios rodam (aproximar inclui virar)
+    estagios: "virar,aproximar,fala,posturas,meia_volta"  # quais estágios rodam (aproximar inclui virar)
     detections_topic: /face_recognition/detections
     so_equilibrio: false  # true: só inicializa já em equilíbrio (FSM 801), sem damp → em pé
     largura_imagem: 640  # largura em pixels da imagem das detecções
@@ -19,3 +19,8 @@
     desistir_s: 10.0  # rosto sumido por isso → desiste
     tempo_max_s: 30.0  # aproximação mais longa que isso → desiste
     avisos_voz: true  # depuração: fala "Perdi <nome> de vista" ao desistir (só nesse caso)
+    vyaw_meia_volta: 0.5  # giro da meia-volta (rad/s)
+    tolerancia_meia_volta_graus: 10.0  # erro de ângulo aceito ao fechar a meia-volta
+    passo_m: 0.2  # passo para frente depois de virar (m); 0 desliga
+    vx_passo: 0.2  # velocidade do passo (m/s)
+    tempo_max_meia_volta_s: 12.0  # meia-volta mais longa que isso → desiste

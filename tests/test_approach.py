@@ -4,8 +4,8 @@ from pathlib import Path
 import pytest
 
 from core.approach import (
-    ANDANDO, DESISTIU_ROSTO, DESISTIU_TEMPO, PRONTO, SEM_ROSTO, ApproachConfig, Comando, escolher_caixa,
-    passo_aproximacao,
+    ANDANDO, DESISTIU_ROSTO, DESISTIU_TEMPO, LIMITES_OPERACAO, PRONTO, SEM_ROSTO, ApproachConfig, Comando,
+    escolher_caixa, passo_aproximacao, validar_operacao,
 )
 
 CFG = ApproachConfig()
@@ -113,3 +113,9 @@ def test_unsafe_operation_values_are_refused(valores):
 
     with pytest.raises(ValueError):
         validar_operacao(valores)
+
+
+def test_limites_da_meia_volta():
+    assert LIMITES_OPERACAO["vyaw_meia_volta"] == (0.3, 0.8)
+    with pytest.raises(ValueError):
+        validar_operacao({"passo_m": 0.6})
