@@ -482,6 +482,7 @@ const ETAPAS = [
   ['aproximar', 'Aproximar', 'Anda até a pessoa. Inclui virar.'],
   ['fala', 'Falar', 'Diz a frase da rotina.'],
   ['posturas', 'Gestos', 'Sentido, continência, desc. arma e à vontade.'],
+  ['meia_volta', 'Meia-volta', 'Depois do cumprimento, gira 180° pela esquerda e dá um passo à frente; depois espera Liberar cumprimentos.'],
 ];
 const GRUPOS = [
   ['Distância de parada', [
@@ -503,6 +504,13 @@ const GRUPOS = [
     ['perda_rosto_s', 'Parar sem ver o rosto', 's', 'Sem ver o rosto por este tempo, para e espera. Se o rosto voltar, retoma.'],
     ['desistir_s', 'Desistir sem ver o rosto', 's', 'Sem ver o rosto por este tempo, desiste e não cumprimenta.'],
     ['tempo_max_s', 'Tempo máximo da aproximação', 's', 'Passou disso, desiste mesmo vendo a pessoa.'],
+  ]],
+  ['Meia-volta', [
+    ['vyaw_meia_volta', 'Giro da meia-volta', 'rad/s', 'Velocidade do giro pela esquerda (0,3 a 0,8).'],
+    ['tolerancia_meia_volta_graus', 'Tolerância do giro', '°', 'Para de girar quando faltar menos que isto para 180° (2 a 30).'],
+    ['passo_m', 'Passo depois do giro', 'm', 'Distância do passo à frente. 0 = não dá o passo (0 a 0,5).'],
+    ['vx_passo', 'Velocidade do passo', 'm/s', 'Velocidade para frente durante o passo (0,05 a 0,3).'],
+    ['tempo_max_meia_volta_s', 'Tempo máximo da meia-volta', 's', 'Passou disso, para e desiste da meia-volta (5 a 30).'],
   ]],
   ['Voz', [
     ['avisos_voz', 'Falar “Perdi <nome> de vista” ao desistir', null, 'Aviso para os testes. Desmarque na apresentação.'],
