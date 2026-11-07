@@ -476,7 +476,7 @@ class PainelNode(Node):
         return {
             "rotina_de_pe": rotina,
             "camera": {"ok": self.count_publishers(self._image_topic) > 0},
-            # O camera_vigia reinicia a câmera sozinho: o aviso só vale se a imagem não voltou.
+            # O aviso só vale se a imagem não voltou (com vigia_camera:=true, ela volta sozinha).
             "rotina_ha_s": round(time.time() - desde) if desde else None,
             "subindo": self._subindo.is_set(),
             "parando": self._parando.is_set(),

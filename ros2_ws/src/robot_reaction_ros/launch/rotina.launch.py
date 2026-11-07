@@ -68,17 +68,21 @@ def generate_launch_description() -> LaunchDescription:
             {"reactions_file": LaunchConfiguration("reactions_file"), "automatico": LaunchConfiguration("automatico")}
         ],
     )
-    # Reinicia a webcam quando o reconhecimento fica sem quadros (só com a webcam local: camera:=v4l2).
+    # Desligado por padrão desde 2026-11-05: com a Intelbras, conexão estável, ele mesmo derrubava a câmera a
+    # cada 6 s. Para uma webcam que cai pelo USB: vigia_camera:=true (só com a webcam local: camera:=v4l2).
+    vigia_arg = DeclareLaunchArgument(
+        "vigia_camera", default_value="false", description="true: reinicia a webcam quando o reconhecimento fica sem quadros"
+    )
     camera_vigia = Node(
         package="robot_reaction_ros",
         executable="camera_vigia",
         name="camera_vigia",
-        condition=IfCondition(PythonExpression(["'", LaunchConfiguration("camera", default="v4l2"), "' == 'v4l2'"])),
+        condition=IfCondition(PythonExpression(["'", LaunchConfiguration("camera", default="v4l2"), "' == 'v4l2' and '", LaunchConfiguration("vigia_camera"), "' == 'true'"])),
     )
     return LaunchDescription(
         [
             armed_arg, reactions_file_arg, pausa_arg, passo_arg, operacao_arg, estagios_arg, so_equilibrio_arg,
-            automatico_arg, threshold_arg, recognition, reaction_node, camera_vigia, OpaqueFunction(function=_body_node),
+            automatico_arg, threshold_arg, vigia_arg, recognition, reaction_node, camera_vigia, OpaqueFunction(function=_body_node),
         ]
     )
 

@@ -229,6 +229,10 @@ USB dobra para cerca de 18 MB/s. O reconhecimento descarta o excesso, mas acompa
 volte à webcam antiga ou use um hub com fonte própria. Pede até 500 mA. **Não suba a resolução:** em 1280×720 YUYV
 ela mediu 13,3 quadros/s, cerca de 24,5 MB/s, perto do limite prático do USB 2.0, que no robô é dividido com Wi-Fi e Bluetooth.
 
+**Vigia da câmera:** desligado desde 2026-11-05. Com a Intelbras, a conexão estável e o reconhecimento ainda aquecendo, ele
+derrubava a própria câmera a cada 6 s (`reiniciando o v4l2_camera_node` no log, `0.3/s` no reconhecimento). Para uma webcam que cai
+pelo USB, como a antiga, religue-o: `vigia_camera:=true` no `ros2 launch robot_reaction_ros rotina.launch.py`.
+
 **É problema de energia?** Mesma porta, 10 min para cada webcam, comparando:
 
 ```bash
@@ -328,7 +332,7 @@ Ele não gira para procurar a pessoa. Depois de desistir: no manual, aperte **F3
 | F3+↑ dá dois tons graves | A rotina já está de pé ou subindo: F3+↓ e espere |
 | Painel não abre | Rede `IPE-G1`? Use `http://`, não `https://`. Depois, `robo_hotspot.sh estado` e `systemctl --user status ipe-painel` |
 | Celular não entra no hotspot | Esqueça a rede no celular e conecte de novo |
-| "A webcam reconectou" no painel | O robô reinicia a câmera sozinho. Se não voltar em ~30 s: F3+↓ e F3+↑ |
+| "A webcam reconectou" no painel | A imagem não volta sozinha: **PARAR** (ou F3+↓) e suba de novo. Sem imagem, o robô para em 1 s |
 | Automático não cumprimenta | Automático ligado? O nome aparece em **Na frente agora**? A pessoa tem foto e rotina em **Pessoas**? Depois, **Liberar cumprimentos** |
 | Aparece `desconhecido` | Mais luz, pessoa mais perto, foto melhor (seção 5) |
 | Sem som | **Testar som**. Veja se a caixa está conectada e é a saída padrão no painel |

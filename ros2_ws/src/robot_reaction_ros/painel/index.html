@@ -293,7 +293,7 @@ function problemas(e) {
   if (!w.conectada) lista.push(['bad', 'Webcam desconectada: ligue no USB e suba de novo']);
   if (e.rotina_de_pe && w.formato && opValores && opValores.largura_imagem && w.formato.largura !== opValores.largura_imagem)
     lista.push(['bad', `A webcam está em ${w.formato.largura}×${w.formato.altura}, mas o ajuste espera largura ${opValores.largura_imagem}: o giro e a distância saem errados. Não arme`]);
-  if (w.reiniciar) lista.push(['bad', 'A webcam reconectou e a imagem não voltou. O robô tenta sozinho por ~30 s; se não voltar, PARAR e suba de novo']);
+  if (w.reiniciar) lista.push(['bad', 'A webcam reconectou e a imagem não voltou: aperte PARAR e suba de novo']);
   if (c.conectada === false) lista.push(['bad', 'Caixa de som desconectada: sem fala nem bipes']);
   else if (c.conectada && !c.saida_padrao) lista.push(['warn', 'A caixa está conectada, mas não é a saída de som: teste em Sistema']);
   if (e.rotina_de_pe && !e.parando && !subindo) {
