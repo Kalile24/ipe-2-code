@@ -1,8 +1,8 @@
 import pytest
 
 from core.remote_combos import (
-    AGORA, AUTOMATICO, DAMP, DOWN, F2, INICIAR, LEFT, LEVANTAR, PADRAO, PARAR, RIGHT, SEGURAR, UP, A, B, Combos,
-    botoes, segue_apertado,
+    A_VONTADE, AGORA, AUTOMATICO, DAMP, DOWN, F2, FALAR, FIM, INICIAR, INICIO, LEFT, LEVANTAR, PADRAO, PARAR, RIGHT,
+    SEGURAR, UP, A, B, X, Y, Combos, Segurado, botoes, segue_apertado,
 )
 
 
@@ -46,3 +46,18 @@ def test_single_buttons_do_nothing():
 ])
 def test_a_held_combo_needs_a_recent_reading(keys, recebido_em, agora, esperado):
     assert segue_apertado(keys, F2 | B, recebido_em, agora) is esperado
+
+
+def test_segurado_avisa_inicio_e_fim():
+    s = Segurado(F2 | Y)
+    assert [s.update(k) for k in [0, F2 | Y, F2 | Y, F2, 0]] == [None, INICIO, None, FIM, None]
+
+
+def test_a_vontade_e_falar_nao_colidem():
+    assert PADRAO[A_VONTADE] == F2 | X and len(set(PADRAO.values()) | {FALAR}) == len(PADRAO) + 1
+    assert FALAR == F2 | Y
+
+
+def test_soltar_e_apertar_avisa_de_novo():
+    s = Segurado(FALAR)
+    assert [s.update(k) for k in [FALAR, 0, FALAR]] == [INICIO, FIM, INICIO]

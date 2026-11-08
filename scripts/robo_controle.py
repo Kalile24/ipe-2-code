@@ -9,6 +9,8 @@
                 Recusado com a rotina de pé (F2+DOWN antes). O L2+B da Unitree não faz damp no 801.
     F2 + A      SEGURADO 1,5 s: levanta no suporte (damp → em pé → equilíbrio, scripts/robo_levantar.py);
                 só com o robô mole (damp/sem torque)
+    F2 + X      a vontade: solta a posição mantida por um comando de voz (sentido, continência, descansar)
+    F2 + Y      SEGURADO: fala (o microfone grava enquanto apertado; ao soltar, o comando é reconhecido)
 
 O controle chega no `wireless_remote` do `rt/lf/lowstate` (não no `rt/wirelesscontroller`, onde o
 ~/hhhh injeta toques virtuais). Uso, no robô (sobe no boot pelo scripts/systemd/ipe-controle.service):
@@ -31,8 +33,10 @@ sys.path.insert(0, REPO)
 
 from core.bipes import tocar  # noqa: E402
 from core.remote_combos import (  # noqa: E402
-    AGORA, AUTOMATICO, DAMP, INICIAR, LEVANTAR, PADRAO, PARAR, SEGURAR, SEGURAR_S, Combos, botoes, segue_apertado,
+    A_VONTADE, AGORA, AUTOMATICO, DAMP, FALAR, FIM, INICIAR, LEVANTAR, PADRAO, PARAR, SEGURAR, SEGURAR_S, Combos,
+    Segurado, botoes, segue_apertado,
 )
+from core.comandos_voz import enviar_voz  # noqa: E402
 
 SESSAO = "rotina"  # a sessão tmux do robo_rotina_cumprimento.sh
 # A mesma trava do robo_rotina_cumprimento.sh: presa enquanto uma subida está em andamento.
@@ -179,10 +183,16 @@ def levantar() -> None:
     LEVANTANDO = None
 
 
+def a_vontade() -> None:
+    log("F2+X: a vontade (solta a posição mantida)")
+    enviar_voz("comando:a_vontade")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    for nome in (INICIAR, AGORA, AUTOMATICO, PARAR, DAMP, LEVANTAR):
+    for nome in (INICIAR, AGORA, AUTOMATICO, PARAR, DAMP, LEVANTAR, A_VONTADE):
         parser.add_argument(f"--{nome}", type=lambda v: int(v, 0), default=PADRAO[nome], help=f"máscara (padrão {PADRAO[nome]:#06x})")
+    parser.add_argument("--falar", type=lambda v: int(v, 0), default=FALAR, help=f"máscara de falar, segurado (padrão {FALAR:#06x})")
     parser.add_argument("--mostrar", action="store_true", help="imprime os botões em hexa a cada mudança")
     parser.add_argument("--interface", default="eth0")
     args = parser.parse_args()
@@ -191,8 +201,9 @@ def main() -> int:
     from unitree_sdk2py.idl.unitree_hg.msg.dds_ import LowState_
 
     acoes = {INICIAR: iniciar, AGORA: agora, AUTOMATICO: alternar_automatico, PARAR: parar, DAMP: damp,
-             LEVANTAR: levantar}
+             LEVANTAR: levantar, A_VONTADE: a_vontade}
     combos = Combos({nome: getattr(args, nome) for nome in acoes})
+    falar = Segurado(args.falar)
     ocupado = threading.Lock()  # uma ação por vez; PARAR passa sempre
     ultimo = [None]
     recebido_em = [0.0]
@@ -221,6 +232,9 @@ def main() -> int:
         if args.mostrar and keys != ultimo[0]:
             log(f"botões: {keys:#06x}")
         ultimo[0], recebido_em[0] = keys, time.monotonic()
+        aviso = falar.update(keys)  # direto no callback: sem o lock `ocupado`, nada bloqueia
+        if aviso is not None:
+            enviar_voz("falar_fim" if aviso == FIM else "falar_inicio")
         nome = combos.update(keys)
         if nome is None:
             return

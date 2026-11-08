@@ -77,3 +77,10 @@ def test_stop_ends_a_real_stand_up_process_and_frees_the_remote(monkeypatch, eve
     assert not t.is_alive()
     assert controle.LEVANTANDO is None
     assert eventos[-1] == ("bipe", "recusado")  # não terminou em equilíbrio
+
+
+def test_combo_a_vontade_manda_o_comando(monkeypatch, eventos):
+    enviados = []
+    monkeypatch.setattr(controle, "enviar_voz", enviados.append)
+    controle.a_vontade()
+    assert enviados == ["comando:a_vontade"]
