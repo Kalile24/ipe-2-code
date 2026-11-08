@@ -79,8 +79,18 @@ def generate_launch_description() -> LaunchDescription:
         name="camera_vigia",
         condition=IfCondition(PythonExpression(["'", LaunchConfiguration("camera", default="v4l2"), "' == 'v4l2' and '", LaunchConfiguration("vigia_camera"), "' == 'true'"])),
     )
+    microfone_arg = DeclareLaunchArgument(
+        "microfone", default_value="default", description="Dispositivo ALSA do microfone dos comandos de voz (arecord -L)"
+    )
+    voz_node = Node(
+        package="robot_reaction_ros",
+        executable="voz_node",
+        name="voz_node",
+        parameters=[{"dispositivo": LaunchConfiguration("microfone")}],
+    )
     return LaunchDescription(
         [
+            microfone_arg, voz_node,
             armed_arg, reactions_file_arg, pausa_arg, passo_arg, operacao_arg, estagios_arg, so_equilibrio_arg,
             automatico_arg, threshold_arg, vigia_arg, recognition, reaction_node, camera_vigia, OpaqueFunction(function=_body_node),
         ]

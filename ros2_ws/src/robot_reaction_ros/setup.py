@@ -28,6 +28,7 @@ setup(
             "reaction_node = robot_reaction_ros.reaction_node:main",
             "body_node = robot_reaction_ros.body_node:main",
             "painel_node = robot_reaction_ros.painel_node:main",
+            "voz_node = robot_reaction_ros.voz_node:main",
             "camera_vigia = robot_reaction_ros.camera_vigia:main",
         ],
     },
