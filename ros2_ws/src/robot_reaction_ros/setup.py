@@ -12,7 +12,7 @@ setup(
         ("share/ament_index/resource_index/packages", [f"resource/{package_name}"]),
         (f"share/{package_name}", ["package.xml"]),
         (f"share/{package_name}/launch", glob("launch/*.launch.py")),
-        (f"share/{package_name}/config", ["config/reactions.yaml", "config/operacao.yaml"]),
+        (f"share/{package_name}/config", ["config/reactions.yaml", "config/operacao.yaml", "config/comandos_voz.yaml"]),
         (f"share/{package_name}/poses", glob("poses/*.json")),
         (f"share/{package_name}/painel", ["painel/index.html"]),
     ],

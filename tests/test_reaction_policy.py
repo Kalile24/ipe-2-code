@@ -233,3 +233,9 @@ def test_now_greets_the_best_mapped_person_ignoring_cooldowns():
 
 def test_now_with_nobody_mapped_returns_none():
     assert _policy().now([("desconhecido", 0.9)], 0.0) is None
+
+
+def test_passos_sem_a_vontade_so_com_a_opcao():
+    assert validate_steps("x", [{"postura": "sentido"}], exigir_a_vontade=False) == [{"postura": "sentido"}]
+    with pytest.raises(ReactionConfigError):
+        validate_steps("x", [{"postura": "sentido"}])
