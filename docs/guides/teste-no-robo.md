@@ -201,6 +201,34 @@ robô começa. Operador com o controle na mão.
 Ajustes (grupo **Meia-volta** na aba Calibrar): `vyaw_meia_volta` 0,5 rad/s, `tolerancia_meia_volta_graus`
 10°, `passo_m` 0,2 m (0 = sem passo), `vx_passo` 0,2 m/s, `tempo_max_meia_volta_s` 12 s.
 
+## 10. Comandos de voz
+
+O reconhecimento de fala ainda não está instalado (vem depois de medir o microfone): F3+Y grava, mas a transcrição
+falha e o robô fala "Não entendi". Os comandos (Sentido, Continência, Atenção, Apresentação, À vontade) testam-se por texto.
+**Não teste "Atenção"** até resolver o desequilíbrio do descansar (o robô tomba para trás quando os braços voltam;
+suspeita: fixador da cintura).
+
+```bash
+cd ~/ipe-2-code && python3 -m colcon build --symlink-install   # a ação Rotina mudou: build completo
+~/ipe-2-code/scripts/robo_medir_voz.sh [dispositivo]           # lista, grava 5 s, mostra tamanho e pico; apaga o arquivo
+```
+
+Microfone diferente de `default`: `ros2 launch robot_reaction_ros rotina.launch.py microfone:=<dispositivo ALSA> ...`
+(o `robo_rotina_cumprimento.sh` não repassa o argumento). Sem microfone, com o robô em equilíbrio e a rotina de pé:
+
+```bash
+source ~/ipe-2-code/scripts/ambiente_robo.sh
+cd ~/ipe-2-code && python3 -c 'from core.comandos_voz import enviar_voz; enviar_voz("texto:sentido")'
+```
+
+Troque `sentido` por `continencia`, `apresentacao` ou `a vontade`. Confira, no painel e no status:
+
+- [ ] `arecord` existe; `robo_medir_voz.sh` mostra o microfone e um pico acima de zero falando.
+- [ ] Segurar F3+Y e soltar: o `voz_node` mostra `gravando` (depois "Não entendi", por ora).
+- [ ] `texto:sentido`: o painel mostra "segurando sentido"; durante ele, F3+→ é recusado sem som.
+- [ ] Com F3+Y segurado, F3+↓ ainda para tudo.
+- [ ] F3+X (ou o botão **À vontade**) solta; sem nada, solta sozinho em 300 s (`posicao_max_s`).
+
 ## O que mandar se algo der errado
 
 - A janela `status` (o que o body_node fez) e o log da janela `rotina`.
