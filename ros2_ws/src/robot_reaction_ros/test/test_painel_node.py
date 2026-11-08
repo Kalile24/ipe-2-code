@@ -363,7 +363,11 @@ def test_relax_button_sends_the_voice_command(monkeypatch):
     painel = _painel_vivo(monkeypatch)
     enviados = []
     monkeypatch.setattr(painel_mod, "enviar_voz", enviados.append)
-    assert painel.acao("a_vontade")
+    painel.get_node_names = lambda: ["voz_node"]
+    assert painel.acao("a_vontade") == "à vontade enviado"
+    assert enviados == ["comando:a_vontade"]
+    painel.get_node_names = lambda: []  # sem o nó de voz, não finge sucesso
+    assert "fora do ar" in painel.acao("a_vontade")
     assert enviados == ["comando:a_vontade"]
 
 

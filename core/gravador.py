@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 import signal
 import subprocess
 import threading
@@ -10,6 +11,7 @@ import time
 
 class Gravador:
     def __init__(self, dispositivo: str, comando: list[str] | None = None) -> None:
+        self._dispositivo = dispositivo
         self._comando = comando or [
             "arecord", "-q", "-D", dispositivo, "-f", "S16_LE", "-r", "16000", "-c", "1", "-t", "raw",
         ]
@@ -17,11 +19,15 @@ class Gravador:
         self._thread: threading.Thread | None = None
         self._pcm = bytearray()
 
-    def presente(self) -> bool:
-        """Há alguma placa de captura? Nunca levanta."""
+    def presente(self, saida: str | None = None) -> bool:
+        """O microfone configurado existe? `default`/outro texto: qualquer placa de captura; plughw:/hw:CARD=<id>: essa placa.
+        `saida` é a saída do `arecord -l` (injetável nos testes). Nunca levanta."""
         try:
-            saida = subprocess.run(["arecord", "-l"], capture_output=True, text=True, timeout=3).stdout
-            return "card" in saida
+            if saida is None:
+                saida = subprocess.run(["arecord", "-l"], capture_output=True, text=True, timeout=3).stdout
+            placas = re.findall(r"^card \d+: (\S+)", saida, re.M)
+            achou = re.match(r"(?:plug)?hw:CARD=([^,]+)", self._dispositivo)
+            return achou.group(1) in placas if achou else bool(placas)
         except Exception:
             return False
 

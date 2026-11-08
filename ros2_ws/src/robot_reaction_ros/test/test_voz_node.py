@@ -123,6 +123,23 @@ def test_falar_inicio_e_fim_enviam_a_rotina(node):
     assert node._estado_pub.msgs[-1]["microfone"] is True
 
 
+def test_comando_e_texto_nao_derrubam_o_microfone(node):
+    assert node._estado["microfone"] is True
+    node._on_datagrama("comando:a_vontade")
+    node._on_datagrama("texto:sentido")
+    _espera(node)
+    assert node._estado_pub.msgs and all(m["microfone"] is True for m in node._estado_pub.msgs)
+
+
+def test_microfone_ausente_na_subida_aparece_no_estado():
+    n = _node(falha=FileNotFoundError("arecord"))
+    try:
+        assert n._microfone is False and n._estado["microfone"] is False
+    finally:
+        n.destroy_node()
+        rclpy.shutdown()
+
+
 def test_gravacao_termina_sozinha_e_falar_fim_tardio_e_ignorado():
     n = _node(["-p", "gravacao_max_s:=0.2"])
     try:

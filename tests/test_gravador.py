@@ -23,3 +23,16 @@ def test_presente_nunca_levanta():
 def test_processo_que_sai_na_partida_levanta_oserror():
     with pytest.raises(OSError):
         Gravador("x", comando=["sh", "-c", "exit 1"]).iniciar()
+
+
+_ARECORD = "**** List of CAPTURE Hardware Devices ****\ncard 1: Intelbras [Intelbras USB], device 0: USB Audio [USB Audio]\n"
+
+
+def test_presente_respeita_o_dispositivo():
+    assert Gravador("default").presente(_ARECORD)
+    assert Gravador("plughw:CARD=Intelbras,DEV=0").presente(_ARECORD)
+    assert Gravador("hw:CARD=Intelbras,DEV=0").presente(_ARECORD)
+    assert not Gravador("plughw:CARD=Outra,DEV=0").presente(_ARECORD)
+    assert Gravador("outro:texto").presente(_ARECORD)
+    assert not Gravador("default").presente("**** List of CAPTURE Hardware Devices ****\n")
+    assert not Gravador("default").presente(None.__class__)  # lixo: nunca levanta

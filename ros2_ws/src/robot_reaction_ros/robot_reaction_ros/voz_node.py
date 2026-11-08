@@ -70,8 +70,8 @@ class VozNode(Node):
         self._gravador = None
         self._timer: threading.Timer | None = None
         self._ciclo: threading.Thread | None = None
-        self._microfone = False
-        self._estado = {"texto": "", "comando": "", "resultado": "", "transcricao_s": 0.0, "microfone": False}
+        self._microfone = bool(self._gravador_factory(self._dispositivo).presente())  # reavaliado a cada aperto
+        self._estado = {"texto": "", "comando": "", "resultado": "", "transcricao_s": 0.0, "microfone": self._microfone}
 
         self._pendentes: queue.Queue = queue.Queue()  # goals a enviar pelo executor (ActionClient do Foxy não tem lock)
         self.create_timer(0.02, self._drenar)
@@ -81,6 +81,7 @@ class VozNode(Node):
         self._sock.settimeout(0.5)
         self._udp = threading.Thread(target=self._ouvir, daemon=True)
         self._udp.start()
+        self._publicar("")  # o painel avisa de microfone ausente já na subida
         self.get_logger().info(f"voz: UDP em 127.0.0.1:{self._sock.getsockname()[1]}, microfone {self._dispositivo}")
 
     def _on_corpo(self, msg: String) -> None:

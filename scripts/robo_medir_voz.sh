@@ -2,14 +2,14 @@
 # Mede o microfone dos comandos de voz: lista os dispositivos, grava 5 s e mostra tamanho e pico.
 # Não mexe no robô (nem ROS, nem movimento). Uso, no robô, falando durante os 5 s:
 #   ~/ipe-2-code/scripts/robo_medir_voz.sh [dispositivo ALSA]     (padrão: default; ex.: plughw:1,0)
-# O dispositivo bom é o que vai em  microfone:=<dispositivo>  no rotina.launch.py.
+# O dispositivo bom vai, uma linha só, em data/microfone.txt (o robo_rotina_cumprimento.sh repassa como microfone:=).
 # O áudio vai para /dev/shm (memória) e é apagado ao sair, de qualquer jeito.
 set -u
 DISP=${1:-default}
 command -v arecord >/dev/null || { echo "ERRO: arecord não encontrado (sudo apt install alsa-utils)."; exit 1; }
 echo "Dispositivos de captura:"
 arecord -l
-ARQ=$(mktemp /dev/shm/medir_voz.XXXXXX.wav)
+ARQ=$(mktemp /dev/shm/medir_voz.XXXXXX.wav) || { echo "ERRO: não consegui criar o arquivo temporário em /dev/shm."; exit 1; }
 trap 'rm -f "$ARQ"' EXIT
 echo
 echo "Gravando 5 s de '$DISP' (16 kHz, mono, S16_LE): FALE AGORA."

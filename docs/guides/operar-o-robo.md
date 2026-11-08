@@ -152,7 +152,7 @@ Segure **F3** e aperte o outro botão.
 | **F3 + ↓** | **Para:** velocidade zero, braços de volta, encerra. Também aborta um F3+A | tom grave; dois descendo ao encerrar |
 | **F3 + A** (segurar 1,5 s) | Levanta **no suporte**. Só com o robô mole | três bipes curtos ao começar |
 | **F3 + B** (segurar 1,5 s) | **Damp. Só no suporte.** Recusado com a rotina de pé | três curtos; três descendo |
-| **F3 + Y** (segurar e falar, até 5 s) | Grava o comando de voz; ao soltar, o robô o executa. Só com a rotina de pé | |
+| **F3 + Y** (segurar e falar, até 5 s) | Grava o comando de voz; ao soltar, o robô o executa. Recusado enquanto uma rotina roda; com o nó de voz fora do ar, nada acontece | sem bipe |
 | **F3 + X** | **À vontade:** solta a posição mantida por voz (o mesmo do botão **À vontade** do painel) | |
 
 **Dois tons graves = recusado:** nada aconteceu. O L2+B da Unitree não dá damp no modo de equilíbrio.
@@ -165,16 +165,17 @@ Segure **F3+Y**, fale perto do microfone da webcam e solte (a gravação para so
 |---|---|
 | **Sentido** | Posição de sentido e **mantém** |
 | **Continência** | Continência e **mantém** |
-| **Atenção** | Descansar e **mantém**. **Não use até resolver o desequilíbrio do descansar** (o robô tomba para trás quando os braços voltam; suspeita: fixador da cintura) |
 | **Apresentação** | Sentido, "Sou o Tenente Nichinica" e à vontade |
 | **À vontade** | Solta a posição (também **F3+X** e o botão **À vontade**) |
 
 A posição mantida só termina com **à vontade**, **PARAR** (F3+↓) ou após 300 s (`posicao_max_s`). Durante ela, o
-cumprimento automático e o **cumprimentar agora** (F3+→) são recusados, **sem som**: o painel mostra. O cartão **Voz**
+cumprimento automático e o **cumprimentar agora** (F3+→) são recusados (o F3+→ toca os dois tons graves de recusado; o automático recusa em silêncio). O cartão **Voz**
 mostra a última frase, o resultado e "segurando <postura>"; sem microfone, avisa na faixa de problemas. Palavras e
-passos: `ros2_ws/src/robot_reaction_ros/config/comandos_voz.yaml`. Microfone: argumento `microfone:=<dispositivo ALSA>` do `rotina.launch.py` (padrão
-`default`); meça com `scripts/robo_medir_voz.sh [dispositivo]`. O `robo_rotina_cumprimento.sh` **não** repassa esse
-argumento: para outro dispositivo, rode o `ros2 launch` à mão.
+passos: `ros2_ws/src/robot_reaction_ros/config/comandos_voz.yaml`. Microfone: o `robo_rotina_cumprimento.sh` usa o
+dispositivo ALSA escrito (uma linha) em `data/microfone.txt`; sem o arquivo, a placa "Intelbras" do `arecord -l`
+(`plughw:CARD=<id>,DEV=0`); sem ela, `default`. Ele mostra a escolha ao subir. Meça com `scripts/robo_medir_voz.sh [dispositivo]`.
+**"Atenção"** está desligado (responde "Não entendi") até resolver o desequilíbrio do descansar: o robô tomba para trás
+quando os braços voltam.
 
 **Enquanto o reconhecimento de fala não estiver instalado**, a gravação funciona mas a transcrição falha e o robô fala
 "Não entendi". Teste os comandos por texto (seção 10 do guia de testes).
@@ -378,7 +379,7 @@ Ele não gira para procurar a pessoa. Depois de desistir: no manual, aperte **F3
 | Ficou parado "aguardando o operador" | É o esperado depois da meia-volta: **Liberar cumprimentos** (ou automático desligado e ligado, ou cumprimentar agora) |
 | Aparece `desconhecido` | Mais luz, pessoa mais perto, foto melhor (seção 5) |
 | F3+Y: "Não entendi" sempre | Esperado enquanto o reconhecimento de fala não estiver instalado. Teste por texto; meça o microfone com `robo_medir_voz.sh` |
-| Aviso "Microfone da webcam não encontrado" | `arecord -l`; troque o `microfone:=` do launch |
+| Aviso "Microfone da webcam não encontrado" | `arecord -l`; escreva o dispositivo certo em `data/microfone.txt` e suba de novo |
 | Cumprimento recusado, sem fala | Posição mantida por voz: **À vontade** (F3+X) |
 | Sem som | **Testar som**. Veja se a caixa está conectada e é a saída padrão no painel |
 
@@ -415,7 +416,8 @@ Pare no primeiro item que falhar.
 - [ ] Pessoa sai da frente andando: para; fala "Perdi <nome> de vista" em ~10 s.
 - [ ] **F3+↓ e F3+↑** em seguida: sobe de novo.
 - [ ] **F3+←**: cumprimenta sozinho uma vez e não repete com a pessoa parada.
-- [ ] **Voz (sem "Atenção")**: `arecord` presente; F3+Y, falar "sentido" e soltar: o painel passa por "gravando" e fica "segurando sentido"; F3+X solta.
+- [ ] **Voz** ("Atenção" está desligado): `arecord` presente; F3+Y, falar "sentido" e soltar: o painel passa por "gravando" e fica "segurando sentido"; F3+X solta.
+- [ ] **Continência** segurada: F3+X e depois F3+↓. Observe a folga dos braços (soltar pula o desc. arma).
 
 ## 11. Melhorar a precisão
 
