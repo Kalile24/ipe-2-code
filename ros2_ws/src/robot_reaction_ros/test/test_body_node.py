@@ -103,9 +103,11 @@ class _Env:
         self.node = node
         self.client = client
 
-    def send(self, passos=PASSOS, pessoa="gil", passos_json=None):
+    def send(self, passos=PASSOS, pessoa="gil", passos_json=None, voz=False):
         """Manda a rotina; devolve (aceita, future do resultado ou None)."""
-        goal = Rotina.Goal(pessoa=pessoa, passos_json=passos_json if passos_json is not None else json.dumps(passos))
+        goal = Rotina.Goal(
+            pessoa=pessoa, passos_json=passos_json if passos_json is not None else json.dumps(passos), voz=voz
+        )
         handle = _wait(self.client.send_goal_async(goal))
         return handle.accepted, (handle.get_result_async() if handle.accepted else None), handle
 
@@ -517,3 +519,148 @@ def test_desarmado_nao_chama_o_corpo_na_meia_volta(make_node):
     body = _FakeBody()
     make(body=body, armed=False, estagios=MV).run(passos=POSTURA)
     assert "meia_volta" not in body.calls
+
+
+# --- posição mantida (comandos de voz) ---
+
+SENTIDO = [{"postura": "sentido"}]
+CONTINENCIA = [{"postura": "continencia"}]
+A_VONTADE = [{"postura": "a_vontade"}]
+
+
+def _voz(env, passos):
+    return env.run(passos=passos, pessoa="voz", voz=True)
+
+
+def test_voz_mantem_a_posicao_sem_a_vontade(make_node):
+    make, _, _ = make_node
+    body = _FakeBody()
+    env = make(body=body, armed=True)
+    assert _voz(env, SENTIDO).sucesso
+    assert body.calls == ["initialize", "sentido"]
+    assert env.node._mantida == "sentido"
+    assert env.node._corpo == "mantendo:sentido"
+
+
+def test_voz_nao_aproxima_nem_faz_meia_volta(make_node):
+    make, _, _ = make_node
+    body = _FakeBody()
+    env = make(body=body, armed=True, estagios="virar,aproximar,fala,posturas,meia_volta")
+    assert _voz(env, SENTIDO).sucesso
+    assert body.calls == ["initialize", "sentido"]  # nenhuma velocidade, nenhum stop, nenhuma meia_volta
+
+
+def test_trocar_de_continencia_para_sentido(make_node):
+    make, _, _ = make_node
+    body = _FakeBody()
+    env = make(body=body, armed=True)
+    _voz(env, CONTINENCIA)
+    _voz(env, SENTIDO)
+    assert body.calls == ["initialize", "continencia", "desc_arma", "sentido"]
+
+
+def test_a_vontade_solta_a_posicao(make_node):
+    make, _, _ = make_node
+    body = _FakeBody()
+    env = make(body=body, armed=True)
+    _voz(env, SENTIDO)
+    _voz(env, A_VONTADE)
+    assert env.node._mantida is None
+    assert env.node._corpo == "livre"
+    assert body.calls[-1] == "a_vontade"
+
+
+def test_cumprimento_recusado_com_posicao_mantida(make_node):
+    make, status, _ = make_node
+    env = make(body=_FakeBody(), armed=True)
+    _voz(env, SENTIDO)
+    assert not env.send()[0]
+    assert "rotina de gil rejeitada: posicao mantida" in status
+
+
+def test_postura_que_falha_limpa_a_posicao(make_node):
+    make, _, _ = make_node
+    body = _FakeBody()
+    env = make(body=body, armed=True)
+    _voz(env, SENTIDO)
+    body.posture = lambda nome: False
+    assert not _voz(env, CONTINENCIA).sucesso
+    assert env.node._mantida is None
+    assert env.node._corpo == "livre"
+
+
+def test_corpo_publica_livre_na_partida_e_rotina_durante_a_execucao(make_node):
+    from std_msgs.msg import String
+    from rclpy.qos import DurabilityPolicy, QoSProfile
+
+    make, _, _ = make_node
+    body = _FakeBody()
+    env = make(body=body, armed=True)
+    recebidos = []
+    sub = env.client._node.create_subscription(
+        String, "/reaction/corpo", lambda m: recebidos.append(m.data),
+        QoSProfile(depth=10, durability=DurabilityPolicy.TRANSIENT_LOCAL),
+    )
+    _until(lambda: recebidos == ["livre"])  # estado de antes da assinatura chega (TRANSIENT_LOCAL)
+    body.gate = threading.Event()
+    aceita, resultado, _ = env.send(passos=SENTIDO + A_VONTADE)
+    assert aceita
+    _until(lambda: env.node._corpo == "rotina")
+    body.gate.set()
+    _wait(resultado)
+    _until(lambda: recebidos[-2:] == ["rotina", "livre"])
+
+
+def test_tempo_limite_faz_a_vontade(make_node):
+    make, status, _ = make_node
+    body = _FakeBody()
+    env = make(body=body, armed=True, params=("posicao_max_s:=0.1",))
+    _voz(env, SENTIDO)
+    _until(lambda: body.calls[-1] == "a_vontade", timeout=4)
+    _until(lambda: env.node._corpo == "livre")
+    assert env.node._mantida is None
+    assert "posicao mantida: tempo esgotado, a_vontade" in status
+
+
+def test_tempo_limite_nao_disputa_rotina(make_node):
+    make, _, _ = make_node
+    body = _FakeBody()
+    env = make(body=body, armed=True, params=("posicao_max_s:=0.1",))
+    _voz(env, SENTIDO)
+    env.node._busy.acquire()  # uma rotina em andamento
+    time.sleep(1.5)  # passa por mais de uma conferência
+    assert "a_vontade" not in body.calls
+    env.node._busy.release()
+    _until(lambda: body.calls[-1] == "a_vontade", timeout=4)  # tenta de novo depois
+
+
+def test_tempo_limite_nao_vale_depois_do_ctrl_c(make_node):
+    make, _, _ = make_node
+    body = _FakeBody()
+    env = make(body=body, armed=True, params=("posicao_max_s:=0.1",))
+    _voz(env, SENTIDO)
+    env.node._stop.set()
+    time.sleep(1.5)
+    assert "a_vontade" not in body.calls
+
+
+def test_posicao_max_s_invalida_para_o_no(make_node):
+    make, _, _ = make_node
+    with pytest.raises(ValueError):
+        make(params=("posicao_max_s:=0.0",))
+
+
+def test_ctrl_c_com_posicao_mantida_solta_os_bracos(make_node):
+    make, _, _ = make_node
+    body = _FakeBody()
+    env = make(body=body, armed=True)
+    _voz(env, SENTIDO)
+    env.node.shutdown(timeout_s=5)
+    assert body.calls[-1] == "shutdown"
+
+
+def test_goal_de_cumprimento_ainda_exige_a_vontade(make_node):
+    make, _, _ = make_node
+    env = make(body=_FakeBody(), armed=True)
+    assert not env.send(passos=SENTIDO)[0]  # sem voz: tem que terminar em a_vontade
+    assert env.send(passos=SENTIDO, voz=True)[0]

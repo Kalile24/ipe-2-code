@@ -19,7 +19,7 @@ from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
-from rclpy.qos import QoSProfile
+from rclpy.qos import DurabilityPolicy, QoSProfile
 from std_msgs.msg import String
 from vision_msgs.msg import Detection2DArray
 
@@ -32,10 +32,11 @@ from core.approach import (
     passo_aproximacao,
     validar_operacao,
 )
+from core.comandos_voz import posicao_final, transicao
 from core.meia_volta import MeiaVoltaConfig
 from core.pessoas import nome_falado
 from core.piper_voice import DEFAULT_URL, say
-from core.reaction_policy import ReactionConfigError, validate_steps
+from core.reaction_policy import A_VONTADE, ReactionConfigError, validate_steps
 from core.routine import run_routine
 from core.stages import filter_steps, parse_stages
 from robot_reaction_interfaces.action import Rotina
@@ -43,6 +44,7 @@ from robot_reaction_interfaces.action import Rotina
 # Tempos máximos. O sigterm_timeout do rotina.launch.py tem que cobrir o pior caso do Ctrl+C:
 # a postura em andamento + o a_vontade + a ordem de shutdown + a espera do processo.
 POSTURA_TIMEOUT_S = 120.0
+LIMITE_POSICAO_VERIFICA_S = 1.0  # de quanto em quanto tempo o limite da posição mantida é conferido
 INICIALIZACAO_TIMEOUT_S = 120.0
 MEIA_VOLTA_TIMEOUT_S = 60.0
 ESPERA_ROTINA_S = 2 * POSTURA_TIMEOUT_S + MEIA_VOLTA_TIMEOUT_S + 10.0
@@ -199,6 +201,7 @@ class BodyNode(Node):
         self.declare_parameter("detections_topic", "/face_recognition/detections")
         # true: inicializa só se já estiver em equilíbrio (FSM 801), sem damp → em pé (partida pelo controle)
         self.declare_parameter("so_equilibrio", False)
+        self.declare_parameter("posicao_max_s", 300.0)  # posição mantida por voz: depois disto, a_vontade sozinho
         self.declare_parameter("avisos_voz", True)  # depuração: "Perdi <nome> de vista" ao desistir
         for campo in fields(ApproachConfig):
             self.declare_parameter(campo.name, campo.default)
@@ -219,6 +222,9 @@ class BodyNode(Node):
         validar_operacao(asdict(self._meia_volta))  # fora da faixa: o nó não sobe, como parse_stages
         self._so_equilibrio = self.get_parameter("so_equilibrio").value is True
         self._avisos_voz = self.get_parameter("avisos_voz").value is True
+        self._posicao_max_s = float(self.get_parameter("posicao_max_s").value)
+        if not self._posicao_max_s > 0:
+            raise ValueError(f"posicao_max_s tem que ser maior que 0, veio {self._posicao_max_s}")
         self._pausa_s = float(self.get_parameter("pausa_s").value)
         self._speak = functools.partial(
             speak,
@@ -234,10 +240,18 @@ class BodyNode(Node):
         self._idle.set()
         self._busy = threading.Lock()  # preso durante a inicialização e durante cada rotina
         self._init_thread: threading.Thread | None = None
+        self._mantida: str | None = None  # posição mantida por um comando de voz (só mexe com _busy preso)
+        self._mantida_desde = 0.0
         self._vistos: dict[str, tuple[tuple[float, float], float]] = {}  # nome → ((center_x, size_y), instante)
 
         grupo = ReentrantCallbackGroup()  # as detecções chegam enquanto a ação executa
         self._status_pub = self.create_publisher(String, "/reaction/rotina_status", 10)
+        # TRANSIENT_LOCAL: o nó de voz e o reaction_node que subirem depois veem o último estado.
+        self._corpo_pub = self.create_publisher(
+            String, "/reaction/corpo", QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
+        )
+        self._corpo = ""
+        self._publicar_corpo("livre")
         self._detections = self.create_subscription(
             Detection2DArray,
             self.get_parameter("detections_topic").value,
@@ -245,6 +259,7 @@ class BodyNode(Node):
             QoSProfile(depth=1),
             callback_group=grupo,
         )
+        self.create_timer(LIMITE_POSICAO_VERIFICA_S, self._conferir_limite, callback_group=grupo)
         self._server = ActionServer(
             self,
             Rotina,
@@ -280,6 +295,37 @@ class BodyNode(Node):
         except Exception:  # depois do Ctrl+C o contexto ROS já fechou; o log basta
             pass
 
+    def _publicar_corpo(self, estado: str) -> None:
+        self._corpo = estado
+        try:
+            self._corpo_pub.publish(String(data=estado))
+        except Exception:  # depois do Ctrl+C o contexto ROS já fechou
+            pass
+
+    def _estado_corpo(self) -> str:
+        return f"mantendo:{self._mantida}" if self._mantida else "livre"
+
+    def _conferir_limite(self) -> None:
+        """Posição mantida por mais de posicao_max_s: à vontade sozinho. Nunca disputa uma rotina."""
+        if self._stop.is_set() or self._mantida is None:
+            return
+        if time.monotonic() - self._mantida_desde < self._posicao_max_s:
+            return
+        if not self._busy.acquire(blocking=False):  # rotina em andamento: tenta de novo daqui a pouco
+            return
+        self._idle.clear()  # o shutdown espera por nós
+        try:
+            if self._stop.is_set() or self._mantida is None:
+                return
+            self._publicar_corpo("rotina")
+            self._posture(A_VONTADE)
+            self._mantida = None
+            self._publish("posicao mantida: tempo esgotado, a_vontade")
+        finally:
+            self._publicar_corpo(self._estado_corpo())
+            self._idle.set()
+            self._busy.release()
+
     def _on_set_parameters(self, params: list) -> SetParametersResult:
         if any(p.name == "armed" for p in params):
             return SetParametersResult(successful=False, reason="armed só vale na partida (reinicie o nó)")
@@ -309,19 +355,23 @@ class BodyNode(Node):
             self._busy.release()
 
     @staticmethod
-    def _parse(request: Rotina.Goal) -> tuple[str, list[dict[str, str]]]:
+    def _parse(request: Rotina.Goal) -> tuple[str, list[dict[str, str]], bool]:
         pessoa = request.pessoa.strip()
         if not pessoa:
             raise ReactionConfigError("rotina sem pessoa")
-        return pessoa, validate_steps(pessoa, json.loads(request.passos_json))
+        voz = request.voz is True
+        return pessoa, validate_steps(pessoa, json.loads(request.passos_json), exigir_a_vontade=not voz), voz
 
     def _on_goal(self, request: Rotina.Goal) -> GoalResponse:
         try:
-            pessoa, _ = self._parse(request)
+            pessoa, _, voz = self._parse(request)
         except (ValueError, TypeError, ReactionConfigError) as exc:  # JSONDecodeError é ValueError
             self._publish(f"rotina rejeitada (mensagem inválida): {exc}")
             return GoalResponse.REJECT
         if self._stop.is_set():
+            return GoalResponse.REJECT
+        if not voz and self._mantida is not None:  # só a voz mexe com uma posição mantida
+            self._publish(f"rotina de {pessoa} rejeitada: posicao mantida")
             return GoalResponse.REJECT
         if not self._busy.acquire(blocking=False):  # solto no fim do _execute
             self._publish(f"rotina de {pessoa} rejeitada: ocupado")
@@ -383,8 +433,9 @@ class BodyNode(Node):
         if not self._stop.is_set():
             self._interromper.clear()
         try:
-            pessoa, passos = self._parse(goal_handle.request)
+            pessoa, passos, voz = self._parse(goal_handle.request)
             mensagem = ""
+            self._publicar_corpo("rotina")
 
             def log(text: str) -> None:
                 self._publish(text)
@@ -394,8 +445,11 @@ class BodyNode(Node):
                     pass
 
             self._publish(f"rotina de {pessoa}: início")
-            estado = self._aproximar(pessoa, log) if "virar" in self._estagios else PRONTO
-            if estado == PRONTO:
+            estado = PRONTO if voz or "virar" not in self._estagios else self._aproximar(pessoa, log)
+            if voz:  # nunca aproxima, filtra estágios nem faz meia-volta
+                ok = self._executar_voz(passos, log)
+                fim = "fim" if ok else "interrompida" if self._interromper.is_set() else "falhou"
+            elif estado == PRONTO:
                 ok = run_routine(
                     filter_steps(passos, self._estagios),
                     postura=self._posture,
@@ -428,8 +482,24 @@ class BodyNode(Node):
                 pass
             return Rotina.Result(sucesso=ok, mensagem=mensagem if ok else fim)
         finally:
+            self._publicar_corpo(self._estado_corpo())
             self._busy.release()
             self._idle.set()
+
+    def _executar_voz(self, passos: list[dict], log: Callable[[str], None]) -> bool:
+        """Comando de voz: vai da posição mantida até os passos e guarda onde parou (falha: solta)."""
+        ok = run_routine(
+            transicao(self._mantida, passos),
+            postura=self._posture,
+            falar=self._speak,
+            pausa_s=self._pausa_s,
+            log=log,
+            deve_parar=self._interromper.is_set,
+            sleep=self._interromper.wait,
+        )
+        self._mantida = posicao_final(self._mantida, passos) if ok else None
+        self._mantida_desde = time.monotonic()
+        return ok
 
     def _fazer_meia_volta(self, log: Callable[[str], None]) -> str:
         """Meia-volta à esquerda + passo curto. Devolve a mensagem do resultado (nunca falha a rotina)."""
