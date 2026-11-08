@@ -1,4 +1,6 @@
 """Testes do voz_node: gravador, transcrição, fala e ação dublês; os datagramas entram direto no tratador."""
+from __future__ import annotations
+
 import json
 import threading
 import time
@@ -64,9 +66,10 @@ def node():
 def _espera(n):
     for _ in range(100):
         t = n._ciclo
+        rclpy.spin_once(n, timeout_sec=0.02)  # o timer do nó manda os goals pendentes
         if t is None or not t.is_alive():
             return
-        t.join(0.05)
+        t.join(0.02)
     raise AssertionError("ciclo nao terminou")
 
 
@@ -191,7 +194,7 @@ def test_novo_aperto_durante_o_ciclo_e_ignorado(node):
     for _ in range(100):
         if node._rotina.goals:
             break
-        time.sleep(0.02)
+        rclpy.spin_once(node, timeout_sec=0.02)
     node._on_datagrama("falar_inicio")
     assert _resultados(node)[-1] == "recusado" and not node.ouvido
     node._rotina.results[0].finish(True)
@@ -216,3 +219,55 @@ def test_destroy_para_a_gravacao():
     n.destroy_node()
     rclpy.shutdown()
     assert g.parado
+
+
+def _gira(n, ate):
+    for _ in range(100):
+        rclpy.spin_once(n, timeout_sec=0.02)
+        if ate():
+            return
+    raise AssertionError("nao chegou")
+
+
+def test_a_vontade_passa_durante_a_gravacao(node):
+    node._on_datagrama("falar_inicio")
+    node._on_datagrama("comando:a_vontade")
+    _gira(node, lambda: node._rotina.goals)
+    assert json.loads(node._rotina.goals[0].passos_json) == [{"postura": "a_vontade"}]
+    assert node._gravador is not None  # a gravação segue
+
+
+def test_a_vontade_passa_com_goal_em_andamento(node):
+    node._rotina.hold = True
+    node._on_datagrama("texto:sentido")
+    _gira(node, lambda: node._rotina.goals)
+    node._on_datagrama("comando:a_vontade")
+    _gira(node, lambda: len(node._rotina.goals) == 2)
+    node._rotina.results[0].finish(True)
+    node._rotina.results[1].finish(True)
+    _espera(node)
+
+
+def test_a_vontade_com_corpo_em_rotina_e_recusado(node):
+    node._on_corpo(String(data="rotina"))
+    node._on_datagrama("comando:a_vontade")
+    _espera(node)
+    assert not node._rotina.goals and _resultados(node) == ["recusado"]
+
+
+def test_nao_entendi_nao_fala_com_corpo_em_rotina(node):
+    node._on_corpo(String(data="rotina"))
+    node._on_datagrama("texto:abacaxi")
+    _espera(node)
+    assert not node.fala and _resultados(node) == ["recusado"]
+
+
+def test_excecao_qualquer_no_iniciar_nao_deixa_surdo():
+    n = _node(falha=ValueError("x"))
+    try:
+        n._on_datagrama("falar_inicio")
+        n._on_datagrama("falar_inicio")
+        assert _resultados(n) == ["recusado", "recusado"] and not n.fala
+    finally:
+        n.destroy_node()
+        rclpy.shutdown()

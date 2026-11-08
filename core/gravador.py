@@ -5,6 +5,7 @@ import os
 import signal
 import subprocess
 import threading
+import time
 
 
 class Gravador:
@@ -32,6 +33,14 @@ class Gravador:
         )
         self._thread = threading.Thread(target=self._ler, args=(self._proc, self._pcm), daemon=True)
         self._thread.start()
+        # arecord com dispositivo errado sai na hora: sem isto o aperto gravaria silêncio
+        fim = time.monotonic() + 0.2
+        while time.monotonic() < fim:
+            if self._proc.poll() is not None:
+                codigo = self._proc.returncode
+                self.parar()
+                raise OSError(f"{self._comando[0]} saiu na partida (código {codigo})")
+            time.sleep(0.02)
 
     @staticmethod
     def _ler(proc: subprocess.Popen, pcm: bytearray) -> None:  # o pipe enche em ~2 s se ninguém ler

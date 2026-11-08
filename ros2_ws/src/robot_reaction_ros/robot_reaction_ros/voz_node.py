@@ -3,6 +3,7 @@ from __future__ import annotations
 import functools
 import json
 import os
+import queue
 import socket
 import threading
 import time
@@ -70,6 +71,8 @@ class VozNode(Node):
         self._microfone = False
         self._estado = {"texto": "", "comando": "", "resultado": "", "transcricao_s": 0.0, "microfone": False}
 
+        self._pendentes: queue.Queue = queue.Queue()  # goals a enviar pelo executor (ActionClient do Foxy não tem lock)
+        self.create_timer(0.02, self._drenar)
         self._parar = threading.Event()
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._sock.bind(("127.0.0.1", int(self.get_parameter("porta").value)))
@@ -107,6 +110,12 @@ class VozNode(Node):
             nome = msg[len("comando:"):]
             if nome not in self._tabela.comandos:
                 self.get_logger().warn(f"comando desconhecido: {nome!r}")
+            elif nome == "a_vontade":
+                # sempre passa (some o ciclo em andamento); o body_node é quem recusa o que sobrar
+                if self._corpo == "rotina":
+                    self._publicar("recusado", comando=nome)
+                else:
+                    self._despachar(nome, lambda ok: self._publicar("ok" if ok else "recusado", comando=nome))
             else:
                 self._iniciar_ciclo(self._executar, nome, "")
         elif msg.startswith("texto:"):
@@ -143,7 +152,7 @@ class VozNode(Node):
         self._microfone = bool(g.presente())  # uma vez por aperto
         try:
             g.iniciar()
-        except OSError as exc:  # inclui FileNotFoundError: sem arecord
+        except Exception as exc:  # OSError (sem arecord, saiu na partida) ou qualquer outra: nunca fica surdo
             self.get_logger().warn(f"microfone: {exc!r}")
             self._microfone = False
             self._ocupado = False
@@ -185,33 +194,52 @@ class VozNode(Node):
 
     def _executar(self, nome: str | None, texto: str, transcricao_s: float = 0.0) -> None:
         if nome is None:
+            if self._corpo == "rotina":
+                self._publicar("recusado", texto=texto, comando="", transcricao_s=transcricao_s)
+                return
             self._publicar("nao_entendi", texto=texto, comando="", transcricao_s=transcricao_s)
             self._dizer(self._tabela.nao_entendi)
-            return
-        passos = self._tabela.comandos[nome][1]
-        if not self._rotina.server_is_ready():
-            self.get_logger().warn("o body_node não está de pé")
-            self._publicar("recusado", texto=texto, comando=nome, transcricao_s=transcricao_s)
             return
         fim = threading.Event()
         resultado = []
 
-        def on_result(future) -> None:
-            resultado.append(future.result().result.sucesso)
+        def feito(ok: bool) -> None:
+            resultado.append(ok)
             fim.set()
 
-        def on_goal(future) -> None:
-            handle = future.result()
-            if not handle.accepted:
-                fim.set()
-                return
-            handle.get_result_async().add_done_callback(on_result)
-
-        goal = Rotina.Goal(pessoa="voz", passos_json=json.dumps(passos, ensure_ascii=False), voz=True)
-        self._rotina.send_goal_async(goal).add_done_callback(on_goal)
+        if not self._despachar(nome, feito):
+            self._publicar("recusado", texto=texto, comando=nome, transcricao_s=transcricao_s)
+            return
         fim.wait(ESPERA_RESULTADO_S)
         ok = bool(resultado and resultado[0])
         self._publicar("ok" if ok else "recusado", texto=texto, comando=nome, transcricao_s=transcricao_s)
+
+    def _despachar(self, nome: str, feito) -> bool:
+        """Enfileira o goal do comando; `feito(sucesso)` roda no executor. False se o body_node não está de pé."""
+        if not self._rotina.server_is_ready():
+            self.get_logger().warn("o body_node não está de pé")
+            return False
+        passos = self._tabela.comandos[nome][1]
+        goal = Rotina.Goal(pessoa="voz", passos_json=json.dumps(passos, ensure_ascii=False), voz=True)
+        self._pendentes.put((goal, feito))
+        return True
+
+    def _drenar(self) -> None:
+        """No executor: manda os goals pendentes (o ActionClient não é seguro entre threads)."""
+        while True:
+            try:
+                goal, feito = self._pendentes.get_nowait()
+            except queue.Empty:
+                return
+
+            def on_goal(future, feito=feito) -> None:
+                handle = future.result()
+                if not handle.accepted:
+                    feito(False)
+                    return
+                handle.get_result_async().add_done_callback(lambda f: feito(bool(f.result().result.sucesso)))
+
+            self._rotina.send_goal_async(goal).add_done_callback(on_goal)
 
     def _dizer(self, texto: str) -> None:
         try:
@@ -221,14 +249,14 @@ class VozNode(Node):
 
     def destroy_node(self) -> None:
         self._parar.set()
+        self._sock.close()
+        self._udp.join(2.0)
         with self._lock:
             g, self._gravador = self._gravador, None
             if self._timer is not None:
                 self._timer.cancel()
         if g is not None:
             g.parar()
-        self._sock.close()
-        self._udp.join(2.0)
         self._rotina.destroy()
         super().destroy_node()
 
