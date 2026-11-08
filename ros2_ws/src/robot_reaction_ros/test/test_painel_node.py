@@ -330,7 +330,7 @@ def _painel_vivo(monkeypatch):
     painel._parando, painel._subindo = threading.Event(), threading.Event()
     painel._image_topic, painel._operacao_alterada_em = "/imagem", 0.0
     painel._corpo, painel._voz, painel._subida_erro = "livre", {}, None
-    painel.get_node_names = lambda: []
+    painel.get_node_names = lambda: ["body_node", "voz_node"]
     painel.count_publishers = lambda _t: 0
     painel.webcam, painel.caixa, painel.pessoas = (lambda *a: {"reiniciar": False}), (lambda *a: {}), (lambda *a: [])
     painel._get_rec = painel._get_corpo = None
@@ -365,3 +365,18 @@ def test_relax_button_sends_the_voice_command(monkeypatch):
     monkeypatch.setattr(painel_mod, "enviar_voz", enviados.append)
     assert painel.acao("a_vontade")
     assert enviados == ["comando:a_vontade"]
+
+
+def test_state_drops_voice_and_held_position_when_their_nodes_are_gone(monkeypatch):
+    painel = _painel_vivo(monkeypatch)
+    painel._on_corpo(types.SimpleNamespace(data="mantendo:sentido"))
+    painel._on_voz(types.SimpleNamespace(data='{"microfone": false}'))
+    painel.get_node_names = lambda: []
+    e = painel.estado()
+    assert e["corpo"] == "livre" and e["voz"] == {}
+    painel.get_node_names = lambda: ["body_node"]
+    e = painel.estado()
+    assert e["corpo"] == "mantendo:sentido" and e["voz"] == {}
+    painel.get_node_names = lambda: ["voz_node"]
+    e = painel.estado()
+    assert e["corpo"] == "livre" and e["voz"] == {"microfone": False}

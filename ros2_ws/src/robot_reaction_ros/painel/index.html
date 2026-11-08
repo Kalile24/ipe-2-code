@@ -367,7 +367,7 @@ const RESULTADO_VOZ = {gravando: 'gravando…', transcrevendo: 'transcrevendo…
 // O texto vem do reconhecimento de fala: sempre por esc().
 function desenharVoz(e) {
   const v = e.voz || {}, c = e.corpo || '';
-  $('v_posicao').innerHTML = c.startsWith('mantendo:') ? span('warn', 'segurando ' + c.slice(9)) : '—';
+  $('v_posicao').innerHTML = c.startsWith('mantendo:') ? `<span class="warn">segurando ${esc(c.slice(9))}</span>` : '—';
   $('v_texto').innerHTML = v.texto ? esc(v.texto) : '—';
   $('v_comando').innerHTML = v.comando ? esc(v.comando) : '—';
   $('v_resultado').innerHTML = v.resultado ? esc(RESULTADO_VOZ[v.resultado] || v.resultado) : '—';

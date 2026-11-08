@@ -58,7 +58,9 @@ class VozNode(Node):
             self._tabela = carregar_comandos(yaml.safe_load(f))
 
         self._rotina = ActionClient(self, Rotina, "/reaction/rotina")
-        self._estado_pub = self.create_publisher(String, "/voz/estado", 10)
+        self._estado_pub = self.create_publisher(
+            String, "/voz/estado", QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
+        )
         self._corpo = "livre"
         self.create_subscription(
             String, "/reaction/corpo", self._on_corpo, QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)

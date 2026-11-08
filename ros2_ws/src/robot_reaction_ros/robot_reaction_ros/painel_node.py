@@ -42,8 +42,8 @@ from vision_msgs.msg import Detection2DArray
 
 from core.approach import LIMITES_OPERACAO, validar_operacao
 from core.bipes import tocar
-from core.comandos_voz import enviar_voz
 from core.caixa import CAIXA_PADRAO, caixa_atual, ler_dispositivos, mac_valido, nome_do_sink
+from core.comandos_voz import enviar_voz
 from core.config import DB_PATH, MODEL_NAME
 from core.identity_store import IdentityStore
 from core.pessoas import carregar_reacoes, nome_falado, rotina_padrao
@@ -227,7 +227,7 @@ class PainelNode(Node):
         self._corpo = "livre"  # /reaction/corpo: livre | rotina | mantendo:<postura>
         self._voz: dict = {}  # último /voz/estado
         self.create_subscription(String, "/reaction/corpo", self._on_corpo, QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
-        self.create_subscription(String, "/voz/estado", self._on_voz, 5)
+        self.create_subscription(String, "/voz/estado", self._on_voz, QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
         self._get = self.create_client(GetParameters, "/reaction_node/get_parameters")
         self._set = self.create_client(SetParameters, "/reaction_node/set_parameters")
         self._get_corpo = self.create_client(GetParameters, "/body_node/get_parameters")
@@ -518,8 +518,9 @@ class PainelNode(Node):
             "armado": self.armado(nos),
             "status": _linhas_status(status[-EVENTOS_NA_TELA:]),
             "pessoas": self.pessoas(),
-            "corpo": corpo,
-            "voz": voz,
+            # Sem o nó, o último valor guardado é velho: não mostra posição nem microfone.
+            "corpo": corpo if "body_node" in nos else "livre",
+            "voz": voz if "voz_node" in nos else {},
         }
 
     def _subir(self, args: list[str]) -> None:
