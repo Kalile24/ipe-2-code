@@ -35,12 +35,14 @@ from rcl_interfaces.msg import ParameterType, ParameterValue
 from rcl_interfaces.srv import GetParameters, SetParameters
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, QoSProfile
 from sensor_msgs.msg import CompressedImage
 from std_msgs.msg import String
 from vision_msgs.msg import Detection2DArray
 
 from core.approach import LIMITES_OPERACAO, validar_operacao
 from core.bipes import tocar
+from core.comandos_voz import enviar_voz
 from core.caixa import CAIXA_PADRAO, caixa_atual, ler_dispositivos, mac_valido, nome_do_sink
 from core.config import DB_PATH, MODEL_NAME
 from core.identity_store import IdentityStore
@@ -222,6 +224,10 @@ class PainelNode(Node):
         self._formato: tuple[float, dict | None] = (0.0, None)  # (quando leu, formato da webcam)
         self.create_subscription(Detection2DArray, self.get_parameter("detections_topic").value, self._on_detections, 1)
         self.create_subscription(String, "/reaction/rotina_status", self._on_status, 20)
+        self._corpo = "livre"  # /reaction/corpo: livre | rotina | mantendo:<postura>
+        self._voz: dict = {}  # último /voz/estado
+        self.create_subscription(String, "/reaction/corpo", self._on_corpo, QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
+        self.create_subscription(String, "/voz/estado", self._on_voz, 5)
         self._get = self.create_client(GetParameters, "/reaction_node/get_parameters")
         self._set = self.create_client(SetParameters, "/reaction_node/set_parameters")
         self._get_corpo = self.create_client(GetParameters, "/body_node/get_parameters")
@@ -235,6 +241,19 @@ class PainelNode(Node):
         with self._lock:
             self._deteccoes, self._deteccao_em = caixas, agora
             self._quadros.append(agora)
+
+    def _on_corpo(self, msg: String) -> None:
+        with self._lock:
+            self._corpo = msg.data
+
+    def _on_voz(self, msg: String) -> None:
+        try:
+            dados = json.loads(msg.data)
+        except ValueError:
+            return
+        if isinstance(dados, dict):
+            with self._lock:
+                self._voz = dados
 
     def _on_status(self, msg: String) -> None:
         with self._lock:
@@ -470,6 +489,7 @@ class PainelNode(Node):
             deteccoes = self._deteccoes if agora - self._deteccao_em <= RECENTE_S else []
             deteccao_viva = agora - self._deteccao_em <= RECENTE_S
             status = list(self._status)
+            corpo, voz = self._corpo, dict(self._voz)
         nos = set(self.get_node_names())
         desde = sessao_criada()
         # Status de uma subida anterior não diz nada sobre esta.
@@ -498,6 +518,8 @@ class PainelNode(Node):
             "armado": self.armado(nos),
             "status": _linhas_status(status[-EVENTOS_NA_TELA:]),
             "pessoas": self.pessoas(),
+            "corpo": corpo,
+            "voz": voz,
         }
 
     def _subir(self, args: list[str]) -> None:
@@ -562,6 +584,9 @@ class PainelNode(Node):
             return self.set_reacao("cumprimentar_agora", "agora")
         if nome == "liberar":  # todos podem ser cumprimentados de novo já (sem os 5 min)
             return self.set_reacao("liberar", "todos")
+        if nome == "a_vontade":  # o mesmo comando da voz e do F2+X: o nó de voz decide se pode
+            enviar_voz("comando:a_vontade")
+            return "à vontade enviado"
         if nome == "automatico":
             atual = self.param_reacao("automatico")
             return "reaction_node não respondeu" if atual is None else self.set_reacao("automatico", not atual)
