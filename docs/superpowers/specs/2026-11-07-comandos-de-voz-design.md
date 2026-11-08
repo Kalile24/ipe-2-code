@@ -51,19 +51,20 @@ comandos, previsível e rápida.
 sem armar o robô. Escolha do Claude.
 
 **Recusado (nada se mexe, o painel mostra o motivo):** rotina de cumprimento em andamento, ou o robô
-ainda falando a resposta anterior. Em caso de recusa durante um cumprimento, o robô fala uma frase
-curta ("Aguarde, estou em uma rotina"), escolha do Claude.
+ainda falando a resposta anterior. A recusa é **silenciosa** (decisão do usuário, 2026-11-08): o robô não
+fala nada, só o painel avisa.
 
 ## Decisões de implementação (escolhas do Claude, o usuário pode mudar)
 
-- **Combos do controle**, no `core/remote_combos.py`, sem repetir os que existem (F2+UP/RIGHT/LEFT/
-  DOWN/B/A) nem os F1+… do `~/hhhh`:
-  - **F2 + Y, segurado:** fala (grava enquanto estiver apertado).
-  - **F2 + X:** à vontade.
-  O `robo_controle.py` já lê o controle; ele passa a detectar também o **soltar** do F2+Y.
+- **Combos do controle**, no `core/remote_combos.py`, sem repetir os que existem nem os F1+… do
+  `~/hhhh`. O botão é o que os guias chamam de **F3** (bit `0x80`, `F2` no código):
+  - **F3 + Y, segurado:** fala (grava enquanto estiver apertado).
+  - **F3 + X:** à vontade.
+  O `robo_controle.py` já lê o controle; ele passa a detectar também o **soltar** do F3+Y e avisa o
+  nó de voz por um datagrama UDP local (`ros2 param set` levaria ~1 s e cortaria o começo da fala).
 - **Tabela de comandos num YAML** (`config/comandos_voz.yaml`): palavras-chave → passos, no mesmo
-  formato de passos do `reactions.yaml` (`postura`, `fala`, `pausa`), mais um campo que diz se a
-  posição é mantida. O texto de "não entendi" e de "aguarde" fica no mesmo arquivo.
+  formato de passos do `reactions.yaml` (`postura`, `fala`, `pausa`). A posição é mantida quando
+  a última postura não é `a_vontade`. O texto de "não entendi" fica no mesmo arquivo.
 - **Whisper:** primeiro tentar o que já está no robô (a imagem `openvoice-piper-whisper-jetson:1.0`,
   usada pelo `scripts/robo_voz.sh` só para o Piper), num contêiner nosso como o `ipe-piper`. Se o
   modelo de lá não servir para português ou for lento, faster-whisper `small` multilíngue, int8.
