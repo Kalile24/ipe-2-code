@@ -32,7 +32,7 @@ from core.approach import (
     passo_aproximacao,
     validar_operacao,
 )
-from core.comandos_voz import posicao_final, transicao
+from core.comandos_voz import transicao
 from core.meia_volta import MeiaVoltaConfig
 from core.pessoas import nome_falado
 from core.piper_voice import DEFAULT_URL, say
@@ -318,9 +318,17 @@ class BodyNode(Node):
             if self._stop.is_set() or self._mantida is None:
                 return
             self._publicar_corpo("rotina")
-            self._posture(A_VONTADE)
-            self._mantida = None
-            self._publish("posicao mantida: tempo esgotado, a_vontade")
+            try:
+                ok = self._posture(A_VONTADE)
+            except Exception as exc:
+                self._publish(f"posicao mantida: a_vontade falhou ({exc!r})")
+                ok = False
+            if ok:
+                self._mantida = None
+                self._publish("posicao mantida: tempo esgotado, a_vontade")
+            else:  # braços ainda presos: tenta de novo daqui a posicao_max_s, não a cada segundo
+                self._mantida_desde = time.monotonic()
+                self._publish("posicao mantida: a_vontade falhou")
         finally:
             self._publicar_corpo(self._estado_corpo())
             self._idle.set()
@@ -370,11 +378,12 @@ class BodyNode(Node):
             return GoalResponse.REJECT
         if self._stop.is_set():
             return GoalResponse.REJECT
-        if not voz and self._mantida is not None:  # só a voz mexe com uma posição mantida
-            self._publish(f"rotina de {pessoa} rejeitada: posicao mantida")
-            return GoalResponse.REJECT
         if not self._busy.acquire(blocking=False):  # solto no fim do _execute
             self._publish(f"rotina de {pessoa} rejeitada: ocupado")
+            return GoalResponse.REJECT
+        if not voz and self._mantida is not None:  # só a voz mexe com uma posição mantida
+            self._busy.release()
+            self._publish(f"rotina de {pessoa} rejeitada: posicao mantida")
             return GoalResponse.REJECT
         return GoalResponse.ACCEPT
 
@@ -483,23 +492,44 @@ class BodyNode(Node):
             return Rotina.Result(sucesso=ok, mensagem=mensagem if ok else fim)
         finally:
             self._publicar_corpo(self._estado_corpo())
-            self._busy.release()
             self._idle.set()
+            self._busy.release()
 
     def _executar_voz(self, passos: list[dict], log: Callable[[str], None]) -> bool:
-        """Comando de voz: vai da posição mantida até os passos e guarda onde parou (falha: solta)."""
-        ok = run_routine(
-            transicao(self._mantida, passos),
-            postura=self._posture,
-            falar=self._speak,
-            pausa_s=self._pausa_s,
-            log=log,
-            deve_parar=self._interromper.is_set,
-            sleep=self._interromper.wait,
-        )
-        self._mantida = posicao_final(self._mantida, passos) if ok else None
-        self._mantida_desde = time.monotonic()
-        return ok
+        """Comando de voz: vai da posição mantida até os passos.
+
+        A posição guardada segue o que as posturas fizeram, em qualquer saída: uma postura que
+        falha deixa os braços talvez no meio do caminho (vale ela), exceto a_vontade que falhou
+        (nada mudou).
+        """
+        mantida = self._mantida
+
+        def postura(nome: str) -> bool:
+            nonlocal mantida
+            try:
+                ok = self._posture(nome)
+            except Exception as exc:
+                log(f"postura {nome} falhou: {exc!r}")
+                ok = False
+            if ok:
+                mantida = None if nome == A_VONTADE else nome
+            elif nome != A_VONTADE:
+                mantida = nome
+            return ok
+
+        try:
+            return run_routine(
+                transicao(self._mantida, passos),
+                postura=postura,
+                falar=self._speak,
+                pausa_s=self._pausa_s,
+                log=log,
+                deve_parar=self._interromper.is_set,
+                sleep=self._interromper.wait,
+            )
+        finally:
+            self._mantida = mantida
+            self._mantida_desde = time.monotonic()
 
     def _fazer_meia_volta(self, log: Callable[[str], None]) -> str:
         """Meia-volta à esquerda + passo curto. Devolve a mensagem do resultado (nunca falha a rotina)."""

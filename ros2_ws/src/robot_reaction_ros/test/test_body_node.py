@@ -578,15 +578,67 @@ def test_cumprimento_recusado_com_posicao_mantida(make_node):
     assert "rotina de gil rejeitada: posicao mantida" in status
 
 
-def test_postura_que_falha_limpa_a_posicao(make_node):
+def test_so_a_primeira_postura_falha_e_o_a_vontade_de_recuperacao_solta(make_node):
     make, _, _ = make_node
     body = _FakeBody()
     env = make(body=body, armed=True)
-    _voz(env, SENTIDO)
-    body.posture = lambda nome: False
-    assert not _voz(env, CONTINENCIA).sucesso
+    body.posture = lambda nome: nome == "a_vontade"
+    assert not _voz(env, SENTIDO).sucesso  # o run_routine tenta a_vontade sozinho
     assert env.node._mantida is None
     assert env.node._corpo == "livre"
+
+
+def test_a_vontade_que_falha_mantem_a_posicao_e_o_limite_tenta_de_novo(make_node):
+    make, status, _ = make_node
+    body = _FakeBody()
+    env = make(body=body, armed=True, params=("posicao_max_s:=0.1",))
+    _voz(env, SENTIDO)
+    tentativas = []
+
+    def posture(nome):
+        tentativas.append(nome)
+        return False
+
+    body.posture = posture
+    _until(lambda: len(tentativas) >= 2, timeout=6)  # falhou e tentou de novo
+    assert env.node._mantida == "sentido"
+    assert env.node._corpo == "mantendo:sentido"
+    assert "posicao mantida: a_vontade falhou" in status
+    assert not env.send()[0]  # cumprimento continua recusado
+
+
+def test_a_vontade_que_levanta_no_limite_nao_derruba_e_tenta_de_novo(make_node):
+    make, _, _ = make_node
+    body = _FakeBody()
+    env = make(body=body, armed=True, params=("posicao_max_s:=0.1",))
+    _voz(env, SENTIDO)
+    tentativas = []
+
+    def posture(nome):
+        tentativas.append(nome)
+        raise RuntimeError("sem DDS")
+
+    body.posture = posture
+    _until(lambda: len(tentativas) >= 2, timeout=6)
+    assert env.node._mantida == "sentido"
+    assert env.node._corpo == "mantendo:sentido"
+
+
+def test_cancelar_um_goal_de_voz_cancela_e_guarda_a_posicao(make_node):
+    from action_msgs.msg import GoalStatus
+
+    make, _, _ = make_node
+    body = _FakeBody()
+    env = make(body=body, armed=True)
+    body.gate = threading.Event()
+    aceita, resultado, handle = env.send(passos=SENTIDO, pessoa="voz", voz=True)
+    assert aceita
+    _until(lambda: "sentido" in body.calls)
+    _wait(handle.cancel_goal_async())
+    body.gate.set()
+    assert _wait(resultado).status == GoalStatus.STATUS_CANCELED
+    assert env.node._mantida == "sentido"  # a postura em andamento terminou
+    assert env.node._corpo == "mantendo:sentido"
 
 
 def test_corpo_publica_livre_na_partida_e_rotina_durante_a_execucao(make_node):
