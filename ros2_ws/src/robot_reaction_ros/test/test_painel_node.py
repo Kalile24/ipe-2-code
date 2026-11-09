@@ -371,6 +371,44 @@ def test_relax_button_sends_the_voice_command(monkeypatch):
     assert enviados == ["comando:a_vontade"]
 
 
+def test_order_buttons_send_their_voice_command(monkeypatch):
+    painel = _painel_vivo(monkeypatch)
+    enviados = []
+    monkeypatch.setattr(painel_mod, "enviar_voz", enviados.append)
+    assert painel.acao("sentido") == "sentido enviado"
+    assert enviados == ["comando:sentido"]
+
+
+def _painel_estagios(tmp_path, monkeypatch, nos, resultado="ok"):
+    painel = _painel(tmp_path, monkeypatch)
+    _yaml(tmp_path / "config" / "operacao.yaml", {"estagios": "virar,fala", "vyaw_meia_volta": 0.5, "vx": 0.2, "vyaw_min": 0.3, "centro_chegada": 0.3})
+    painel.get_node_names = lambda: nos
+    painel._params, painel._set_corpo, painel._operacao_alterada_em = {}, None, 0.0
+    painel._set_param = lambda *a: resultado
+    return painel
+
+
+def test_stages_apply_now_and_are_not_pending_when_the_body_is_up(tmp_path, monkeypatch):
+    painel = _painel_estagios(tmp_path, monkeypatch, ["body_node"])
+    assert painel.aplicar_estagios("fala") == {"ok": True, "mensagem": "valendo já"}
+    assert painel.operacao()["estagios"] == "fala"
+    assert painel._operacao_alterada_em == 0.0
+    assert painel._params[("body_node", "estagios")][0] == "fala"
+
+
+def test_stages_refused_by_the_body_are_not_saved(tmp_path, monkeypatch):
+    painel = _painel_estagios(tmp_path, monkeypatch, ["body_node"], "rotina em andamento: tente quando terminar")
+    antes = painel.operacao()["estagios"]
+    assert painel.aplicar_estagios("fala")["ok"] is False
+    assert painel.operacao()["estagios"] == antes
+
+
+def test_stages_with_the_robot_stopped_wait_for_the_next_start(tmp_path, monkeypatch):
+    painel = _painel_estagios(tmp_path, monkeypatch, [])
+    assert painel.aplicar_estagios("fala")["mensagem"] == "vale na próxima subida"
+    assert painel.aplicar_estagios("nada")["ok"] is False
+
+
 def test_state_drops_voice_and_held_position_when_their_nodes_are_gone(monkeypatch):
     painel = _painel_vivo(monkeypatch)
     painel._on_corpo(types.SimpleNamespace(data="mantendo:sentido"))

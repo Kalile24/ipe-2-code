@@ -71,6 +71,7 @@ PARAM_RETRY_S = 10.0  # nó que não respondeu um parâmetro fixo: só pergunta 
 FOTOS_MAX = 10
 CORPO_MAX = 64 * 1024 * 1024  # 10 fotos de 1280 px cabem com folga
 EVENTOS_NA_TELA = 30
+ORDENS = {"sentido": "sentido", "continencia": "continência", "apresentacao": "apresentação", "a_vontade": "à vontade"}  # nomes de config/comandos_voz.yaml
 
 
 def registrar_status(status: deque, texto: str, agora: float) -> None:
@@ -230,6 +231,7 @@ class PainelNode(Node):
         self.create_subscription(String, "/voz/estado", self._on_voz, QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
         self._get = self.create_client(GetParameters, "/reaction_node/get_parameters")
         self._set = self.create_client(SetParameters, "/reaction_node/set_parameters")
+        self._set_corpo = self.create_client(SetParameters, "/body_node/set_parameters")
         self._get_corpo = self.create_client(GetParameters, "/body_node/get_parameters")
         self._get_rec = self.create_client(GetParameters, "/face_recognition_node/get_parameters")
         self._cadastrar = self.create_client(Cadastrar, "/face_recognition_node/cadastrar")
@@ -281,14 +283,15 @@ class PainelNode(Node):
 
     def _param_fixo(self, no: str, cliente: object, nome: str, nos: set) -> object | None:
         """Parâmetro que não muda enquanto o nó vive: pergunta uma vez, sem pesar a cada 1 s do painel."""
+        chave = (no, nome)
         if no not in nos:
-            self._params.pop(no, None)
+            self._params.pop(chave, None)
             return None
-        valor, perguntou_em = self._params.get(no, (None, float("-inf")))
+        valor, perguntou_em = self._params.get(chave, (None, float("-inf")))
         if valor is None and time.monotonic() - perguntou_em >= PARAM_RETRY_S:
             resposta = self._chamar(cliente, GetParameters.Request(names=[nome]), 1.0)
             valor = valor_param(resposta.values[0]) if resposta is not None and resposta.values else None
-            self._params[no] = (valor, time.monotonic())
+            self._params[chave] = (valor, time.monotonic())
         return valor
 
     def armado(self, nos: set) -> bool | None:
@@ -310,13 +313,16 @@ class PainelNode(Node):
         return None if valor is None else str(valor).lower() == "true"
 
     def set_reacao(self, nome: str, valor: object) -> str:
+        return self._set_param(self._set, "reaction_node", nome, valor)
+
+    def _set_param(self, cliente: object, no: str, nome: str, valor: object) -> str:
         if isinstance(valor, bool):
             pv = ParameterValue(type=ParameterType.PARAMETER_BOOL, bool_value=valor)
         else:
             pv = ParameterValue(type=ParameterType.PARAMETER_STRING, string_value=str(valor))
-        resposta = self._chamar(self._set, SetParameters.Request(parameters=[ParameterMsg(name=nome, value=pv)]), 3.0)
+        resposta = self._chamar(cliente, SetParameters.Request(parameters=[ParameterMsg(name=nome, value=pv)]), 3.0)
         if resposta is None:
-            return "reaction_node não respondeu (a rotina está de pé?)"
+            return f"{no} não respondeu (a rotina está de pé?)"
         r = resposta.results[0]
         return "ok" if r.successful else r.reason
 
@@ -515,6 +521,9 @@ class PainelNode(Node):
             "body_node": "body_node" in nos,
             "automatico": self.param_reacao("automatico") if "reaction_node" in nos else None,
             "reaction_node": "reaction_node" in nos,
+            "voz_node": "voz_node" in nos,
+            # ponytail: guardado enquanto o nó vive; um `ros2 param set` à mão não aparece aqui.
+            "estagios": self._param_fixo("body_node", self._get_corpo, "estagios", nos),
             "armado": self.armado(nos),
             "status": _linhas_status(status[-EVENTOS_NA_TELA:]),
             "pessoas": self.pessoas(),
@@ -585,11 +594,11 @@ class PainelNode(Node):
             return self.set_reacao("cumprimentar_agora", "agora")
         if nome == "liberar":  # todos podem ser cumprimentados de novo já (sem os 5 min)
             return self.set_reacao("liberar", "todos")
-        if nome == "a_vontade":  # o mesmo comando da voz e do F3+X: o nó de voz decide se pode
+        if nome in ORDENS:  # o mesmo comando da voz e do F3+X: o nó de voz decide se pode
             if "voz_node" not in self.get_node_names():
                 return "nó de voz fora do ar: não enviei"
-            enviar_voz("comando:a_vontade")
-            return "à vontade enviado"
+            enviar_voz(f"comando:{nome}")
+            return f"{ORDENS[nome]} enviado"
         if nome == "automatico":
             atual = self.param_reacao("automatico")
             return "reaction_node não respondeu" if atual is None else self.set_reacao("automatico", not atual)
@@ -637,6 +646,24 @@ class PainelNode(Node):
             yaml.safe_dump({"/**": {"ros__parameters": atual}}, f, allow_unicode=True, sort_keys=False)
         self._operacao_alterada_em = time.time()
         return f"salvo em {self._operacao_file}; vale na próxima subida da rotina"
+
+    def aplicar_estagios(self, lista: str) -> dict:
+        """Grava os estágios e, com o body_node de pé, já valem no próximo cumprimento."""
+        try:
+            parse_stages(lista)
+        except ValueError as exc:
+            return {"ok": False, "mensagem": str(exc)}
+        vivo = "body_node" in self.get_node_names()
+        if vivo:
+            resultado = self._set_param(self._set_corpo, "body_node", "estagios", lista)
+            if resultado != "ok":  # não grava o que o robô recusou: tela e robô ficam iguais
+                return {"ok": False, "mensagem": resultado}
+            self._params[("body_node", "estagios")] = (lista, time.monotonic())
+        pendente_desde = self._operacao_alterada_em
+        self.salvar_operacao({"estagios": lista})
+        if vivo:  # já valeu: não é ajuste pendente para a próxima subida
+            self._operacao_alterada_em = pendente_desde
+        return {"ok": True, "mensagem": "valendo já" if vivo else "vale na próxima subida"}
 
     def diagnostico(self) -> str:
         """Tudo de uma vez, em texto, para olhar ou mandar para alguém quando não há cabo."""
@@ -726,6 +753,8 @@ def handler(painel: PainelNode) -> type:
                         self._json({"ok": True, "mensagem": painel.salvar_operacao(self._corpo())})
                     except ValueError as exc:
                         self._json({"ok": False, "mensagem": str(exc)})
+                elif self.path == "/estagios":
+                    self._json(painel.aplicar_estagios(str(self._corpo().get("estagios", ""))))
                 elif self.path == "/operacao/restaurar":
                     self._json({"mensagem": painel.restaurar_operacao()})
                 elif self.path == "/pessoa":

@@ -195,7 +195,7 @@ estágio. Logo abaixo aparecem os problemas, em vermelho. Sem resposta do robô 
 
 | Aba | Para que serve |
 |---|---|
-| **Operar** | Estado de webcam (nome, formato real, quedas), câmera, reconhecimento e caixa; comandos; quem está na frente, com nota, altura do rosto e desvio; **Eventos** e **Baixar diagnóstico** |
+| **Operar** | Estado de webcam (nome, formato real, quedas), câmera, reconhecimento e caixa; comandos e ordens (Sentido, Continência, Apresentação, À vontade); o que o robô faz ao cumprimentar (marcar e desmarcar vale já; recusado durante uma rotina); quem está na frente, com nota, altura do rosto e desvio; **Eventos** e **Baixar diagnóstico** |
 | **Calibrar** | Passo a passo da distância de parada e os demais ajustes (seção 7) |
 | **Pessoas** | Quem tem foto e rotina, **Remover** e cadastro (seção 5) |
 | **Sistema** | Testar e trocar a caixa (seção 6) e o **Log técnico**: estado, ajustes, eventos e a janela `rotina` do tmux |
@@ -334,7 +334,7 @@ fica em **"aguardando o operador"** (durante o giro: **"fazendo meia-volta"**). 
 cumprimentos** no painel, ou desligar e ligar o automático (F3+←, duas vezes), ou **cumprimentar agora** (só libera se alguém for reconhecido).
 Desarmado, só registra `dry_run meia_volta` (e também espera o operador). **PARAR** ou F3+↓ interrompe o giro
 e o passo na hora. O passo é **cego**: deixe ~1 m livre atrás de onde o robô começa. Para não usar, desmarque
-**Meia-volta** nos estágios e salve (ajustes antigos ganham o estágio na próxima subida; desmarcado e salvo, fica
+**Meia-volta** em **O que o robô faz ao cumprimentar**, na aba **Operar** (vale já no próximo cumprimento; ajustes antigos ganham o estágio na próxima subida; desmarcado, fica
 desmarcado). Primeiro uso: meça o giro com `scripts/robo_medir_giro.py`
 ([`teste-no-robo.md`](teste-no-robo.md), seção 0).
 

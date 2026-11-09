@@ -337,6 +337,19 @@ class BodyNode(Node):
     def _on_set_parameters(self, params: list) -> SetParametersResult:
         if any(p.name == "armed" for p in params):
             return SetParametersResult(successful=False, reason="armed só vale na partida (reinicie o nó)")
+        for p in params:
+            if p.name == "estagios":
+                try:
+                    novos = parse_stages(str(p.value))
+                except ValueError as exc:
+                    return SetParametersResult(successful=False, reason=str(exc))
+                # Sob _busy: uma rotina em andamento não troca de estágios no meio.
+                if not self._busy.acquire(blocking=False):
+                    return SetParametersResult(successful=False, reason="rotina em andamento: tente quando terminar")
+                try:
+                    self._estagios = novos
+                finally:
+                    self._busy.release()
         return SetParametersResult(successful=True)
 
     def _initialize(self, body_factory: Callable[..., object], *args: object) -> None:

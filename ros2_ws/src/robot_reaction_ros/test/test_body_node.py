@@ -250,6 +250,21 @@ def test_armed_cannot_change_after_start(make_node):
     assert not result[0].successful
 
 
+def test_stages_change_live_but_not_during_a_routine_or_to_an_invalid_list(make_node):
+    make, _, _ = make_node
+    env = make()
+    estagios = lambda lista: env.node.set_parameters([Parameter("estagios", Parameter.Type.STRING, lista)])[0]
+    assert env.node._busy.acquire(timeout=5)  # como uma rotina em andamento
+    antes = env.node._estagios
+    assert not estagios("fala").successful
+    assert env.node._estagios == antes
+    env.node._busy.release()
+    assert estagios("fala").successful
+    assert env.node._estagios == frozenset({"fala"})
+    assert not estagios("voar").successful
+    assert env.node._estagios == frozenset({"fala"})
+
+
 def test_cancel_stops_after_the_current_step_and_releases_the_arms(make_node):
     make, status, _ = make_node
     body = _FakeBody()
