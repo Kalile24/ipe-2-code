@@ -107,7 +107,8 @@ start/end HTML-comment markers, without disturbing the rest of the file.
 - **Antes de mexer no robô, avise e espere o operador.** Parar ou subir a rotina, reiniciar serviços, instalar código ou
   rodar testes no robô só depois de dizer o que vai acontecer e de o operador confirmar que o robô está seguro (no
   suporte, ou em pé com alguém segurando e o controle da Unitree na mão). Nunca encadeie "parar → instalar → subir
-  armado" num comando só. (2026-11-10: o robô agachou e caiu durante um deploy feito sem aviso; causa não confirmada.)
+  armado" num comando só. (2026-11-10: o robô agachou durante um deploy feito sem aviso; era a proteção de bateria
+  baixa, 4%: confira a carga antes de testes armados, `rt/lf/bmsstate`, campo `soc`.)
 - **Revise o código antes de instalar no robô.** Leia o diff inteiro procurando qualquer caminho que mande comando ao
   corpo (`body_worker`, `G1ArmController`, `LocoClient`/`SetVelocity`, `SetFsmId`/damp, `ChannelFactoryInitialize`,
   scripts `robo_*`) e rode `/code-review` no que muda movimento, parada ou inicialização. Testes que tocam o corpo usam
