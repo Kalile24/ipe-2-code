@@ -2,7 +2,8 @@
 
 Data: 2026-11-10. Contexto: continua a meia-volta (`2026-11-07-meia-volta-design.md`), os comandos de voz
 (`2026-11-07-comandos-de-voz-design.md`, agora com Vosk) e o painel (`2026-11-04-painel-design.md`).
-Status: **proposta, não implementado**.
+Status: **implementado em 2026-11-10** (retorno, escuta contínua, painel, fala de apresentação e cadastro pela
+webcam); o retorno ainda não andou no robô (falta a medição da odometria, guia `teste-no-robo.md` 9a).
 
 ## Decisões do usuário (2026-11-10)
 

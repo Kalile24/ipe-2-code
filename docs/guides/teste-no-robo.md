@@ -202,6 +202,22 @@ robô começa. Operador com o controle na mão.
 Ajustes (grupo **Meia-volta** na aba Calibrar): `vyaw_meia_volta` 0,5 rad/s, `tolerancia_meia_volta_graus`
 10°, `passo_m` 0,2 m (0 = sem passo), `vx_passo` 0,2 m/s, `tempo_max_meia_volta_s` 12 s.
 
+### 9a. Retorno ao ponto de partida
+
+Depois da meia-volta, anda até onde estava ao reconhecer a pessoa e vira de frente para ela. Design:
+[`2026-11-10-retorno-escuta-painel-design.md`](../superpowers/specs/2026-11-10-retorno-escuta-painel-design.md).
+
+1. **Medir a odometria (só leitura, nenhum comando ao robô):** `python3 scripts/robo_medir_odometria.py`. Marque o chão,
+   ande ~1 m pelo controle da Unitree, volte à marca e fique 20 s parado; Ctrl+C mostra o resumo. Tem que dar `andou`
+   perto da distância real e `do inicio` < 0,15 m na marca. O `rt/odommodestate` publica neste G1 (o de 20 Hz, `rt/lf/…`,
+   não). Se a odometria não acompanhar, não ligue o retorno.
+2. **Desarmado:** marque **Retorno** no painel e cumprimente: nada se mexe; o log só não tem erro.
+3. **Armado, com espaço:** a pessoa a ~3 m, caminho livre. F3+→: aproxima, cumprimenta, meia-volta, **anda de volta**
+   ("retorno: andando (faltam …)") e **vira de frente** ("retorno: virando para a pessoa", "retorno: fim").
+4. **F3+↓ no meio da volta e no meio do giro final:** para na hora.
+5. Se falhar: `retorno: falhou (tempo esgotado | afastando do ponto de partida | sem odometria | sem ponto de partida |
+   interrompida)`. Ajustes no grupo **Retorno** da aba Calibrar (comece com `vx_retorno` 0,2–0,3).
+
 ## 10. Comandos de voz
 
 O reconhecimento de fala é o Vosk com a gramática dos comandos (instalação: [`jetson-deployment.md`](jetson-deployment.md)
@@ -232,6 +248,10 @@ Troque `sentido` por `apresentar arma`, `atenção`, `apresente se`, `descansar 
 - [ ] `texto:sentido`: o painel mostra "segurando sentido"; durante ele, F3+→ toca os dois tons graves de recusado.
 - [ ] Com F3+Y segurado, F3+↓ ainda para tudo.
 - [ ] Segurando **Apresentar arma**, F3+X e depois F3+↓: observe a folga dos braços (soltar pula o desc. arma).
+- [ ] "Tenente Nichinica, apresentar arma" e depois "Tenente Nichinica, descansar arma": o braço desce rápido e fica à vontade.
+- [ ] **Escuta contínua (F3+L1):** dois tons subindo e "Escuta ligada"; o painel mostra ESCUTANDO. Sem apertar nada,
+      "Tenente Nichinica, sentido" executa; "sentido" sozinho não. Conversa perto do robô não dispara nada. F3+Y ainda
+      funciona. F3+L1 de novo: dois tons descendo e "Escuta desligada". O botão do cartão **Voz** faz o mesmo.
 - [ ] **F3+R1**: sentido, a fala de apresentação pela caixa e à vontade. No painel, mude o texto, salve e aperte
       **Fala de apresentação**: tem que sair o texto novo. Ajuste a pronúncia de "Nichinica" e "Níksi" se precisar.
 - [ ] F3+X (ou o botão **À vontade**) solta; sem nada, solta sozinho em 300 s (`posicao_max_s`).
@@ -240,6 +260,8 @@ Troque `sentido` por `apresentar arma`, `atenção`, `apresente se`, `descansar 
 
 - A janela `status` (o que o body_node fez) e o log da janela `rotina`.
 - Da meia-volta: a saída do `robo_medir_giro.py` e a linha `meia_volta:` do status.
+- Do retorno: o resumo do `robo_medir_odometria.py` e as linhas `retorno:` do status.
+- Da escuta contínua: as linhas `escuta:` do log da janela `rotina` (o que ouviu e o comando).
 - Em qual etapa deste guia, com quais `--estagios` e qual `operacao.yaml`.
 - O arquivo do **Baixar diagnóstico**, do painel.
 - Pelo controle: `journalctl --user -u ipe-controle --since "-10min"`.

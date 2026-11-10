@@ -154,6 +154,7 @@ Segure **F3** e aperte o outro botão.
 | **F3 + B** (segurar 1,5 s) | **Damp. Só no suporte.** Recusado com a rotina de pé | três curtos; três descendo |
 | **F3 + Y** (segurar e falar, até 8 s) | Grava o comando de voz; ao soltar, o robô o executa. Recusado enquanto uma rotina roda; com o nó de voz fora do ar, nada acontece | sem bipe |
 | **F3 + X** | **À vontade:** solta a posição mantida por voz (o mesmo do botão **À vontade** do painel) | |
+| **F3 + L1** | **Escuta contínua de voz:** liga/desliga. O robô ouve sem apertar nada, só frases que começam por "Tenente…" | dois tons subindo + "Escuta ligada"; dois descendo + "Escuta desligada" |
 | **F3 + R1** | **Fala de apresentação:** sentido, o texto e à vontade (o mesmo do botão **Fala de apresentação**). Recusado enquanto uma rotina roda | |
 
 **Dois tons graves = recusado:** nada aconteceu. O L2+B da Unitree não dá damp no modo de equilíbrio.
@@ -171,6 +172,12 @@ sozinha em 8 s). Pode usar o vocativo ("Tenente Nichinica, sentido") ou só o co
 | **Apresente-se** | Sentido, "Sou o Tenente Nichinica" e à vontade |
 | **Descansar arma** | Depois do apresentar arma: abaixa o braço rápido (como na rotina de cumprimento) e fica à vontade |
 | **À vontade** | Solta a posição (também **F3+X** e o botão **À vontade**) |
+
+**Escuta contínua** (F3+L1 ou **Ligar escuta contínua** no cartão **Voz** do painel): o robô ouve o tempo todo, sem
+apertar nada, mas **só aceita frases que começam por "Tenente"** ("Tenente Nichinica, sentido"): "sentido" solto, vindo da
+plateia, não dispara. Ao ligar: dois tons subindo e "Escuta ligada"; ao desligar, dois descendo e "Escuta desligada"; o
+painel mostra **ESCUTANDO**. Não ouve enquanto um cumprimento ou um comando está em andamento (o robô pode estar falando)
+nem 1 s depois. O F3+Y continua funcionando com a escuta ligada. Começa **desligada** a cada subida; PARAR desliga.
 
 **Fala de apresentação** (F3+R1 ou o botão no painel): sentido, "Olá oficiais, alunos e banca avaliadora, sou o Tenente
 Nichinica, o robô humanoide do projeto Níksi." e à vontade. Edite o texto no painel (aba **Operar**, **Ordens**, "Texto da
@@ -231,8 +238,14 @@ use fotos com uma pessoa só.
 padrão e a fala *"Olá, <tratamento> <Nome>, sou o Tenente Nichinica"*. A rotina vale na **próxima subida**.
 Se o nome soar mal, preencha **Nome falado** como ele deve soar.
 
+**Cadastro rápido pela webcam do robô** (recomendado: usa a câmera que vai reconhecer): rotina de pé e **desarmada**;
+nome e, para pessoa nova, tratamento; a pessoa **de frente para o robô, a ~1 m, parada por 3 s**; clique
+**Fotografar pela webcam do robô** (não o **Salvar**: sem foto escolhida, o Salvar só grava a rotina). Ele usa os 8
+quadros dos últimos ~3 s e responde "<nome> cadastrado: N foto(s) aproveitada(s)". Repita de outro ângulo para somar fotos.
+
 **Coronel Aderson:** tem rotina (*"Olá, coronel veterano Aderson, sou o Tenente Nichinica"*) e está no banco
-enviado pelo notebook, com 6 fotos. O Gil tem 2. Só esses dois têm rotina no projeto.
+enviado pelo notebook, com 6 fotos. O Gil tem 2. Só esses dois têm rotina no projeto; os cadastrados pelo painel (ex.:
+bianco) ficam em `data/reactions.yaml` no robô.
 
 **Remover alguém:** primeiro pare a rotina, depois **Remover** na lista. As fotos são apagadas. Para
 gil e aderson, a rotina continua no projeto e pode receber foto nova.
@@ -336,6 +349,13 @@ na próxima subida. O painel recusa valores fora da faixa e combinações que de
 | | Passo à frente | `passo_m` | 0,2 | 0–0,5 | m. 0 = sem passo |
 | | Velocidade do passo | `vx_passo` | 0,2 | 0,05–0,3 | m/s |
 | | Tempo máximo da meia-volta | `tempo_max_meia_volta_s` | 12 | 5–30 | s. Passou disso, falha |
+| Retorno | Velocidade da volta | `vx_retorno` | 0,3 | 0,1–0,5 | m/s |
+| | Chegou ao ponto | `tolerancia_retorno_m` | 0,15 | 0,05–0,4 | m do ponto de partida |
+| | Distância mínima | `retorno_min_m` | 0,3 | 0–1 | m. Andou menos que isso até a pessoa: não volta |
+| | Giro na volta | `vyaw_retorno` | 0,5 | 0,3–0,8 | rad/s. Teto da correção de rumo e do giro final |
+| | Ganho do rumo | `kp_rumo` | 1,0 | 0,2–3 | Correção por erro de rumo |
+| | Tolerância do giro final | `tolerancia_rumo_graus` | 8 | 2–30 | Graus |
+| | Tempo máximo | `tempo_max_retorno_s` | 30 | 5–60 | s, por fase (andar e virar) |
 | Voz | Falar "Perdi <nome> de vista" | `avisos_voz` | sim | | Desmarque na apresentação |
 
 ### Meia-volta
@@ -348,6 +368,17 @@ e o passo na hora. O passo é **cego**: deixe ~1 m livre atrás de onde o robô 
 **Meia-volta** em **O que o robô faz ao cumprimentar**, na aba **Operar** (vale já no próximo cumprimento; ajustes antigos ganham o estágio na próxima subida; desmarcado, fica
 desmarcado). Primeiro uso: meça o giro com `scripts/robo_medir_giro.py`
 ([`teste-no-robo.md`](teste-no-robo.md), seção 0).
+
+### Retorno ao ponto de partida
+
+Com **Retorno** marcado em **O que o robô faz ao cumprimentar** (desmarcado por padrão), depois da meia-volta o robô
+**anda de volta até onde estava quando reconheceu a pessoa** e **vira de frente para ela**, no lugar do passo cego. Não é
+preciso marcar distância: ele anota a própria posição (odometria do G1) ao começar e volta até ela, corrigindo o rumo, sem
+andar de ré. Status: "retorno: andando (faltam 1.20 m)", "retorno: virando para a pessoa", "retorno: fim". A volta é
+**cega**: caminho livre entre a pessoa e o ponto de partida. Para (e registra `retorno: falhou (…)`) se demorar, se estiver
+se afastando do ponto ou sem odometria; um retorno que falha ainda conta como cumprimento. **PARAR** ou F3+↓ param na hora.
+Se ele não andou até a pessoa (menos de 0,3 m), não volta nem vira. Primeiro uso: `scripts/robo_medir_odometria.py`
+([`teste-no-robo.md`](teste-no-robo.md), seção 9a).
 
 **Restaurar padrões** desfaz tudo.
 
