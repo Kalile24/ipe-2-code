@@ -43,6 +43,7 @@ from vision_msgs.msg import Detection2DArray
 from core.approach import LIMITES_OPERACAO, validar_operacao
 from core.bipes import tocar
 from core.caixa import CAIXA_PADRAO, caixa_atual, ler_dispositivos, mac_valido, nome_do_sink
+from core import discurso
 from core.comandos_voz import enviar_voz
 from core.config import DB_PATH, MODEL_NAME
 from core.identity_store import IdentityStore
@@ -71,7 +72,8 @@ PARAM_RETRY_S = 10.0  # nó que não respondeu um parâmetro fixo: só pergunta 
 FOTOS_MAX = 10
 CORPO_MAX = 64 * 1024 * 1024  # 10 fotos de 1280 px cabem com folga
 EVENTOS_NA_TELA = 30
-ORDENS = {"sentido": "sentido", "continencia": "continência", "apresentacao": "apresentação", "a_vontade": "à vontade"}  # nomes de config/comandos_voz.yaml
+ORDENS = {"sentido": "sentido", "continencia": "continência", "apresentacao": "apresentação", "a_vontade": "à vontade",
+          "discurso": "fala de apresentação"}  # discurso: o texto de data/discurso.txt (core.discurso)  # nomes de config/comandos_voz.yaml
 
 
 def registrar_status(status: deque, texto: str, agora: float) -> None:
@@ -665,6 +667,17 @@ class PainelNode(Node):
             self._operacao_alterada_em = pendente_desde
         return {"ok": True, "mensagem": "valendo já" if vivo else "vale na próxima subida"}
 
+    def discurso(self) -> dict:
+        return {"texto": discurso.ler(), "padrao": discurso.PADRAO, "max": discurso.MAX_CARACTERES}
+
+    def salvar_discurso(self, texto: str) -> dict:
+        try:
+            limpo = discurso.salvar(texto)
+        except ValueError as exc:
+            return {"ok": False, "mensagem": str(exc)}
+        registrar_status(self._status, "painel: fala de apresentação alterada", time.time())
+        return {"ok": True, "texto": limpo, "mensagem": "salvo: vale na próxima fala"}
+
     def diagnostico(self) -> str:
         """Tudo de uma vez, em texto, para olhar ou mandar para alguém quando não há cabo."""
         with self._lock:
@@ -738,6 +751,8 @@ def handler(painel: PainelNode) -> type:
                 self.wfile.write(corpo)
             elif self.path == "/caixas":
                 self._json(painel.caixas())
+            elif self.path == "/discurso":
+                self._json(painel.discurso())
             else:
                 self._json({"erro": "não existe"}, 404)
 
@@ -753,6 +768,8 @@ def handler(painel: PainelNode) -> type:
                         self._json({"ok": True, "mensagem": painel.salvar_operacao(self._corpo())})
                     except ValueError as exc:
                         self._json({"ok": False, "mensagem": str(exc)})
+                elif self.path == "/discurso":
+                    self._json(painel.salvar_discurso(str(self._corpo().get("texto", ""))))
                 elif self.path == "/estagios":
                     self._json(painel.aplicar_estagios(str(self._corpo().get("estagios", ""))))
                 elif self.path == "/operacao/restaurar":

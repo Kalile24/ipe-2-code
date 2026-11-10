@@ -199,6 +199,17 @@ def test_comando_direto_nao_precisa_de_microfone():
         rclpy.shutdown()
 
 
+def test_discurso_le_o_texto_salvo_e_vai_de_sentido_a_a_vontade(node, monkeypatch):
+    from core import discurso
+
+    monkeypatch.setattr(discurso, "ler", lambda: "Olá, banca.")
+    node._on_datagrama("comando:discurso")
+    _espera(node)
+    assert json.loads(node._rotina.goals[0].passos_json) == [
+        {"postura": "sentido"}, {"fala": "Olá, banca."}, {"postura": "a_vontade"}]
+    assert _resultados(node)[-1] == "ok"
+
+
 def test_comando_desconhecido_e_ignorado(node):
     node._on_datagrama("comando:inexistente")
     _espera(node)

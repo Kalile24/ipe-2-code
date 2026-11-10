@@ -10,6 +10,7 @@
     F2 + A      SEGURADO 1,5 s: levanta no suporte (damp → em pé → equilíbrio, scripts/robo_levantar.py);
                 só com o robô mole (damp/sem torque)
     F2 + X      a vontade: solta a posição mantida por um comando de voz (sentido, continência, descansar)
+    F2 + R1     fala de apresentação: sentido, o texto de data/discurso.txt (o painel edita) e à vontade
     F2 + Y      SEGURADO: fala (o microfone grava enquanto apertado; ao soltar, o comando é reconhecido)
 
 O controle chega no `wireless_remote` do `rt/lf/lowstate` (não no `rt/wirelesscontroller`, onde o
@@ -33,7 +34,7 @@ sys.path.insert(0, REPO)
 
 from core.bipes import tocar  # noqa: E402
 from core.remote_combos import (  # noqa: E402
-    A_VONTADE, AGORA, AUTOMATICO, DAMP, FALAR, FIM, INICIAR, LEVANTAR, PADRAO, PARAR, SEGURAR, SEGURAR_S, Combos,
+    A_VONTADE, AGORA, AUTOMATICO, DAMP, DISCURSO, FALAR, FIM, INICIAR, LEVANTAR, PADRAO, PARAR, SEGURAR, SEGURAR_S, Combos,
     Segurado, botoes, segue_apertado,
 )
 from core.comandos_voz import enviar_voz  # noqa: E402
@@ -188,9 +189,14 @@ def a_vontade() -> None:
     enviar_voz("comando:a_vontade")
 
 
+def discurso() -> None:
+    log("F2+R1: fala de apresentação")
+    enviar_voz("comando:discurso")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    for nome in (INICIAR, AGORA, AUTOMATICO, PARAR, DAMP, LEVANTAR, A_VONTADE):
+    for nome in (INICIAR, AGORA, AUTOMATICO, PARAR, DAMP, LEVANTAR, A_VONTADE, DISCURSO):
         parser.add_argument(f"--{nome}", type=lambda v: int(v, 0), default=PADRAO[nome], help=f"máscara (padrão {PADRAO[nome]:#06x})")
     parser.add_argument("--falar", type=lambda v: int(v, 0), default=FALAR, help=f"máscara de falar, segurado (padrão {FALAR:#06x})")
     parser.add_argument("--mostrar", action="store_true", help="imprime os botões em hexa a cada mudança")
@@ -201,7 +207,7 @@ def main() -> int:
     from unitree_sdk2py.idl.unitree_hg.msg.dds_ import LowState_
 
     acoes = {INICIAR: iniciar, AGORA: agora, AUTOMATICO: alternar_automatico, PARAR: parar, DAMP: damp,
-             LEVANTAR: levantar, A_VONTADE: a_vontade}
+             LEVANTAR: levantar, A_VONTADE: a_vontade, DISCURSO: discurso}
     combos = Combos({nome: getattr(args, nome) for nome in acoes})
     falar = Segurado(args.falar)
     ocupado = threading.Lock()  # uma ação por vez; PARAR passa sempre

@@ -88,3 +88,21 @@ def test_enviar_voz_chega_por_udp():
         s.settimeout(1)
         enviar_voz("comando:sentido", s.getsockname()[1])
         assert s.recv(100) == b"comando:sentido"
+
+
+def test_gramatica_aceita_o_comando_sozinho_ou_com_o_vocativo():
+    from core.comandos_voz import carregar_comandos, gramatica
+
+    raw = {"nao_entendi": "n", "comandos": {
+        "a_vontade": {"palavras": ["À  Vontade"], "passos": [{"postura": "a_vontade"}]},
+        "sentido": {"palavras": ["sentido"], "passos": [{"postura": "sentido"}]},
+    }}
+    tabela = carregar_comandos(raw)
+    assert tabela.frases == ["à vontade", "sentido"]
+    assert gramatica(tabela) == [
+        "à vontade", "sentido",
+        "tenente à vontade", "tenente sentido",
+        "tenente [unk] à vontade", "tenente [unk] sentido",
+        "[unk]",
+    ]
+    assert tabela.comandos["a_vontade"][0] == ["a vontade"]  # a comparação continua sem acento

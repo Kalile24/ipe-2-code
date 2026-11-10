@@ -138,7 +138,18 @@
             <button id="b_continencia" onclick="comando('continencia')">Continência</button>
             <button id="b_apresentacao" onclick="comando('apresentacao')">Apresentação</button>
             <button id="b_a_vontade" onclick="comando('a_vontade')">À vontade</button>
+            <button id="b_discurso" onclick="comando('discurso')">Fala de apresentação</button>
           </div>
+          <details>
+            <summary>Texto da fala de apresentação (F3+R1)</summary>
+            <p class="dica">Escreva como deve soar (ex.: "Nichinica", "Níksi"). Sentido, a fala e à vontade. Vale na próxima fala.</p>
+            <textarea id="discurso_texto" rows="4" style="width:100%"></textarea>
+            <div class="botoes">
+              <button onclick="salvarDiscurso()">Salvar texto</button>
+              <button onclick="$('discurso_texto').value = discursoPadrao">Voltar ao padrão</button>
+            </div>
+            <p id="discurso_msg" class="msg muted" role="status"></p>
+          </details>
         </div>
         <p id="msg" class="msg muted" role="status"></p>
         <p class="dica">No automático, a mesma pessoa só é cumprimentada de novo depois de 5 min e de sair da frente por 5 s. <b>Liberar cumprimentos</b> e <b>Cumprimentar agora</b> ignoram essa espera.</p>
@@ -376,7 +387,7 @@ function desenhar(e) {
   $('b_desarmado').disabled = $('b_armado').disabled = ocupado;
   $('cmd_ordens').hidden = !e.rotina_de_pe;
   $('b_a_vontade').disabled = ocupado || !e.voz_node;
-  $('b_sentido').disabled = $('b_continencia').disabled = $('b_apresentacao').disabled = ocupado || !e.voz_node || corpo === 'rotina';
+  $('b_sentido').disabled = $('b_continencia').disabled = $('b_apresentacao').disabled = $('b_discurso').disabled = ocupado || !e.voz_node || corpo === 'rotina';
   $('b_auto').disabled = $('b_liberar').disabled = ocupado || !e.reaction_node;
   $('b_agora').disabled = ocupado || !e.reaction_node || corpo !== 'livre';  // o body_node recusaria
   $('b_liberar').classList.toggle('primario', e.estagio === 'aguardando o operador');
@@ -514,6 +525,28 @@ async function comando(nome) {
   }
   atualizar();
 }
+let discursoPadrao = '';
+async function carregarDiscurso() {
+  try {
+    const d = await json('/discurso');
+    discursoPadrao = d.padrao;
+    $('discurso_texto').value = d.texto;
+    $('discurso_texto').maxLength = d.max;
+  } catch (err) { $('discurso_msg').textContent = 'não consegui ler o texto atual'; }
+}
+async function salvarDiscurso() {
+  $('discurso_msg').className = 'msg muted';
+  try {
+    const r = await json('/discurso', {texto: $('discurso_texto').value});
+    $('discurso_msg').className = 'msg ' + (r.ok ? 'ok' : 'bad');
+    $('discurso_msg').textContent = r.mensagem;
+    if (r.ok) $('discurso_texto').value = r.texto;
+  } catch (err) {
+    $('discurso_msg').className = 'msg bad';
+    $('discurso_msg').textContent = 'O robô não respondeu: não salvou.';
+  }
+}
+carregarDiscurso();
 function alternarAuto() {
   const ligando = estado && estado.automatico === false;
   if (ligando && estado.armado !== false && !confirm('Ligar o automático com o robô armado: ele vai andar sozinho até quem reconhecer. Há espaço livre?')) return;

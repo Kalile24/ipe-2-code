@@ -152,21 +152,31 @@ Segure **F3** e aperte o outro botão.
 | **F3 + ↓** | **Para:** velocidade zero, braços de volta, encerra. Também aborta um F3+A | tom grave; dois descendo ao encerrar |
 | **F3 + A** (segurar 1,5 s) | Levanta **no suporte**. Só com o robô mole | três bipes curtos ao começar |
 | **F3 + B** (segurar 1,5 s) | **Damp. Só no suporte.** Recusado com a rotina de pé | três curtos; três descendo |
-| **F3 + Y** (segurar e falar, até 5 s) | Grava o comando de voz; ao soltar, o robô o executa. Recusado enquanto uma rotina roda; com o nó de voz fora do ar, nada acontece | sem bipe |
+| **F3 + Y** (segurar e falar, até 8 s) | Grava o comando de voz; ao soltar, o robô o executa. Recusado enquanto uma rotina roda; com o nó de voz fora do ar, nada acontece | sem bipe |
 | **F3 + X** | **À vontade:** solta a posição mantida por voz (o mesmo do botão **À vontade** do painel) | |
+| **F3 + R1** | **Fala de apresentação:** sentido, o texto e à vontade (o mesmo do botão **Fala de apresentação**). Recusado enquanto uma rotina roda | |
 
 **Dois tons graves = recusado:** nada aconteceu. O L2+B da Unitree não dá damp no modo de equilíbrio.
 
 ### Comandos de voz
 
-Segure **F3+Y**, fale perto do microfone da webcam e solte (a gravação para sozinha em 5 s).
+Segure **F3+Y**, fale perto do microfone da webcam e solte **só depois de terminar a frase** (a gravação para
+sozinha em 8 s). Pode usar o vocativo ("Tenente Nichinica, sentido") ou só o comando ("sentido").
 
 | Diga | O robô faz |
 |---|---|
 | **Sentido** | Posição de sentido e **mantém** |
-| **Continência** | Continência e **mantém** |
-| **Apresentação** | Sentido, "Sou o Tenente Nichinica" e à vontade |
+| **Apresentar arma** (ou só "apresentar") | Continência e **mantém** |
+| **Atenção** | Descansar e **mantém** |
+| **Apresente-se** | Sentido, "Sou o Tenente Nichinica" e à vontade |
 | **À vontade** | Solta a posição (também **F3+X** e o botão **À vontade**) |
+
+**Fala de apresentação** (F3+R1 ou o botão no painel): sentido, "Olá oficiais, alunos e banca avaliadora, sou o Tenente
+Nichinica, o robô humanoide do projeto Níksi." e à vontade. Edite o texto no painel (aba **Operar**, **Ordens**, "Texto da
+fala de apresentação"), escrito como deve soar; vale na próxima fala. Fica em `data/discurso.txt`.
+
+O reconhecimento é o **Vosk** com uma gramática: ele só ouve as frases da tabela, então ou acerta o comando ou
+responde "Não entendi" (nunca inventa outro). Roda na CPU, dentro do nó de voz, e decide em ~0,1 s depois de soltar.
 
 A posição mantida só termina com **à vontade**, **PARAR** (F3+↓) ou após 300 s (`posicao_max_s`). Durante ela, o
 cumprimento automático e o **cumprimentar agora** (F3+→) são recusados (o F3+→ toca os dois tons graves de recusado; o automático recusa em silêncio). O cartão **Voz**
@@ -177,8 +187,8 @@ dispositivo ALSA escrito (uma linha) em `data/microfone.txt`; sem o arquivo, a p
 **"Atenção"** (descansar) foi religado em 2026-11-10: duas idas e voltas no robô ficaram estáveis, sem o tombo para trás
 de 07/11. Nos primeiros usos, fique perto do robô na saída do descansar.
 
-**Enquanto o reconhecimento de fala não estiver instalado**, a gravação funciona mas a transcrição falha e o robô fala
-"Não entendi". Teste os comandos por texto (seção 10 do guia de testes).
+Sem o modelo do Vosk instalado (`~/.cache/ipe-vosk`, [`jetson-deployment.md`](jetson-deployment.md) seção 5), o nó de voz
+registra "reconhecimento de fala desligado" e todo comando falado responde "Não entendi".
 
 ### Uso normal
 

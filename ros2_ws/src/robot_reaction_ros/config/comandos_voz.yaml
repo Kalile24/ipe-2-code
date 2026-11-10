@@ -1,28 +1,30 @@
 # Comandos de voz do operador (F2 + Y segurado, falar). Cada comando: as palavras que o
-# reconhecem (palavra inteira, sem acento nem maiúscula) e os passos, como em reactions.yaml,
-# mas sem obrigar a terminar em a_vontade: sentido, continência e atenção mantêm a posição.
-# A fala é escrita como deve soar.
+# reconhecem e os passos, como em reactions.yaml, mas sem obrigar a terminar em a_vontade:
+# sentido, apresentar arma e atenção mantêm a posição. A fala é escrita como deve soar.
+# As palavras são também a gramática do reconhecedor (Vosk): ele só ouve estas frases, sozinhas ou depois de
+# "Tenente <nome>". Escreva-as como se fala (com acento) e só com palavras do vocabulário do modelo: uma palavra
+# fora dele aparece como "Ignoring word missing in vocabulary" no log do voz_node.
 nao_entendi: "Não entendi, repita o comando"
 comandos:
   sentido:
     palavras: [sentido]
     passos:
       - postura: sentido
-  continencia:
-    palavras: [continencia]
+  continencia:  # a voz militar da continência é "apresentar arma"
+    palavras: [apresentar arma, apresentar]  # só "apresentar": o "arma" depois da pausa às vezes se perde
     passos:
       - postura: continencia
   atencao:
-    palavras: [atencao]
+    palavras: [atenção]
     passos:
       - postura: descansar
   apresentacao:
-    palavras: [apresentacao, apresente se]
+    palavras: [apresente se, apresente]  # o Vosk às vezes devolve só um pedaço da frase
     passos:
       - postura: sentido
       - fala: Sou o Tenente Nichinica
       - postura: a_vontade
   a_vontade:
-    palavras: [a vontade]
+    palavras: [à vontade, vontade]
     passos:
       - postura: a_vontade

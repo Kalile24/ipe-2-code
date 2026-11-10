@@ -8,7 +8,7 @@ from __future__ import annotations
 import re
 import socket
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from core.reaction_policy import A_VONTADE, ReactionConfigError, validate_steps
 
@@ -34,6 +34,13 @@ def normalizar(texto: str) -> str:
 class ComandosVoz:
     nao_entendi: str
     comandos: dict[str, tuple[list[str], list[dict]]]  # nome -> (palavras normalizadas, passos)
+    frases: list[str] = field(default_factory=list)  # as palavras como escritas no YAML (minúsculas): a gramática
+
+
+def gramatica(tabela: ComandosVoz, vocativo: str = "tenente") -> list[str]:
+    """Frases que o reconhecedor (Vosk) pode devolver: cada comando sozinho, depois do vocativo, ou depois do
+    vocativo e de um nome fora do vocabulário ([unk]: "Tenente Nichinica, sentido"); o resto vira [unk]."""
+    return [f"{prefixo}{f}" for prefixo in ("", f"{vocativo} ", f"{vocativo} [unk] ") for f in tabela.frases] + ["[unk]"]
 
 
 def carregar_comandos(raw: object) -> ComandosVoz:
@@ -46,18 +53,19 @@ def carregar_comandos(raw: object) -> ComandosVoz:
     brutos = raw.get("comandos")
     if not isinstance(brutos, dict) or not brutos:
         raise ReactionConfigError("comandos de voz: falta 'comandos' (mapa nome -> {palavras, passos})")
-    comandos = {}
+    comandos, frases = {}, []
     for nome, comando in brutos.items():
         if not isinstance(comando, dict) or set(comando) != {"palavras", "passos"}:
             raise ReactionConfigError(f"{nome}: esperado um mapa com 'palavras' e 'passos', veio {comando!r}")
         palavras = comando["palavras"]
         if not isinstance(palavras, list):
             raise ReactionConfigError(f"{nome}: 'palavras' tem que ser uma lista, veio {palavras!r}")
+        frases += [" ".join(p.lower().split()) for p in palavras if isinstance(p, str)]
         palavras = [normalizar(p) for p in palavras if isinstance(p, str)]
         if not palavras or not all(palavras):
             raise ReactionConfigError(f"{nome}: 'palavras' vazia ou com palavra vazia")
         comandos[nome] = (palavras, validate_steps(nome, comando["passos"], exigir_a_vontade=False))
-    return ComandosVoz(nao_entendi=nao_entendi, comandos=comandos)
+    return ComandosVoz(nao_entendi=nao_entendi, comandos=comandos, frases=frases)
 
 
 def reconhecer(tabela: ComandosVoz, texto: str) -> str | None:

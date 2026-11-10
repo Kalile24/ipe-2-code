@@ -97,3 +97,10 @@ latest binary's recommended copy:
 Both are idempotent: re-runs replace the block delimited by the ai-memory
 start/end HTML-comment markers, without disturbing the rest of the file.
 <!-- ai-memory:end -->
+
+## Regras do projeto
+
+- **Testes do pacote ROS no robô: só com a rotina parada (`tmux ls` sem a sessão `rotina`) e sempre num domínio DDS
+  isolado:** `ROS_DOMAIN_ID=77 python3 -m pytest src/robot_reaction_ros/test`. Os testes criam nós ROS de verdade; no
+  domínio padrão o `body_node` real aceita os pedidos deles e o robô se mexe (2026-11-10: continência e sentido no meio
+  de uma rotina armada). Testes puros (`tests/`, só `core`) não têm esse risco.

@@ -1,4 +1,4 @@
-# Comandos de voz do operador (Whisper) — Design
+# Comandos de voz do operador — Design
 
 Data: 2026-11-07. Independente da meia-volta (`2026-11-07-meia-volta-design.md`). Contexto: rotina de
 cumprimento (`2026-10-29-rotina-cumprimento-design.md`), aproximação e estágios
@@ -30,9 +30,10 @@ comandos, previsível e rápida.
 
 ## Comportamento
 
-1. O operador **segura** o combo de falar, diz o comando e solta. Gravação de no máximo ~5 s; soltar
+1. O operador **segura** o combo de falar, diz o comando e solta. Gravação de no máximo 8 s; soltar
    encerra.
-2. O áudio vai para o Whisper local (português). O texto reconhecido aparece no painel e no log.
+2. O áudio vai para o reconhecedor local (Vosk, português, restrito às frases dos comandos). O texto
+   reconhecido aparece no painel e no log.
 3. O texto é comparado com a tabela de comandos (sem acento, sem pontuação, sem diferença de
    maiúsculas; "Tenente, sentido!" vale como "sentido"). Uma frase que bate com dois comandos, ou
    com nenhum, é "não entendi".
@@ -65,10 +66,16 @@ fala nada, só o painel avisa.
 - **Tabela de comandos num YAML** (`config/comandos_voz.yaml`): palavras-chave → passos, no mesmo
   formato de passos do `reactions.yaml` (`postura`, `fala`, `pausa`). A posição é mantida quando
   a última postura não é `a_vontade`. O texto de "não entendi" fica no mesmo arquivo.
-- **Whisper:** primeiro tentar o que já está no robô (a imagem `openvoice-piper-whisper-jetson:1.0`,
-  usada pelo `scripts/robo_voz.sh` só para o Piper), num contêiner nosso como o `ipe-piper`. Se o
-  modelo de lá não servir para português ou for lento, faster-whisper `small` multilíngue, int8.
-  Modelos `.en` não servem. A escolha final sai da medição do passo zero.
+- **Reconhecimento: Vosk com gramática** (decisão de 2026-11-10, depois da medição no robô). O plano era o
+  Whisper da imagem `openvoice-piper-whisper-jetson:1.0`. Medido: o `tiny` (o único na imagem) acertou 1 de 4
+  comandos mesmo com a lista de palavras como `initial_prompt`; o `small` dá NaN na GPU com o PyTorch da
+  imagem, com ou sem cuDNN. Com o Vosk (`vosk-model-small-pt-0.3`, CPU, no próprio `voz_node`) e a gramática
+  das frases do `comandos_voz.yaml` (sozinhas, depois de "tenente" ou de "tenente [unk]"; o resto vira
+  `[unk]`): 4 de 4 na medição e os 5 comandos pelo controle, ~0,1 s por frase. Ele não faz ditado livre:
+  ou devolve uma frase da tabela, ou nada.
+- **Voz militar** (pedido do usuário, 2026-11-10): "Apresentar arma" (ou só "apresentar") faz a continência;
+  "À vontade" desfaz (não há "descansar arma"). A gravação vai até 8 s, para caber a pausa entre "apresentar" e
+  "arma".
 - **Execução pelo `body_node`**, que já é o único dono dos braços e das pernas e só aceita uma
   rotina por vez. A posição mantida é um estado novo do `body_node`; a regra "toda rotina termina em
   `a_vontade`" (`validate_steps`) continua valendo para o `reactions.yaml` e para a "Apresentação".

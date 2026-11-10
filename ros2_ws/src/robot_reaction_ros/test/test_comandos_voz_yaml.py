@@ -13,6 +13,11 @@ def test_yaml_do_pacote_carrega_e_tem_os_cinco():
     assert reconhecer(tabela, "atenção") == "atencao"
     assert tabela.comandos["atencao"][1] == [{"postura": "descansar"}]
     assert tabela.nao_entendi == "Não entendi, repita o comando"
+    assert tabela.frases == ["sentido", "apresentar arma", "apresentar", "atenção", "apresente se", "apresente", "à vontade", "vontade"]
+    assert reconhecer(tabela, "tenente apresente") == "apresentacao" and reconhecer(tabela, "vontade") == "a_vontade"
+    assert reconhecer(tabela, "tenente apresentar") == "continencia"
+    assert reconhecer(tabela, "Tenente Nichinica, apresentar arma!") == "continencia"
+    assert reconhecer(tabela, "Tenente Nichinica, apresente-se") == "apresentacao"
     assert reconhecer(tabela, "Tenente, apresente-se") == "apresentacao"
     assert reconhecer(tabela, "à vontade") == "a_vontade"
     assert tabela.comandos["apresentacao"][1] == [

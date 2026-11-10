@@ -422,3 +422,19 @@ def test_state_drops_voice_and_held_position_when_their_nodes_are_gone(monkeypat
     painel.get_node_names = lambda: ["voz_node"]
     e = painel.estado()
     assert e["corpo"] == "livre" and e["voz"] == {"microfone": False}
+
+
+def test_speech_text_is_saved_cleaned_and_a_bad_one_keeps_the_old(tmp_path, monkeypatch):
+    from core import discurso
+
+    arquivo = str(tmp_path / "discurso.txt")
+    monkeypatch.setattr(discurso, "ARQUIVO", arquivo)
+    monkeypatch.setattr(discurso.ler, "__defaults__", (arquivo,))
+    monkeypatch.setattr(discurso.salvar, "__defaults__", (arquivo,))
+    painel = PainelNode.__new__(PainelNode)
+    painel._status = deque(maxlen=10)
+    assert painel.discurso()["texto"] == discurso.PADRAO
+    assert painel.salvar_discurso("  Olá,\n banca. ") == {"ok": True, "texto": "Olá, banca.", "mensagem": "salvo: vale na próxima fala"}
+    assert painel.salvar_discurso("   ")["ok"] is False
+    assert painel.discurso()["texto"] == "Olá, banca."
+    assert "discurso" in painel_mod.ORDENS

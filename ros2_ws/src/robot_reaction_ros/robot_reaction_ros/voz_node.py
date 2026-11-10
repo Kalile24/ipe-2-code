@@ -16,11 +16,14 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile
 from std_msgs.msg import String
 
-from core.comandos_voz import PORTA_VOZ, carregar_comandos, reconhecer
+from core.comandos_voz import PORTA_VOZ, carregar_comandos, gramatica, reconhecer
+from core import discurso
 from core.gravador import Gravador
 from core.piper_voice import DEFAULT_URL, say
+from core.vosk_voice import MODELO_PADRAO, Transcritor
 from robot_reaction_interfaces.action import Rotina
 
+DISCURSO = "discurso"
 ESPERA_RESULTADO_S = 330.0  # pior caso de uma rotina no body_node (ESPERA_ROTINA_S 310) com folga
 
 
@@ -36,18 +39,18 @@ class VozNode(Node):
     silenciosa: só /voz/estado com `recusado`. O áudio fica na memória.
     """
 
-    def __init__(self, gravador_factory=Gravador, transcrever=sem_transcricao, speak=say) -> None:
+    def __init__(self, gravador_factory=Gravador, transcrever=None, speak=say) -> None:
         super().__init__("voz_node")
         self.declare_parameter("dispositivo", "default")
         self.declare_parameter("comandos_file", "")
         self.declare_parameter("porta", PORTA_VOZ)
-        self.declare_parameter("gravacao_max_s", 5.0)
+        self.declare_parameter("gravacao_max_s", 8.0)  # 5 s cortava o "apresentar... arma" com a pausa militar
         self.declare_parameter("tts_url", DEFAULT_URL)
         self.declare_parameter("tts_timeout_s", 60.0)
+        self.declare_parameter("modelo_vosk", MODELO_PADRAO)
         self._gravador_factory = gravador_factory
         self._dispositivo = self.get_parameter("dispositivo").value
         self._max_s = float(self.get_parameter("gravacao_max_s").value)
-        self._transcrever = transcrever
         self._speak = functools.partial(
             speak, url=self.get_parameter("tts_url").value, timeout_s=float(self.get_parameter("tts_timeout_s").value)
         ) if speak is say else speak
@@ -56,6 +59,7 @@ class VozNode(Node):
         )
         with open(caminho, encoding="utf-8") as f:
             self._tabela = carregar_comandos(yaml.safe_load(f))
+        self._transcrever = transcrever or self._criar_transcritor()
 
         self._rotina = ActionClient(self, Rotina, "/reaction/rotina")
         self._estado_pub = self.create_publisher(
@@ -84,6 +88,16 @@ class VozNode(Node):
         self._publicar("")  # o painel avisa de microfone ausente já na subida
         self.get_logger().info(f"voz: UDP em 127.0.0.1:{self._sock.getsockname()[1]}, microfone {self._dispositivo}")
 
+    def _criar_transcritor(self):
+        """Vosk com a gramática dos comandos; sem ele o nó sobe assim mesmo e responde "não entendi"."""
+        try:
+            t = Transcritor(gramatica(self._tabela), modelo=self.get_parameter("modelo_vosk").value)
+        except Exception as exc:
+            self.get_logger().error(f"reconhecimento de fala desligado: {exc}")
+            return sem_transcricao
+        self.get_logger().info(f"reconhecimento de fala: Vosk, {len(self._tabela.frases)} frases")
+        return t
+
     def _on_corpo(self, msg: String) -> None:
         self._corpo = msg.data
 
@@ -111,7 +125,9 @@ class VozNode(Node):
             self._fim_gravacao()
         elif msg.startswith("comando:"):
             nome = msg[len("comando:"):]
-            if nome not in self._tabela.comandos:
+            if nome == DISCURSO:  # a fala de apresentação (F3+R1, painel): texto de data/discurso.txt
+                self._iniciar_ciclo(self._executar, nome, "")
+            elif nome not in self._tabela.comandos:
                 self.get_logger().warn(f"comando desconhecido: {nome!r}")
             elif nome == "a_vontade":
                 # sempre passa (some o ciclo em andamento); o body_node é quem recusa o que sobrar
@@ -222,7 +238,7 @@ class VozNode(Node):
         if not self._rotina.server_is_ready():
             self.get_logger().warn("o body_node não está de pé")
             return False
-        passos = self._tabela.comandos[nome][1]
+        passos = discurso.passos(discurso.ler()) if nome == DISCURSO else self._tabela.comandos[nome][1]
         goal = Rotina.Goal(pessoa="voz", passos_json=json.dumps(passos, ensure_ascii=False), voz=True)
         self._pendentes.put((goal, feito))
         return True
