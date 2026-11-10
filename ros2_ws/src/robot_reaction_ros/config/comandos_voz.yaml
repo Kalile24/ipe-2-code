@@ -24,6 +24,11 @@ comandos:
       - postura: sentido
       - fala: Sou o Tenente Nichinica
       - postura: a_vontade
+  descansar_arma:  # a volta militar do apresentar arma: abaixa o braço rápido (desc_arma, 1,4 rad/s) e solta
+    palavras: [descansar arma]
+    passos:
+      - postura: desc_arma
+      - postura: a_vontade
   a_vontade:
     palavras: [à vontade, vontade]
     passos:

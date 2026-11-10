@@ -6,14 +6,16 @@ from ament_index_python.packages import get_package_share_directory
 from core.comandos_voz import carregar_comandos, reconhecer
 
 
-def test_yaml_do_pacote_carrega_e_tem_os_cinco():
+def test_yaml_do_pacote_carrega_e_tem_os_seis():
     with open(get_package_share_directory("robot_reaction_ros") + "/config/comandos_voz.yaml") as f:
         tabela = carregar_comandos(yaml.safe_load(f))
-    assert set(tabela.comandos) == {"sentido", "continencia", "atencao", "apresentacao", "a_vontade"}
+    assert set(tabela.comandos) == {"sentido", "continencia", "atencao", "apresentacao", "descansar_arma", "a_vontade"}
     assert reconhecer(tabela, "atenção") == "atencao"
     assert tabela.comandos["atencao"][1] == [{"postura": "descansar"}]
     assert tabela.nao_entendi == "Não entendi, repita o comando"
-    assert tabela.frases == ["sentido", "apresentar arma", "apresentar", "atenção", "apresente se", "apresente", "à vontade", "vontade"]
+    assert tabela.frases == ["sentido", "apresentar arma", "apresentar", "atenção", "apresente se", "apresente", "descansar arma", "à vontade", "vontade"]
+    assert reconhecer(tabela, "tenente descansar arma") == "descansar_arma"
+    assert tabela.comandos["descansar_arma"][1] == [{"postura": "desc_arma"}, {"postura": "a_vontade"}]
     assert reconhecer(tabela, "tenente apresente") == "apresentacao" and reconhecer(tabela, "vontade") == "a_vontade"
     assert reconhecer(tabela, "tenente apresentar") == "continencia"
     assert reconhecer(tabela, "Tenente Nichinica, apresentar arma!") == "continencia"

@@ -169,6 +169,7 @@ sozinha em 8 s). Pode usar o vocativo ("Tenente Nichinica, sentido") ou só o co
 | **Apresentar arma** (ou só "apresentar") | Continência e **mantém** |
 | **Atenção** | Descansar e **mantém** |
 | **Apresente-se** | Sentido, "Sou o Tenente Nichinica" e à vontade |
+| **Descansar arma** | Depois do apresentar arma: abaixa o braço rápido (como na rotina de cumprimento) e fica à vontade |
 | **À vontade** | Solta a posição (também **F3+X** e o botão **À vontade**) |
 
 **Fala de apresentação** (F3+R1 ou o botão no painel): sentido, "Olá oficiais, alunos e banca avaliadora, sou o Tenente

@@ -205,8 +205,8 @@ Ajustes (grupo **Meia-volta** na aba Calibrar): `vyaw_meia_volta` 0,5 rad/s, `to
 ## 10. Comandos de voz
 
 O reconhecimento de fala é o Vosk com a gramática dos comandos (instalação: [`jetson-deployment.md`](jetson-deployment.md)
-seção 5). Na subida, a janela `rotina` mostra `reconhecimento de fala: Vosk, 8 frases`. Os comandos (Sentido, Apresentar arma,
-Atenção, Apresente-se, À vontade) também se testam por texto, sem microfone. "Atenção" (descansar) foi
+seção 5). Na subida, a janela `rotina` mostra `reconhecimento de fala: Vosk, 9 frases`. Os comandos (Sentido, Apresentar arma,
+Atenção, Apresente-se, Descansar arma, À vontade) também se testam por texto, sem microfone. "Atenção" (descansar) foi
 religado em 2026-11-10 depois de duas idas e voltas estáveis no robô.
 
 ```bash
@@ -224,7 +224,7 @@ source ~/ipe-2-code/scripts/ambiente_robo.sh
 cd ~/ipe-2-code && python3 -c 'from core.comandos_voz import enviar_voz; enviar_voz("texto:sentido")'
 ```
 
-Troque `sentido` por `apresentar arma`, `atenção`, `apresente se` ou `à vontade`. Confira, no painel e no status:
+Troque `sentido` por `apresentar arma`, `atenção`, `apresente se`, `descansar arma` ou `à vontade`. Confira, no painel e no status:
 
 - [ ] `arecord` existe; `robo_medir_voz.sh` mostra o microfone e um pico acima de zero falando.
 - [ ] Segurar F3+Y, dizer "Tenente Nichinica, sentido" e soltar: o log mostra `voz: 'tenente sentido' -> sentido`.
