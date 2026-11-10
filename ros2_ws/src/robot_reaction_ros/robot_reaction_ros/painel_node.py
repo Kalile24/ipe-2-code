@@ -600,6 +600,11 @@ class PainelNode(Node):
             return self.set_reacao("cumprimentar_agora", "agora")
         if nome == "liberar":  # todos podem ser cumprimentados de novo já (sem os 5 min)
             return self.set_reacao("liberar", "todos")
+        if nome == "escuta":  # o mesmo do F3+L1: liga/desliga a escuta contínua
+            if "voz_node" not in self.get_node_names():
+                return "nó de voz fora do ar: não enviei"
+            enviar_voz("escuta:alternar")
+            return "escuta contínua alterada (ouça o aviso do robô)"
         if nome in ORDENS:  # o mesmo comando da voz e do F3+X: o nó de voz decide se pode
             if "voz_node" not in self.get_node_names():
                 return "nó de voz fora do ar: não enviei"

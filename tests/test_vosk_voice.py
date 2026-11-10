@@ -19,10 +19,17 @@ def vosk_falso(monkeypatch, tmp_path):
 
         def AcceptWaveform(self, pcm):
             self.audio += pcm
+            return bool(estado["respostas"])
 
         def FinalResult(self):
             estado["audio"], self.audio = self.audio, b""
             return json.dumps({"text": estado["respostas"].pop(0)})
+
+        def Result(self):
+            return self.FinalResult()
+
+        def Reset(self):
+            estado["zerou"] = True
 
     mod = types.SimpleNamespace(SetLogLevel=lambda n: None, Model=lambda caminho: caminho, KaldiRecognizer=Rec)
     monkeypatch.setitem(sys.modules, "vosk", mod)
@@ -53,3 +60,18 @@ def test_sem_modelo_diz_onde_procurar(vosk_falso, tmp_path):
 
     with pytest.raises(RuntimeError, match="jetson-deployment"):
         Transcritor(["sentido"], modelo=str(tmp_path / "nao_existe"))
+
+
+def test_fluxo_devolve_a_frase_fechada_e_usa_a_gramatica_propria(vosk_falso):
+    from core.vosk_voice import Transcritor
+
+    estado, modelo = vosk_falso
+    fluxo = Transcritor(["sentido", "[unk]"], modelo=modelo).fluxo(["tenente sentido", "[unk]"])
+    assert json.loads(estado["gramatica"]) == ["tenente sentido", "[unk]"]
+    assert fluxo.aceitar(b"\x01\x00") is None  # ainda no meio da frase
+    estado["respostas"] = ["tenente sentido"]
+    assert fluxo.aceitar(b"\x02\x00") == "tenente sentido"
+    estado["respostas"] = ["[unk]"]
+    assert fluxo.aceitar(b"\x03\x00") is None
+    fluxo.zerar()
+    assert estado["zerou"]

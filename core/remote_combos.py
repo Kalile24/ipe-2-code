@@ -11,9 +11,9 @@ R1, L1, START, SELECT, R2, L2, F1, F2 = 0x1, 0x2, 0x4, 0x8, 0x10, 0x20, 0x40, 0x
 A, B, X, Y, UP, RIGHT, DOWN, LEFT = 0x100, 0x200, 0x400, 0x800, 0x1000, 0x2000, 0x4000, 0x8000
 
 INICIAR, AGORA, AUTOMATICO, PARAR = "iniciar", "agora", "automatico", "parar"
-DAMP, LEVANTAR, A_VONTADE, DISCURSO = "damp", "levantar", "a_vontade", "discurso"
+DAMP, LEVANTAR, A_VONTADE, DISCURSO, ESCUTA = "damp", "levantar", "a_vontade", "discurso", "escuta"
 PADRAO = {INICIAR: F2 | UP, AGORA: F2 | RIGHT, AUTOMATICO: F2 | LEFT, PARAR: F2 | DOWN,
-          DAMP: F2 | B, LEVANTAR: F2 | A, A_VONTADE: F2 | X, DISCURSO: F2 | R1}
+          DAMP: F2 | B, LEVANTAR: F2 | A, A_VONTADE: F2 | X, DISCURSO: F2 | R1, ESCUTA: F2 | L1}
 FALAR = F2 | Y  # segurado enquanto o operador fala; não é ação, por isso fora do PADRAO (ver Segurado)
 INICIO, FIM = "inicio", "fim"
 # Só disparam se o combo continuar apertado por SEGURAR_S: o damp derruba o robô fora do suporte, e

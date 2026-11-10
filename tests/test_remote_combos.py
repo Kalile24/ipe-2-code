@@ -1,8 +1,8 @@
 import pytest
 
 from core.remote_combos import (
-    A_VONTADE, AGORA, AUTOMATICO, DAMP, DISCURSO, DOWN, F2, FALAR, FIM, INICIAR, INICIO, LEFT, LEVANTAR, PADRAO, PARAR, RIGHT,
-    R1, SEGURAR, UP, A, B, X, Y, Combos, Segurado, botoes, segue_apertado,
+    A_VONTADE, AGORA, AUTOMATICO, DAMP, DISCURSO, DOWN, ESCUTA, F2, FALAR, FIM, INICIAR, INICIO, LEFT, LEVANTAR, PADRAO, PARAR, RIGHT,
+    L1, R1, SEGURAR, UP, A, B, X, Y, Combos, Segurado, botoes, segue_apertado,
 )
 
 
@@ -54,7 +54,7 @@ def test_segurado_avisa_inicio_e_fim():
 
 
 def test_a_vontade_e_falar_nao_colidem():
-    assert PADRAO[DISCURSO] == F2 | R1
+    assert PADRAO[DISCURSO] == F2 | R1 and PADRAO[ESCUTA] == F2 | L1
     assert PADRAO[A_VONTADE] == F2 | X and len(set(PADRAO.values()) | {FALAR}) == len(PADRAO) + 1
     assert FALAR == F2 | Y
 

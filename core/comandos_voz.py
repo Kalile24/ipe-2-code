@@ -43,6 +43,20 @@ def gramatica(tabela: ComandosVoz, vocativo: str = "tenente") -> list[str]:
     return [f"{prefixo}{f}" for prefixo in ("", f"{vocativo} ", f"{vocativo} [unk] ") for f in tabela.frases] + ["[unk]"]
 
 
+def gramatica_escuta(tabela: ComandosVoz, vocativo: str = "tenente") -> list[str]:
+    """Escuta contínua: só as frases com o vocativo ("Tenente Nichinica, sentido"); "sentido" solto vira [unk]."""
+    return [f"{prefixo}{f}" for prefixo in (f"{vocativo} ", f"{vocativo} [unk] ") for f in tabela.frases] + ["[unk]"]
+
+
+def comando_da_escuta(tabela: ComandosVoz, texto: str, vocativo: str = "tenente") -> str | None:
+    """Comando de uma frase da escuta contínua, só se ela começa pelo vocativo (o Vosk às vezes devolve só
+    um pedaço da frase da gramática: "sentido" sem o "tenente" não vale, pode ser alguém da plateia)."""
+    frase = normalizar(texto)
+    if not frase.startswith(normalizar(vocativo) + " "):
+        return None
+    return reconhecer(tabela, frase)
+
+
 def carregar_comandos(raw: object) -> ComandosVoz:
     """Valida o YAML `{nao_entendi: <texto>, comandos: {<nome>: {palavras: [...], passos: [...]}}}`."""
     if not isinstance(raw, dict):

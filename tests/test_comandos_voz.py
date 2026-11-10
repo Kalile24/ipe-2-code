@@ -106,3 +106,16 @@ def test_gramatica_aceita_o_comando_sozinho_ou_com_o_vocativo():
         "[unk]",
     ]
     assert tabela.comandos["a_vontade"][0] == ["a vontade"]  # a comparação continua sem acento
+
+
+def test_escuta_continua_so_aceita_com_o_vocativo():
+    from core.comandos_voz import comando_da_escuta, gramatica_escuta
+
+    tabela = _tabela()
+    tabela.frases.extend(["sentido", "continencia"])
+    assert gramatica_escuta(tabela) == ["tenente sentido", "tenente continencia",
+                                        "tenente [unk] sentido", "tenente [unk] continencia", "[unk]"]
+    assert comando_da_escuta(tabela, "Tenente Nichinica, sentido!") == "sentido"
+    assert comando_da_escuta(tabela, "tenente sentido") == "sentido"
+    assert comando_da_escuta(tabela, "sentido") is None  # pedaço sem o vocativo: pode ser a plateia
+    assert comando_da_escuta(tabela, "tenente") is None

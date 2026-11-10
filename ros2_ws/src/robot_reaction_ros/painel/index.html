@@ -162,6 +162,9 @@
       </div>
       <div class="cartao">
         <h2>Voz</h2>
+        <div class="linha"><span>Escuta contínua</span><span id="v_escuta">—</span></div>
+        <div class="botoes"><button id="b_escuta" onclick="comando('escuta')">Ligar escuta contínua</button></div>
+        <p class="dica">Ligada, o robô ouve sem apertar nada, só frases que começam por <b>"Tenente…"</b> ("Tenente Nichinica, sentido"). Também <b>F3+L1</b>. O F3+Y continua funcionando.</p>
         <div class="linha"><span>Ouvi</span><span id="v_texto">—</span></div>
         <div class="linha"><span>Comando</span><span id="v_comando">—</span></div>
         <div class="linha"><span>Resultado</span><span id="v_resultado">—</span></div>
@@ -404,6 +407,9 @@ const RESULTADO_VOZ = {gravando: 'gravando…', transcrevendo: 'transcrevendo…
 // O texto vem do reconhecimento de fala: sempre por esc().
 function desenharVoz(e) {
   const v = e.voz || {};
+  $('v_escuta').innerHTML = v.escuta ? span('ok', 'ESCUTANDO') : (e.voz_node ? 'desligada' : '—');
+  $('b_escuta').textContent = v.escuta ? 'Desligar escuta contínua' : 'Ligar escuta contínua';
+  $('b_escuta').disabled = !e.voz_node;
   $('v_texto').innerHTML = v.texto ? esc(v.texto) : '—';
   $('v_comando').innerHTML = v.comando ? esc(v.comando) : '—';
   $('v_resultado').innerHTML = v.resultado ? esc(RESULTADO_VOZ[v.resultado] || v.resultado) : '—';
