@@ -205,9 +205,8 @@ Ajustes (grupo **Meia-volta** na aba Calibrar): `vyaw_meia_volta` 0,5 rad/s, `to
 ## 10. Comandos de voz
 
 O reconhecimento de fala ainda não está instalado (vem depois de medir o microfone): F3+Y grava, mas a transcrição
-falha e o robô fala "Não entendi". Os comandos (Sentido, Continência, Apresentação, À vontade) testam-se por texto.
-"Atenção" está desligado no `comandos_voz.yaml` (responde "Não entendi") até resolver o desequilíbrio do descansar
-(o robô tomba para trás quando os braços voltam; suspeita: fixador da cintura).
+falha e o robô fala "Não entendi". Os comandos (Sentido, Continência, Atenção, Apresentação, À vontade) testam-se por
+texto. "Atenção" (descansar) foi religado em 2026-11-10 depois de duas idas e voltas estáveis no robô.
 
 ```bash
 cd ~/ipe-2-code/ros2_ws && python3 -m colcon build --symlink-install   # a ação Rotina mudou: build completo
@@ -224,7 +223,7 @@ source ~/ipe-2-code/scripts/ambiente_robo.sh
 cd ~/ipe-2-code && python3 -c 'from core.comandos_voz import enviar_voz; enviar_voz("texto:sentido")'
 ```
 
-Troque `sentido` por `continencia`, `apresentacao` ou `a vontade`. Confira, no painel e no status:
+Troque `sentido` por `continencia`, `atencao`, `apresentacao` ou `a vontade`. Confira, no painel e no status:
 
 - [ ] `arecord` existe; `robo_medir_voz.sh` mostra o microfone e um pico acima de zero falando.
 - [ ] Segurar F3+Y e soltar: o `voz_node` mostra `gravando` (depois "Não entendi", por ora).

@@ -12,12 +12,10 @@ comandos:
     palavras: [continencia]
     passos:
       - postura: continencia
-  # Desligado: o descansar desequilibra o robô (tomba para trás quando os braços voltam). Restaurar
-  # depois de resolver esse desequilíbrio.
-  # atencao:
-  #   palavras: [atencao]
-  #   passos:
-  #     - postura: descansar
+  atencao:
+    palavras: [atencao]
+    passos:
+      - postura: descansar
   apresentacao:
     palavras: [apresentacao, apresente se]
     passos:

@@ -87,6 +87,9 @@ fala nada, só o painel avisa.
   rolagem e faz o comando não ter efeito (exemplo oficial `g1_arm7_sdk_dds_example.py`; doc
   `300_waist_fastener.md`). Confirmar olhando o robô/app ou o aviso "estágio 2 de Descansar não
   convergiu" no log. O "Atenção" só vai para o robô depois disso resolvido.
+  **Atualização 2026-11-10:** no robô, "Atenção" e depois "À vontade", duas vezes, com o operador segurando: estável na ida
+  e na volta, todos os estágios convergiram (sem aviso) e o `WaistPitch` de 0,20 rad foi aplicado. O fixador não estava
+  travando. O "Atenção" foi religado.
 - Posturas só com o robô armado e inicializado; desarmado, só log (as falas saem).
 - **Sem escuta contínua:** só grava com o combo apertado. Não grava enquanto o robô fala.
 - **O áudio não é gravado em disco.** Só o texto reconhecido vai para o log e para o painel.

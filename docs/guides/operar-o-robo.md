@@ -174,8 +174,8 @@ mostra a última frase, o resultado e "segurando <postura>"; sem microfone, avis
 passos: `ros2_ws/src/robot_reaction_ros/config/comandos_voz.yaml`. Microfone: o `robo_rotina_cumprimento.sh` usa o
 dispositivo ALSA escrito (uma linha) em `data/microfone.txt`; sem o arquivo, a placa "Intelbras" do `arecord -l`
 (`plughw:CARD=<id>,DEV=0`); sem ela, `default`. Ele mostra a escolha ao subir. Meça com `scripts/robo_medir_voz.sh [dispositivo]`.
-**"Atenção"** está desligado (responde "Não entendi") até resolver o desequilíbrio do descansar: o robô tomba para trás
-quando os braços voltam.
+**"Atenção"** (descansar) foi religado em 2026-11-10: duas idas e voltas no robô ficaram estáveis, sem o tombo para trás
+de 07/11. Nos primeiros usos, fique perto do robô na saída do descansar.
 
 **Enquanto o reconhecimento de fala não estiver instalado**, a gravação funciona mas a transcrição falha e o robô fala
 "Não entendi". Teste os comandos por texto (seção 10 do guia de testes).
@@ -416,7 +416,7 @@ Pare no primeiro item que falhar.
 - [ ] Pessoa sai da frente andando: para; fala "Perdi <nome> de vista" em ~10 s.
 - [ ] **F3+↓ e F3+↑** em seguida: sobe de novo.
 - [ ] **F3+←**: cumprimenta sozinho uma vez e não repete com a pessoa parada.
-- [ ] **Voz** ("Atenção" está desligado): `arecord` presente; F3+Y, falar "sentido" e soltar: o painel passa por "gravando" e fica "segurando sentido"; F3+X solta.
+- [ ] **Voz**: `arecord` presente; F3+Y, falar "sentido" e soltar: o painel passa por "gravando" e fica "segurando sentido"; F3+X solta.
 - [ ] **Continência** segurada: F3+X e depois F3+↓. Observe a folga dos braços (soltar pula o desc. arma).
 
 ## 11. Melhorar a precisão
