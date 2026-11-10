@@ -115,6 +115,7 @@
         <div class="grande" id="estagio">—</div>
         <div class="linha"><span>Corpo</span><span id="corpo">—</span></div>
         <div class="linha"><span>Automático</span><span id="auto">—</span></div>
+        <div class="linha"><span>Bateria</span><span id="bateria">—</span></div>
         <div class="linha"><span>Webcam</span><span id="webcam">—</span></div>
         <div class="linha"><span>Câmera</span><span id="camera">—</span></div>
         <div class="linha"><span>Reconhecimento</span><span id="recon">—</span></div>
@@ -337,6 +338,9 @@ function problemas(e) {
   if (e.rotina_de_pe && w.formato && opValores && opValores.largura_imagem && w.formato.largura !== opValores.largura_imagem)
     lista.push(['bad', `A webcam está em ${w.formato.largura}×${w.formato.altura}, mas o ajuste espera largura ${opValores.largura_imagem}: o giro e a distância saem errados. Não arme`]);
   if (w.reiniciar) lista.push(['bad', 'A webcam reconectou e a imagem não voltou: aperte PARAR e suba de novo']);
+  const b = e.bateria || {};
+  if (typeof b.soc === 'number' && b.soc < b.minimo) lista.push(['bad', `Bateria em ${b.soc}%: troque antes de armar (abaixo de ${b.minimo}% o robô agacha sozinho e a subida armada é recusada)`]);
+  else if (typeof b.soc === 'number' && b.soc < b.aviso) lista.push(['warn', `Bateria em ${b.soc}%: troque logo`]);
   if (c.conectada === false) lista.push(['bad', 'Caixa de som desconectada: sem fala nem bipes']);
   else if (c.conectada && !c.saida_padrao) lista.push(['warn', 'A caixa está conectada, mas não é a saída de som: teste em Sistema']);
   if (e.rotina_de_pe && !e.parando && !subindo) {
@@ -376,6 +380,9 @@ function desenhar(e) {
       + (e.rotina_de_pe && w.formato ? `<br><span class="muted">${w.formato.largura}×${w.formato.altura}${w.formato.fps ? `, ${w.formato.fps} q/s` : ''}</span>` : '')
       + (w.quedas ? ' ' + span('warn', `(${w.quedas} queda${w.quedas > 1 ? 's' : ''})`) : '')
     : span('bad', 'desconectada');
+  const bat = e.bateria || {};
+  $('bateria').innerHTML = typeof bat.soc !== 'number' ? span('muted', 'desconhecida (controle fora do ar?)')
+    : span(bat.soc < bat.minimo ? 'bad' : bat.soc < bat.aviso ? 'warn' : 'ok', `${bat.soc}%`);
   $('camera').innerHTML = e.camera.ok ? span('ok', 'no ar') : e.rotina_de_pe ? span('bad', 'fora do ar') : '—';
   $('recon').innerHTML = e.reconhecimento.ok ? span('ok', `${num(e.reconhecimento.fps, 1)} quadros/s`) : e.rotina_de_pe ? span('bad', e.reconhecimento.no ? 'sem imagem' : 'fora do ar') : '—';
   $('caixa').innerHTML = c.conectada === null || c.conectada === undefined ? '—'

@@ -146,7 +146,7 @@ Segure **F3** e aperte o outro botão.
 
 | Combo | O que faz | Bipe |
 |---|---|---|
-| **F3 + ↑** | Sobe a rotina armada, com o automático **desligado**. Só em equilíbrio | dois tons subindo |
+| **F3 + ↑** | Sobe a rotina armada, com o automático **desligado**. Só em equilíbrio e com bateria ≥ 10% | dois tons subindo |
 | **F3 + →** | Cumprimenta agora quem está sendo reconhecido | um tom |
 | **F3 + ←** | Liga/desliga o automático (o robô fala o estado) | dois tons iguais |
 | **F3 + ↓** | **Para:** velocidade zero, braços de volta, encerra. Também aborta um F3+A | tom grave; dois descendo ao encerrar |
@@ -413,6 +413,7 @@ Ele não gira para procurar a pessoa. Depois de desistir: no manual, aperte **F3
 | "Não estou em equilíbrio, não vou começar." | Ponha em equilíbrio e aperte F3+↑ de novo |
 | Braços errados depois de uma parada de emergência no meio de um gesto | Não ande. No suporte: F3+B e F3+A. Sem suporte: reinicie o equilíbrio pelo controle da Unitree antes de subir |
 | Combo sem bipe | Caixa desligada? Veja `journalctl --user -u ipe-controle -f` |
+| O robô agacha sozinho | **Bateria baixa** (agachou com 4% em 2026-11-10). Veja **Bateria** no painel e troque; abaixo de 10% a subida armada é recusada |
 | F3+↑ dá dois tons graves | A rotina já está de pé ou subindo: F3+↓ e espere |
 | Painel não abre | Rede `IPE-G1`? Use `http://`, não `https://`. Depois, `robo_hotspot.sh estado` e `systemctl --user status ipe-painel` |
 | Celular não entra no hotspot | Esqueça a rede no celular e conecte de novo |

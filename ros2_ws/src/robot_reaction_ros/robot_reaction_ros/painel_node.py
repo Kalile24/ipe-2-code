@@ -43,7 +43,7 @@ from vision_msgs.msg import Detection2DArray
 from core.approach import LIMITES_OPERACAO, validar_operacao
 from core.bipes import tocar
 from core.caixa import CAIXA_PADRAO, caixa_atual, ler_dispositivos, mac_valido, nome_do_sink
-from core import discurso
+from core import bateria, discurso
 from core.comandos_voz import enviar_voz
 from core.piper_voice import say
 from core.config import DB_PATH, MODEL_NAME
@@ -551,6 +551,7 @@ class PainelNode(Node):
             "pessoas": self.pessoas(),
             # Sem o nó, o último valor guardado é velho: não mostra posição nem microfone.
             "corpo": corpo if "body_node" in nos else "livre",
+            "bateria": {"soc": bateria.ler(), "aviso": bateria.AVISO, "minimo": bateria.MINIMO},
             "voz": voz if "voz_node" in nos else {},
         }
 

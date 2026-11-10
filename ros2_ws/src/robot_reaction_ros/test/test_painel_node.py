@@ -456,3 +456,11 @@ def test_webcam_enrollment_warns_waits_then_asks_and_is_refused_during_a_routine
     assert painel.cadastrar("bianco", [], webcam=True)["ok"] is True
     assert ordem == [("fala", "Olhe para a câmera"), ("espera", painel_mod.CAPTURA_S)]
     assert pedidos[0].da_webcam is True and list(pedidos[0].fotos) == []
+
+
+def test_panel_state_module_reads_the_battery_file(tmp_path, monkeypatch):
+    from core import bateria
+
+    arquivo = str(tmp_path / "bat.txt")
+    bateria.gravar(37, arquivo=arquivo)
+    assert painel_mod.bateria.ler(arquivo) == 37 and painel_mod.bateria.MINIMO == 10

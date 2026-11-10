@@ -72,6 +72,11 @@ for proc in movimentos_militares.py assistente.py; do
     fi
 done
 
+# Com 4% de carga o G1 agachou sozinho (2026-11-10): armado, só com bateria acima do mínimo.
+if [ "$ARMADO" = true ]; then
+    (cd "$REPO" && python3 -m core.bateria --pode-armar) || exit 1
+fi
+
 echo "[1/3] Caixa Bluetooth..."
 if ! bluetoothctl info "$CAIXA" | grep -q "Connected: yes"; then
     for _ in 1 2 3 4 5; do
