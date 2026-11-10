@@ -35,6 +35,13 @@ LIMITES_OPERACAO = {
     "passo_m": (0.0, 0.5),
     "vx_passo": (0.05, 0.3),
     "tempo_max_meia_volta_s": (5.0, 30.0),
+    "vx_retorno": (0.1, 0.5),
+    "tolerancia_retorno_m": (0.05, 0.4),
+    "retorno_min_m": (0.0, 1.0),
+    "tempo_max_retorno_s": (5.0, 60.0),
+    "vyaw_retorno": (0.3, 0.8),
+    "kp_rumo": (0.2, 3.0),
+    "tolerancia_rumo_graus": (2.0, 30.0),
 }
 
 

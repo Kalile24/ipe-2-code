@@ -232,7 +232,12 @@
             <label class="bloco">Nome falado <small>opcional: só se soar diferente do nome acima</small>
               <input id="falado" autocomplete="off"></label>
           </div>
-          <button class="primario" id="b_cadastrar">Salvar</button>
+          <div class="botoes">
+            <button class="primario" id="b_cadastrar">Salvar</button>
+            <button type="button" id="b_webcam" onclick="cadastrar(event, true)">Fotografar pela webcam do robô</button>
+          </div>
+          <p class="dica"><b>Cadastro rápido:</b> nome, tratamento (pessoa nova) e a pessoa <b>de frente para o robô, a ~1 m, por 3 s</b>;
+            depois <b>Fotografar pela webcam do robô</b>. Usa os quadros dos últimos ~3 s da própria câmera que vai reconhecer.</p>
         </form>
         <p id="cad" class="msg" role="status"></p>
       </div>
@@ -560,6 +565,7 @@ const ETAPAS = [
   ['fala', 'Falar', 'Diz a frase da rotina.'],
   ['posturas', 'Gestos', 'Sentido, continência, desc. arma e à vontade.'],
   ['meia_volta', 'Meia-volta', 'Depois do cumprimento, gira 180° pela esquerda e dá um passo à frente; depois espera Liberar cumprimentos.'],
+  ['retorno', 'Retorno', 'Depois da meia-volta, anda até onde estava ao reconhecer a pessoa e vira de frente para ela (no lugar do passo). Caminho livre: a volta é cega.'],
 ];
 const GRUPOS = [
   ['Distância de parada', [
@@ -588,6 +594,15 @@ const GRUPOS = [
     ['passo_m', 'Passo depois do giro', 'm', 'Distância do passo à frente. 0 = não dá o passo (0 a 0,5).'],
     ['vx_passo', 'Velocidade do passo', 'm/s', 'Velocidade para frente durante o passo (0,05 a 0,3).'],
     ['tempo_max_meia_volta_s', 'Tempo máximo da meia-volta', 's', 'Passou disso, para e desiste da meia-volta (5 a 30).'],
+  ]],
+  ['Retorno', [
+    ['vx_retorno', 'Velocidade da volta', 'm/s', 'Velocidade para frente voltando ao ponto de partida (0,1 a 0,5).'],
+    ['tolerancia_retorno_m', 'Chegou ao ponto', 'm', 'Para de andar quando estiver a menos disto do ponto de partida (0,05 a 0,4).'],
+    ['retorno_min_m', 'Distância mínima', 'm', 'Andou menos que isto até a pessoa: não volta nem vira de novo (0 a 1).'],
+    ['vyaw_retorno', 'Giro na volta', 'rad/s', 'Teto da correção de rumo e do giro final para a pessoa (0,3 a 0,8).'],
+    ['kp_rumo', 'Ganho do rumo', null, 'Quanto corrige o rumo por erro (0,2 a 3).'],
+    ['tolerancia_rumo_graus', 'Tolerância do giro final', '°', 'Para de virar quando faltar menos que isto para ficar de frente (2 a 30).'],
+    ['tempo_max_retorno_s', 'Tempo máximo', 's', 'Por fase (andar e virar): passou disso, para e desiste (5 a 60).'],
   ]],
   ['Voz', [
     ['avisos_voz', 'Falar “Perdi <nome> de vista” ao desistir', null, 'Aviso para os testes. Desmarque na apresentação.'],
@@ -637,7 +652,7 @@ function desenharEtapas(e) {
 }
 
 async function alterarEtapa(caixa) {
-  const movimento = ['virar', 'aproximar', 'meia_volta'].includes(caixa.value);
+  const movimento = ['virar', 'aproximar', 'meia_volta', 'retorno'].includes(caixa.value);
   if (caixa.checked && movimento && estado && estado.rotina_de_pe && estado.armado !== false
       && !confirm('O robô está armado: este movimento passa a valer já no próximo cumprimento. Há espaço livre?')) { caixa.checked = false; return; }
   if (caixaEtapa('aproximar').checked) caixaEtapa('virar').checked = true;
@@ -738,19 +753,20 @@ const reduzir = f => new Promise((ok, erro) => {
   img.src = URL.createObjectURL(f);
 });
 
-async function cadastrar(ev) {
+async function cadastrar(ev, webcam = false) {
   ev.preventDefault();
-  const arquivos = [...$('fotos').files], nome = $('nome').value.trim(), pessoa = pessoaPorNome(nome);
+  const arquivos = webcam ? [] : [...$('fotos').files], nome = $('nome').value.trim(), pessoa = pessoaPorNome(nome);
   const tratamento = $('novo_bloco').hidden ? '' : $('tratamento').value.trim();
   const adicionar = $('modo_adicionar').checked;
-  if (!arquivos.length && !tratamento) return avisoCad('bad', 'Escolha uma foto ou preencha o tratamento.');
+  if (!/^[a-z0-9_]+$/.test(nome)) return avisoCad('bad', 'Preencha o nome: minúsculas, números e _, sem espaço.');
+  if (!webcam && !arquivos.length && !tratamento) return avisoCad('bad', 'Escolha uma foto ou preencha o tratamento.');
   if (arquivos.length > 10) return avisoCad('bad', `São ${arquivos.length} fotos: envie no máximo 10 de cada vez.`);
-  if (arquivos.length && estado) {
+  if ((webcam || arquivos.length) && estado) {
     if (!estado.reconhecimento.no) return avisoCad('bad', 'Para cadastrar fotos, aperte Subir desarmado e espere o reconhecimento entrar no ar.');
     if (estado.armado !== false) return avisoCad('bad', 'O cadastro pausa o reconhecimento: com o robô armado isso não é seguro. Pare e suba desarmado.');
   }
-  if (arquivos.length && !adicionar && pessoa && pessoa.fotos && !confirm(`Apagar as ${pessoa.fotos} fotos atuais de ${nome} e ficar só com as ${arquivos.length} novas?`)) return;
-  $('b_cadastrar').disabled = true;
+  if ((webcam || arquivos.length) && !adicionar && pessoa && pessoa.fotos && !confirm(`Apagar as ${pessoa.fotos} fotos atuais de ${nome} e ficar só com as novas?`)) return;
+  $('b_cadastrar').disabled = $('b_webcam').disabled = true;
   avisoCad('muted', 'enviando…');
   try {
     let aviso = '';
@@ -759,17 +775,17 @@ async function cadastrar(ev) {
       if (!p.ok) return avisoCad('bad', p.mensagem);
       aviso = p.mensagem;
     }
-    if (!arquivos.length) return avisoCad('ok', aviso);
-    let fotos;
+    if (!webcam && !arquivos.length) return avisoCad('ok', aviso);
+    let fotos = [];
     try { fotos = await Promise.all(arquivos.map(reduzir)); }
     catch (err) { return avisoCad('bad', `Não consegui abrir ${err.message}: use JPG ou PNG.` + (aviso ? ' ' + aviso : '')); }
-    const r = await json('/cadastrar', {nome, fotos, adicionar}, 100000);
+    const r = await json('/cadastrar', {nome, fotos, adicionar, webcam}, 100000);
     avisoCad(r.ok ? 'ok' : 'bad', r.mensagem + (aviso ? '. ' + aviso : '') + (r.ok && !r.tem_rotina ? '. Reconhecido, mas sem rotina: preencha o tratamento para ser cumprimentado.' : ''));
     if (r.ok) { $('fotos').value = ''; $('modo_adicionar').checked = true; }
   } catch (err) {
     avisoCad('bad', 'O robô não respondeu: confira a conexão e veja a lista de pessoas antes de tentar de novo.');
   } finally {
-    $('b_cadastrar').disabled = false;
+    $('b_cadastrar').disabled = $('b_webcam').disabled = false;
     atualizar();
   }
 }

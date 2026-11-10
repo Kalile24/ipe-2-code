@@ -21,6 +21,10 @@ Andar não espera postura e não tem resposta (nem `id`):
 `{"id": 9, "cmd": "meia_volta", "cfg": {<campos do MeiaVoltaConfig>}}`: gira 180° para a esquerda
 pela IMU e dá um passo; responde ok, ou {"ok": false, "erro": "<falha>" | "interrompida"}. É a
 ordem que o `parar` interrompe (a thread de leitura aciona o evento e para o robô).
+
+`{"id": 10, "cmd": "marcar_inicio"}`: guarda a posição da odometria (rt/odommodestate) como ponto de
+partida; ok false se não há odometria. `{"id": 11, "cmd": "retorno", "cfg": {<campos do RetornoConfig>}}`:
+anda até o ponto de partida e vira para a pessoa (core.retorno); o `parar` interrompe, como a meia-volta.
 """
 from __future__ import annotations
 
@@ -35,6 +39,7 @@ import time
 from typing import IO
 
 from core.meia_volta import CHEGOU, GIRANDO, MeiaVoltaConfig, acumular, duracao_passo, passo_giro
+from core import retorno as ret
 
 SEM_TORQUE_OU_DAMP = (0, 1)  # FSM_ID do G1 com os motores soltos: o damp não muda nada
 
@@ -66,6 +71,15 @@ class G1Body:
         # True = o Descansar dá um passo curto para frente (SetVelocity 0,12 m/s) para compensar
         # os braços indo para trás, como no ~/hhhh.
         self.robot.rest_forward_pulse = rest_forward_pulse
+        self._odom: tuple[float, float, float, float] | None = None  # x, y, yaw, monotonic
+        self._inicio: tuple[float, float] | None = None
+        from unitree_sdk2py.core.channel import ChannelSubscriber
+        from unitree_sdk2py.idl.unitree_go.msg.dds_ import SportModeState_
+
+        # ponytail: o rt/odommodestate chega a 500 Hz e cada mensagem é um callback Python; o de 20 Hz
+        # (rt/lf/odommodestate) não publica neste G1. Se pesar na CPU, ler só 1 em cada N.
+        self._odom_sub = ChannelSubscriber("rt/odommodestate", SportModeState_)
+        self._odom_sub.Init(self._on_odom, 1)
         time.sleep(3.0)  # mesma espera do MovimentosMilitares: DDS e LocoClient estabilizarem
         # Postura -> (velocidade máxima das juntas ou None = a da própria rotina, função).
         self._posturas = {
@@ -145,6 +159,65 @@ class G1Body:
     def yaw(self) -> float | None:
         estado = self.robot.low_state
         return None if estado is None else float(estado.imu_state.rpy[2])
+
+    def _on_odom(self, msg: object) -> None:
+        self._odom = (float(msg.position[0]), float(msg.position[1]), float(msg.imu_state.rpy[2]), time.monotonic())
+
+    ODOM_VELHA_S = 0.5
+
+    def odometria(self) -> tuple[tuple[float, float], float] | None:
+        """((x, y), yaw) da odometria, ou None se não chegou nada há ODOM_VELHA_S."""
+        o = self._odom
+        if o is None or time.monotonic() - o[3] > self.ODOM_VELHA_S:
+            return None
+        return (o[0], o[1]), o[2]
+
+    def marcar_inicio(self) -> bool:
+        o = self.odometria()
+        self._inicio = None if o is None else o[0]
+        return self._inicio is not None
+
+    def retorno(self, cfg: ret.RetornoConfig, interromper: threading.Event, log) -> str:
+        """Anda até o ponto de partida e vira para a pessoa. "" = deu certo (ou não havia para onde voltar)."""
+        dt = 0.02  # 50 Hz
+        try:
+            if self._inicio is None:
+                return "sem ponto de partida"
+            o = self.odometria()
+            if o is None:
+                return ret.FALHOU_SEM_ODOMETRIA
+            inicio, pessoa = self._inicio, o[0]  # girou no lugar: a pessoa fica na direção início → aqui
+            d0 = ret.distancia(pessoa, inicio)
+            if d0 < cfg.retorno_min_m:
+                log(f"retorno: andou só {d0:.2f} m até a pessoa; fica onde está")
+                return ""
+            rumo_pessoa = ret.rumo(inicio, pessoa)
+            for fase in ("andar", "virar"):
+                t0, ultimo_log = time.monotonic(), 0.0
+                while True:
+                    if interromper.is_set():
+                        return "interrompida"
+                    o = self.odometria()
+                    pos, yaw = (None, None) if o is None else o
+                    agora = time.monotonic()
+                    if fase == "andar":
+                        vx, vyaw, estado = ret.passo_andar(cfg, pos, yaw, inicio, d0, agora - t0)
+                    else:
+                        vx, (vyaw, estado) = 0.0, ret.passo_virar(cfg, yaw, rumo_pessoa, agora - t0)
+                    if estado == ret.CHEGOU:
+                        break
+                    if estado not in (ret.ANDANDO, ret.VIRANDO):
+                        return estado
+                    self.velocity(vx, vyaw)
+                    if agora - ultimo_log >= 0.5:
+                        ultimo_log = agora
+                        falta = "" if pos is None else f" (faltam {ret.distancia(pos, inicio):.2f} m)"
+                        log("retorno: andando" + falta if fase == "andar" else "retorno: virando para a pessoa")
+                    interromper.wait(dt)
+                self.stop()
+            return ""
+        finally:
+            self.stop()
 
     def meia_volta(self, cfg: MeiaVoltaConfig, interromper: threading.Event, log) -> str:
         """Gira 180° à esquerda medindo o yaw da IMU, depois anda `passo_m`. "" = deu certo."""
@@ -228,6 +301,14 @@ def serve(body: object, inp: IO[str], out: IO[str]) -> None:
                         MeiaVoltaConfig(**ordem["cfg"]), interromper, lambda t: print(t, file=sys.stderr)
                     )
                     reply(ordem, not erro, erro)
+                elif cmd == "marcar_inicio" and hasattr(body, "marcar_inicio"):
+                    ok = body.marcar_inicio()
+                    reply(ordem, ok, "" if ok else ret.FALHOU_SEM_ODOMETRIA)
+                elif cmd == "retorno" and hasattr(body, "retorno"):
+                    erro = body.retorno(
+                        ret.RetornoConfig(**ordem["cfg"]), interromper, lambda t: print(t, file=sys.stderr)
+                    )
+                    reply(ordem, not erro, erro)
                 else:
                     reply(ordem, False, f"ordem desconhecida {cmd!r}")
             except Exception as exc:  # erro do SDK numa ordem não derruba o processo
@@ -250,7 +331,7 @@ def serve(body: object, inp: IO[str], out: IO[str]) -> None:
                 final = ordem
                 break
             else:
-                if cmd == "meia_volta":
+                if cmd in ("meia_volta", "retorno"):
                     interromper.clear()  # aqui, não na executora: um `parar` já lido não pode ser apagado
                 fila.put(ordem)
         except Exception as exc:
@@ -258,7 +339,7 @@ def serve(body: object, inp: IO[str], out: IO[str]) -> None:
                 print(f"body_worker: {ordem['cmd']} falhou: {exc!r}", file=sys.stderr)  # sem resposta
             else:
                 reply(ordem if isinstance(ordem, dict) else {}, False, repr(exc))
-    interromper.set()  # a meia_volta em andamento não segue sem supervisão
+    interromper.set()  # a meia_volta ou o retorno em andamento não segue sem supervisão
     try:  # entrada fechada ou shutdown: para de andar já, antes de esperar a postura em andamento
         body.stop()
     except Exception as exc:

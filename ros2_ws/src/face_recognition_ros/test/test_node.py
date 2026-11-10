@@ -144,3 +144,18 @@ def test_enrollment_without_a_face_changes_nothing_even_when_replacing(node, mon
     monkeypatch.setattr(_FakeEngine, "faces", [])
     resposta = node._on_cadastrar(*_pedido_cadastro("gil", 1, False))
     assert resposta.ok is False and len(node._store.embeddings["gil"]) == 2
+
+
+def test_enrollment_from_the_webcam_uses_the_recent_frames(node, monkeypatch):
+    from robot_reaction_interfaces.srv import Cadastrar
+
+    monkeypatch.setattr(node_mod, "GUARDA_S", 0.0)  # guarda todo quadro
+    monkeypatch.setattr(_FakeEngine, "faces", [_Face((0, 0, 10, 10))])
+    pedido = Cadastrar.Request(nome="bianco", da_webcam=True)
+    vazio = node._on_cadastrar(pedido, Cadastrar.Response())
+    assert vazio.ok is False and "webcam" in vazio.mensagem
+    for i in range(12):
+        node._on_image(_image(f"f{i}"))
+    resposta = node._on_cadastrar(pedido, Cadastrar.Response())
+    assert resposta.ok and resposta.fotos_usadas == node_mod.QUADROS_CADASTRO
+    assert len(node._store.embeddings["bianco"]) == node_mod.QUADROS_CADASTRO

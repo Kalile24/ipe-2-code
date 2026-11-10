@@ -24,3 +24,12 @@
     passo_m: 0.2  # passo para frente depois de virar (m); 0 desliga
     vx_passo: 0.2  # velocidade do passo (m/s)
     tempo_max_meia_volta_s: 12.0  # meia-volta mais longa que isso → desiste
+    # Retorno (estágio `retorno`, desligado por padrão até ser testado): depois da meia-volta anda até o ponto
+    # de partida pela odometria e vira de frente para a pessoa. Spec 2026-11-10-retorno-escuta-painel-design.md
+    vx_retorno: 0.3  # m/s
+    tolerancia_retorno_m: 0.15  # chegou ao ponto de partida
+    retorno_min_m: 0.3  # andou menos que isto até a pessoa: não volta
+    tempo_max_retorno_s: 30.0  # por fase (andar, virar)
+    vyaw_retorno: 0.5  # rad/s, teto da correção de rumo e do giro final
+    kp_rumo: 1.0  # vyaw = kp × erro de rumo (rad)
+    tolerancia_rumo_graus: 8.0  # giro final

@@ -59,6 +59,8 @@ CAMPOS_OPERACAO = (  # o que o formulário pode mudar no operacao.yaml (o resto 
     "estagios", "altura_caixa_alvo_px", "vx", "vyaw_max", "vyaw_min", "kp_giro", "inverter_giro", "centro_ok",
     "centro_para_andar", "centro_chegada", "perda_rosto_s", "desistir_s", "tempo_max_s", "avisos_voz",
     "vyaw_meia_volta", "tolerancia_meia_volta_graus", "passo_m", "vx_passo", "tempo_max_meia_volta_s",
+    "vx_retorno", "tolerancia_retorno_m", "retorno_min_m", "tempo_max_retorno_s", "vyaw_retorno", "kp_rumo",
+    "tolerancia_rumo_graus",
 )
 FIM = ("fim", "falhou", "interrompida", "desistiu", "rejeitada")
 WEBCAM_GLOB = "/dev/v4l/by-id/*-video-index0"  # o mesmo que o robo_rotina_cumprimento.sh usa
@@ -328,11 +330,13 @@ class PainelNode(Node):
         r = resposta.results[0]
         return "ok" if r.successful else r.reason
 
-    def cadastrar(self, nome: str, fotos_b64: list[str], adicionar: bool = False) -> dict:
+    def cadastrar(self, nome: str, fotos_b64: list[str], adicionar: bool = False, webcam: bool = False) -> dict:
+        """Fotos enviadas, ou (webcam) os últimos quadros da câmera do robô, guardados pelo face_recognition_node."""
         if len(fotos_b64) > FOTOS_MAX:
             return {"ok": False, "mensagem": f"{len(fotos_b64)} fotos: o máximo é {FOTOS_MAX} por envio. Nada foi alterado."}
         fotos = [CompressedImage(format="jpeg", data=array.array("B", base64.b64decode(f.split(",", 1)[-1]))) for f in fotos_b64]
-        resposta = self._chamar(self._cadastrar, Cadastrar.Request(nome=nome, fotos=fotos, adicionar=adicionar), 90.0)
+        pedido = Cadastrar.Request(nome=nome, fotos=[] if webcam else fotos, adicionar=adicionar, da_webcam=webcam)
+        resposta = self._chamar(self._cadastrar, pedido, 90.0)
         if resposta is None:
             return {"ok": False, "mensagem": "face_recognition_node não respondeu (a rotina está de pé?)"}
         return {"ok": resposta.ok, "mensagem": resposta.mensagem, "tem_rotina": nome in self.pessoas_com_rotina()}
@@ -788,7 +792,8 @@ def handler(painel: PainelNode) -> type:
                     self._json({"mensagem": "bipe enviado; ouviu?"})
                 elif self.path == "/cadastrar":
                     dados = self._corpo()
-                    self._json(painel.cadastrar(str(dados.get("nome", "")), list(dados.get("fotos", [])), dados.get("adicionar") is True))
+                    self._json(painel.cadastrar(str(dados.get("nome", "")), list(dados.get("fotos", [])), dados.get("adicionar") is True,
+                                                dados.get("webcam") is True))
                 else:
                     self._json({"erro": "não existe"}, 404)
             except Exception as exc:  # um pedido ruim não derruba o painel

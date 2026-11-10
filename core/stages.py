@@ -1,4 +1,4 @@
-"""Estágios da reação a uma pessoa: virar, aproximar, fala, posturas e meia_volta.
+"""Estágios da reação a uma pessoa: virar, aproximar, fala, posturas, meia_volta e retorno (só depois da meia_volta).
 
 Puro. Spec: docs/superpowers/specs/2026-11-04-aproximacao-e-estagios-design.md
 """
@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import sys
 
-ESTAGIOS = ("virar", "aproximar", "fala", "posturas", "meia_volta")
+ESTAGIOS = ("virar", "aproximar", "fala", "posturas", "meia_volta", "retorno")
 
 
 def parse_stages(texto: str) -> frozenset[str]:
