@@ -438,3 +438,21 @@ def test_speech_text_is_saved_cleaned_and_a_bad_one_keeps_the_old(tmp_path, monk
     assert painel.salvar_discurso("   ")["ok"] is False
     assert painel.discurso()["texto"] == "Olá, banca."
     assert "discurso" in painel_mod.ORDENS
+
+
+def test_webcam_enrollment_warns_waits_then_asks_and_is_refused_during_a_routine(monkeypatch):
+    painel = PainelNode.__new__(PainelNode)
+    painel._lock = threading.Lock()
+    painel._corpo = "rotina"
+    assert painel.cadastrar("bianco", [], webcam=True)["ok"] is False
+    ordem = []
+    monkeypatch.setattr(painel_mod, "say", lambda texto: ordem.append(("fala", texto)))
+    monkeypatch.setattr(painel_mod.time, "sleep", lambda s: ordem.append(("espera", s)))
+    pedidos = []
+    painel._cadastrar = None
+    painel._chamar = lambda cliente, pedido, timeout: pedidos.append(pedido) or types.SimpleNamespace(ok=True, mensagem="ok")
+    painel.pessoas_com_rotina = lambda: {"bianco"}
+    painel._corpo = "mantendo:sentido"  # armado e parado: pode
+    assert painel.cadastrar("bianco", [], webcam=True)["ok"] is True
+    assert ordem == [("fala", "Olhe para a câmera"), ("espera", painel_mod.CAPTURA_S)]
+    assert pedidos[0].da_webcam is True and list(pedidos[0].fotos) == []

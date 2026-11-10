@@ -45,6 +45,7 @@ from core.bipes import tocar
 from core.caixa import CAIXA_PADRAO, caixa_atual, ler_dispositivos, mac_valido, nome_do_sink
 from core import discurso
 from core.comandos_voz import enviar_voz
+from core.piper_voice import say
 from core.config import DB_PATH, MODEL_NAME
 from core.identity_store import IdentityStore
 from core.pessoas import carregar_reacoes, nome_falado, rotina_padrao
@@ -72,6 +73,7 @@ CAIXA_CACHE_S = 3.0  # bluetoothctl/pactl a cada pedido pesariam no painel
 FORMATO_CACHE_S = 5.0
 PARAM_RETRY_S = 10.0  # nó que não respondeu um parâmetro fixo: só pergunta de novo depois disso
 FOTOS_MAX = 10
+CAPTURA_S = 1.5  # > a janela de quadros do face_recognition_node (6 × 0,15 s, ~1,2 s a 5 quadros/s)
 CORPO_MAX = 64 * 1024 * 1024  # 10 fotos de 1280 px cabem com folga
 EVENTOS_NA_TELA = 30
 ORDENS = {"sentido": "sentido", "continencia": "continência", "apresentacao": "apresentação", "a_vontade": "à vontade",
@@ -331,9 +333,23 @@ class PainelNode(Node):
         return "ok" if r.successful else r.reason
 
     def cadastrar(self, nome: str, fotos_b64: list[str], adicionar: bool = False, webcam: bool = False) -> dict:
-        """Fotos enviadas, ou (webcam) os últimos quadros da câmera do robô, guardados pelo face_recognition_node."""
+        """Fotos enviadas, ou (webcam) os quadros da câmera do robô depois do aviso "Olhe para a câmera".
+
+        O face_recognition_node guarda os últimos ~3 s de quadros: esperando CAPTURA_S depois do aviso, os quadros usados
+        são só os de depois dele. Com o robô armado, só sem rotina em andamento (o cadastro pausa o reconhecimento).
+        """
         if len(fotos_b64) > FOTOS_MAX:
             return {"ok": False, "mensagem": f"{len(fotos_b64)} fotos: o máximo é {FOTOS_MAX} por envio. Nada foi alterado."}
+        with self._lock:
+            corpo = self._corpo
+        if corpo == "rotina":
+            return {"ok": False, "mensagem": "há uma rotina em andamento: espere terminar (o cadastro pausa o reconhecimento)"}
+        if webcam:
+            try:
+                say("Olhe para a câmera")
+            except Exception as exc:  # sem caixa, o cadastro segue: a pessoa já sabe que é para olhar
+                self.get_logger().warn(f"aviso do cadastro não falou: {exc!r}")
+            time.sleep(CAPTURA_S)
         fotos = [CompressedImage(format="jpeg", data=array.array("B", base64.b64decode(f.split(",", 1)[-1]))) for f in fotos_b64]
         pedido = Cadastrar.Request(nome=nome, fotos=[] if webcam else fotos, adicionar=adicionar, da_webcam=webcam)
         resposta = self._chamar(self._cadastrar, pedido, 90.0)

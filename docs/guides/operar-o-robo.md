@@ -234,14 +234,15 @@ mas quem estiver na mesma rede consegue comandar. Em Wi-Fi compartilhado, deixe 
 (pede confirmação). A pessoa é reconhecida com as fotos novas na hora. Com várias pessoas na foto, vale o maior rosto:
 use fotos com uma pessoa só.
 
-**Pessoa nova:** digite o nome (minúsculas, sem espaço), o **tratamento** e a foto. Ela ganha o gesto
+**Pessoa nova:** digite o nome (minúsculas, sem espaço), o **tratamento** e a foto (ou a webcam, abaixo). Ela ganha o gesto
 padrão e a fala *"Olá, <tratamento> <Nome>, sou o Tenente Nichinica"*. A rotina vale na **próxima subida**.
 Se o nome soar mal, preencha **Nome falado** como ele deve soar.
 
-**Cadastro rápido pela webcam do robô** (recomendado: usa a câmera que vai reconhecer): rotina de pé e **desarmada**;
-nome e, para pessoa nova, tratamento; a pessoa **de frente para o robô, a ~1 m, parada por 3 s**; clique
-**Fotografar pela webcam do robô** (não o **Salvar**: sem foto escolhida, o Salvar só grava a rotina). Ele usa os 8
-quadros dos últimos ~3 s e responde "<nome> cadastrado: N foto(s) aproveitada(s)". Repita de outro ângulo para somar fotos.
+**Cadastro rápido pela webcam do robô** (recomendado: usa a câmera que vai reconhecer): rotina de pé, armada ou não,
+**sem cumprimento em andamento**; nome e, para pessoa nova, tratamento; clique **Fotografar pela webcam do robô** (não o
+**Salvar**: sem foto escolhida, o Salvar só grava a rotina). O robô diz **"Olhe para a câmera"** e, 1,5 s depois, usa os 6
+quadros do último segundo: a pessoa **de frente, a ~1 m, parada**. Responde "<nome> cadastrado: N foto(s) aproveitada(s)".
+Repita de outro ângulo para somar fotos.
 
 **Coronel Aderson:** tem rotina (*"Olá, coronel veterano Aderson, sou o Tenente Nichinica"*) e está no banco
 enviado pelo notebook, com 6 fotos. O Gil tem 2. Só esses dois têm rotina no projeto; os cadastrados pelo painel (ex.:

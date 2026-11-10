@@ -222,7 +222,7 @@
           <label class="bloco">Nome <small>minúsculas, sem espaço</small>
             <input id="nome" required pattern="[a-z0-9_]+" autocapitalize="off" autocomplete="off" list="nomes" placeholder="gil" oninput="ajustarCadastro()"></label>
           <datalist id="nomes"></datalist>
-          <label class="bloco">Fotos <small>de frente, uma pessoa só, até 10 por envio; a rotina precisa estar de pé e desarmada</small>
+          <label class="bloco">Fotos <small>de frente, uma pessoa só, até 10 por envio; a rotina precisa estar de pé (sem cumprimento em andamento)</small>
             <input id="fotos" type="file" accept="image/*" multiple></label>
           <div id="modo_bloco">
             <label class="caixa-marcar"><input type="radio" name="modo" id="modo_adicionar" checked> <span>Adicionar às fotos atuais</span></label>
@@ -239,8 +239,9 @@
             <button class="primario" id="b_cadastrar">Salvar</button>
             <button type="button" id="b_webcam" onclick="cadastrar(event, true)">Fotografar pela webcam do robô</button>
           </div>
-          <p class="dica"><b>Cadastro rápido:</b> nome, tratamento (pessoa nova) e a pessoa <b>de frente para o robô, a ~1 m, por 3 s</b>;
-            depois <b>Fotografar pela webcam do robô</b>. Usa os quadros dos últimos ~3 s da própria câmera que vai reconhecer.</p>
+          <p class="dica"><b>Cadastro rápido:</b> nome e, para pessoa nova, tratamento; clique <b>Fotografar pela webcam do robô</b>.
+            O robô diz "Olhe para a câmera" e fotografa o segundo seguinte: a pessoa <b>de frente, a ~1 m, parada</b>. Funciona armado,
+            com o robô parado.</p>
         </form>
         <p id="cad" class="msg" role="status"></p>
       </div>
@@ -768,12 +769,12 @@ async function cadastrar(ev, webcam = false) {
   if (!webcam && !arquivos.length && !tratamento) return avisoCad('bad', 'Escolha uma foto ou preencha o tratamento.');
   if (arquivos.length > 10) return avisoCad('bad', `São ${arquivos.length} fotos: envie no máximo 10 de cada vez.`);
   if ((webcam || arquivos.length) && estado) {
-    if (!estado.reconhecimento.no) return avisoCad('bad', 'Para cadastrar fotos, aperte Subir desarmado e espere o reconhecimento entrar no ar.');
-    if (estado.armado !== false) return avisoCad('bad', 'O cadastro pausa o reconhecimento: com o robô armado isso não é seguro. Pare e suba desarmado.');
+    if (!estado.reconhecimento.no) return avisoCad('bad', 'Para cadastrar fotos, suba a rotina e espere o reconhecimento entrar no ar.');
+    if (estado.corpo === 'rotina') return avisoCad('bad', 'Há uma rotina em andamento: espere terminar (o cadastro pausa o reconhecimento).');
   }
   if ((webcam || arquivos.length) && !adicionar && pessoa && pessoa.fotos && !confirm(`Apagar as ${pessoa.fotos} fotos atuais de ${nome} e ficar só com as novas?`)) return;
   $('b_cadastrar').disabled = $('b_webcam').disabled = true;
-  avisoCad('muted', 'enviando…');
+  avisoCad('muted', webcam ? 'o robô vai dizer "Olhe para a câmera": a pessoa fica de frente, parada…' : 'enviando…');
   try {
     let aviso = '';
     if (tratamento) {

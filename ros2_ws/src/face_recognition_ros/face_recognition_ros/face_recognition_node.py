@@ -33,7 +33,7 @@ _IMAGE_QOS = {
     "default": QoSProfile(reliability=ReliabilityPolicy.RELIABLE, history=HistoryPolicy.KEEP_LAST, depth=1),
 }
 HEARTBEAT_S = 10.0
-QUADROS_CADASTRO, GUARDA_S = 8, 0.4  # cadastro pela webcam: 8 quadros dos últimos ~3 s
+QUADROS_CADASTRO, GUARDA_S = 6, 0.15  # cadastro pela webcam: 6 quadros do último ~1 s
 NOME_VALIDO = re.compile(r"^[a-z0-9_]+$")  # vira chave do reactions.yaml: minúsculas, sem espaço
 
 
@@ -100,7 +100,7 @@ class FaceRecognitionNode(Node):
         # Se nem esta linha aparecer, o nó está preso dentro de um frame (o timer roda na mesma thread).
         self._frames = 0
         self._faces = 0
-        # Cadastro pela webcam: os últimos quadros, um a cada GUARDA_S (~3 s). O serviço roda na mesma
+        # Cadastro pela webcam: os últimos quadros, um a cada GUARDA_S (~1 s). O serviço roda na mesma
         # thread das imagens, então não dá para esperar quadros novos dentro dele: usa os já guardados.
         self._recentes: deque = deque(maxlen=QUADROS_CADASTRO)
         self._guardado_em = 0.0
