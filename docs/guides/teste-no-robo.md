@@ -256,6 +256,30 @@ Troque `sentido` por `apresentar arma`, `atenção`, `apresente se`, `descansar 
       **Fala de apresentação**: tem que sair o texto novo. Ajuste a pronúncia de "Nichinica" e "Níksi" se precisar.
 - [ ] F3+X (ou o botão **À vontade**) solta; sem nada, solta sozinho em 300 s (`posicao_max_s`).
 
+## O que falta (atualizado em 2026-11-11)
+
+Testado no robô em 2026-11-10/11: atualização e compilação, medição do giro, meia-volta (tolerância 3°, passo 0,4 m),
+caminho completo (aproximação → cumprimento → meia-volta), comandos de voz pelo Vosk, fala de apresentação (F3+R1),
+cadastro pela webcam (bianco), retorno ao ponto de partida, escuta contínua e bateria no painel.
+
+Falta:
+
+- [ ] **"Descansar arma" pela voz** (seção 10): "Tenente Nichinica, apresentar arma" e depois "Tenente Nichinica,
+      descansar arma". O braço tem que descer rápido e o robô ficar à vontade.
+- [ ] **Aproximação a 0,45 m/s** (`vx` no `data/operacao.yaml` do robô): acima dos 0,1–0,2 sugeridos para os primeiros
+      testes. Funcionou, mas confirme a velocidade antes da apresentação.
+
+Fica para depois da apresentação de quinta-feira (2026-11-13):
+
+- **TensorRT no reconhecimento:** falta a pasta `~/.insightface/trt_cache/buffalo_l`; sem ela o reconhecimento roda só com
+  CUDA (funciona, sobe mais devagar). Não mexer antes da apresentação.
+- **Mensagem "inicializando: damp → em pé → equilíbrio (robô no suporte)"** aparece mesmo quando o robô já está em
+  equilíbrio e nada é feito: texto que assusta, sem efeito no movimento.
+- **Webcam com mau contato no USB:** cai e volta algumas vezes (`usb 1-3: USB disconnect` no `journalctl -k`). Prender o
+  conector ou trocar o cabo/porta; o vigia da câmera continua desligado.
+- **Testes do pacote ROS mais rápidos** (~2 min): rodar só os arquivos afetados no dia a dia, `--durations` para achar os
+  lentos, `pytest-xdist` com um `ROS_DOMAIN_ID` por processo.
+
 ## O que mandar se algo der errado
 
 - A janela `status` (o que o body_node fez) e o log da janela `rotina`.
