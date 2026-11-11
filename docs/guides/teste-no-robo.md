@@ -269,10 +269,18 @@ Falta:
 - [ ] **"Descansar arma" pela voz** (seção 10): "Tenente Nichinica, apresentar arma" e depois "Tenente Nichinica,
       descansar arma". O braço tem que descer rápido e o robô ficar **em sentido** até o "à vontade" (ordem unida).
 
+Na próxima conexão ao robô:
+
+- **Instalar o "descansar arma" que mantém o sentido** (`0222a43`): `git pull` (ou o envio por SSH do guia de operação), sem
+  build; descer e subir a rotina para o YAML valer. Depois, o teste acima.
+- **TensorRT no reconhecimento:** hoje roda só com CUDA porque falta a pasta do cache, e o painel mostra os quadros/s
+  **variando muito**. Com o TensorRT, em outubro: ~42 ms por quadro, ~24 quadros/s estáveis. Com a rotina parada:
+  `mkdir -p ~/.insightface/trt_cache/buffalo_l`; na primeira subida o reconhecimento fica **~2 min sem processar**
+  enquanto o TensorRT monta os engines (normal); as seguintes começam na hora. Confira no log da janela `rotina`:
+  `providers ativos` com `TensorrtExecutionProvider` e sem `EP Error ... trt_cache`; no painel, os quadros/s estáveis.
+
 Fica para depois da apresentação de quinta-feira (2026-11-13):
 
-- **TensorRT no reconhecimento:** falta a pasta `~/.insightface/trt_cache/buffalo_l`; sem ela o reconhecimento roda só com
-  CUDA (funciona, sobe mais devagar). Não mexer antes da apresentação.
 - **Mensagem "inicializando: damp → em pé → equilíbrio (robô no suporte)"** aparece mesmo quando o robô já está em
   equilíbrio e nada é feito: texto que assusta, sem efeito no movimento.
 - **Webcam com mau contato no USB:** cai e volta algumas vezes (`usb 1-3: USB disconnect` no `journalctl -k`). Prender o
