@@ -7,7 +7,8 @@ pessoas, trocar webcam ou caixa, e resolver problemas.
 > Para parar fora do suporte: **F3+↓** ou o botão **PARAR** do painel.
 
 **Sempre:** alguém com o controle na mão e espaço livre em volta. Ninguém aperta START nem F1+… (são
-do `~/hhhh`).
+do `~/hhhh`). Para testar os modos de caminhada do controle (marcha mais militar, giros), veja
+[`testar-marcha.md`](testar-marcha.md).
 
 ## 1. Atualizar o robô
 

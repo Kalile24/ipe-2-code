@@ -286,7 +286,7 @@ Fica para depois da apresentação de quinta-feira (2026-11-13):
   frente, conferido com uma pessoa/caixa a 1, 2 e 3 m; 2) **parada por obstáculo** em todas as caminhadas (aproximação,
   meia-volta, retorno): algo numa caixa à frente → para e registra. O `livox_ros_driver2` (direto no IP 192.168.123.120)
   só se o tópico não bastar: disputaria o sensor com o driver da Unitree, que o SLAM usa.
-- **Explorar a movimentação** (sempre com alguém segurando e o controle na mão): velocidade da aproximação 0,45 × 0,3 m/s
+- **Explorar a movimentação** — roteiro completo em [`testar-marcha.md`](testar-marcha.md) (sempre com alguém segurando e o controle na mão): velocidade da aproximação 0,45 × 0,3 m/s
   filmado; modo de caminhada **801 (Run, o atual) × 500 (Walk) × 501 (Walk, cintura 3 eixos)** — trocar pelo controle, no
   suporte; o código exige 801 para armar e só muda se o 500/501 ficar melhor; **passo lateral** (`vy`) para se alinhar
   com a pessoa; gestos do firmware (aperto de mão 27, aceno 26) no cumprimento, coordenando com o `arm_sdk`.
