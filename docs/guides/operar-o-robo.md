@@ -170,7 +170,7 @@ sozinha em 8 s). Pode usar o vocativo ("Tenente Nichinica, sentido") ou só o co
 | **Apresentar arma** (ou só "apresentar") | Continência e **mantém** |
 | **Atenção** | Descansar e **mantém** |
 | **Apresente-se** | Sentido, "Sou o Tenente Nichinica" e à vontade |
-| **Descansar arma** | Depois do apresentar arma: abaixa o braço rápido (como na rotina de cumprimento) e fica à vontade |
+| **Descansar arma** | Depois do apresentar arma: abaixa o braço rápido (como na rotina de cumprimento) e **mantém o sentido** até o à vontade |
 | **À vontade** | Solta a posição (também **F3+X** e o botão **À vontade**) |
 
 **Escuta contínua** (F3+L1 ou **Ligar escuta contínua** no cartão **Voz** do painel): o robô ouve o tempo todo, sem

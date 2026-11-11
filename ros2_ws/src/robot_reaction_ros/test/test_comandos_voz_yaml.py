@@ -15,7 +15,7 @@ def test_yaml_do_pacote_carrega_e_tem_os_seis():
     assert tabela.nao_entendi == "Não entendi, repita o comando"
     assert tabela.frases == ["sentido", "apresentar arma", "apresentar", "atenção", "apresente se", "apresente", "descansar arma", "à vontade", "vontade"]
     assert reconhecer(tabela, "tenente descansar arma") == "descansar_arma"
-    assert tabela.comandos["descansar_arma"][1] == [{"postura": "desc_arma"}, {"postura": "a_vontade"}]
+    assert tabela.comandos["descansar_arma"][1] == [{"postura": "desc_arma"}, {"postura": "sentido"}]
     assert reconhecer(tabela, "tenente apresente") == "apresentacao" and reconhecer(tabela, "vontade") == "a_vontade"
     assert reconhecer(tabela, "tenente apresentar") == "continencia"
     assert reconhecer(tabela, "Tenente Nichinica, apresentar arma!") == "continencia"

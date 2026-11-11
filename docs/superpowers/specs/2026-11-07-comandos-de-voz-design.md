@@ -74,8 +74,8 @@ fala nada, só o painel avisa.
   `[unk]`): 4 de 4 na medição e os 5 comandos pelo controle, ~0,1 s por frase. Ele não faz ditado livre:
   ou devolve uma frase da tabela, ou nada.
 - **Voz militar** (pedido do usuário, 2026-11-10): "Apresentar arma" (ou só "apresentar") faz a continência;
-  "Descansar arma" abaixa o braço com o `desc_arma` (1,4 rad/s) e fica à vontade; "À vontade" sozinho, vindo
-  da continência, desce a 0,35 rad/s. A gravação vai até 8 s, para caber a pausa entre "apresentar" e
+  "Descansar arma" abaixa o braço com o `desc_arma` (1,4 rad/s) e **mantém o sentido**, como na ordem unida (quem
+  tira do sentido é o comando seguinte, "à vontade"); "À vontade" sozinho, vindo da continência, desce a 0,35 rad/s. A gravação vai até 8 s, para caber a pausa entre "apresentar" e
   "arma".
 - **Execução pelo `body_node`**, que já é o único dono dos braços e das pernas e só aceita uma
   rotina por vez. A posição mantida é um estado novo do `body_node`; a regra "toda rotina termina em

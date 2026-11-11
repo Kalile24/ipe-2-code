@@ -248,7 +248,8 @@ Troque `sentido` por `apresentar arma`, `atenção`, `apresente se`, `descansar 
 - [ ] `texto:sentido`: o painel mostra "segurando sentido"; durante ele, F3+→ toca os dois tons graves de recusado.
 - [ ] Com F3+Y segurado, F3+↓ ainda para tudo.
 - [ ] Segurando **Apresentar arma**, F3+X e depois F3+↓: observe a folga dos braços (soltar pula o desc. arma).
-- [ ] "Tenente Nichinica, apresentar arma" e depois "Tenente Nichinica, descansar arma": o braço desce rápido e fica à vontade.
+- [ ] "Tenente Nichinica, apresentar arma" e depois "Tenente Nichinica, descansar arma": o braço desce rápido e o robô
+      **fica em sentido** (painel: "segurando sentido") até "à vontade".
 - [ ] **Escuta contínua (F3+L1):** dois tons subindo e "Escuta ligada"; o painel mostra ESCUTANDO. Sem apertar nada,
       "Tenente Nichinica, sentido" executa; "sentido" sozinho não. Conversa perto do robô não dispara nada. F3+Y ainda
       funciona. F3+L1 de novo: dois tons descendo e "Escuta desligada". O botão do cartão **Voz** faz o mesmo.
@@ -260,14 +261,13 @@ Troque `sentido` por `apresentar arma`, `atenção`, `apresente se`, `descansar 
 
 Testado no robô em 2026-11-10/11: atualização e compilação, medição do giro, meia-volta (tolerância 3°, passo 0,4 m),
 caminho completo (aproximação → cumprimento → meia-volta), comandos de voz pelo Vosk, fala de apresentação (F3+R1),
-cadastro pela webcam (bianco), retorno ao ponto de partida, escuta contínua e bateria no painel.
+cadastro pela webcam (bianco), retorno ao ponto de partida, escuta contínua, bateria no painel e a aproximação a 0,45 m/s
+(confirmada pelo operador).
 
 Falta:
 
 - [ ] **"Descansar arma" pela voz** (seção 10): "Tenente Nichinica, apresentar arma" e depois "Tenente Nichinica,
-      descansar arma". O braço tem que descer rápido e o robô ficar à vontade.
-- [ ] **Aproximação a 0,45 m/s** (`vx` no `data/operacao.yaml` do robô): acima dos 0,1–0,2 sugeridos para os primeiros
-      testes. Funcionou, mas confirme a velocidade antes da apresentação.
+      descansar arma". O braço tem que descer rápido e o robô ficar **em sentido** até o "à vontade" (ordem unida).
 
 Fica para depois da apresentação de quinta-feira (2026-11-13):
 

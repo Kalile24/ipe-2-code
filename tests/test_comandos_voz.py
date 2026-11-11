@@ -119,3 +119,9 @@ def test_escuta_continua_so_aceita_com_o_vocativo():
     assert comando_da_escuta(tabela, "tenente sentido") == "sentido"
     assert comando_da_escuta(tabela, "sentido") is None  # pedaço sem o vocativo: pode ser a plateia
     assert comando_da_escuta(tabela, "tenente") is None
+
+
+def test_descansar_arma_desce_o_braco_e_fica_em_sentido():
+    passos = [{"postura": "desc_arma"}, {"postura": "sentido"}]
+    assert transicao("continencia", passos) == passos
+    assert posicao_final("continencia", passos) == "sentido"  # mantém até o à vontade
