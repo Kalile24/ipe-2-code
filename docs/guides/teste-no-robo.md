@@ -281,6 +281,19 @@ Na próxima conexão ao robô:
 
 Fica para depois da apresentação de quinta-feira (2026-11-13):
 
+- **LiDAR (Livox MID-360):** ler a nuvem que a Unitree já publica em `rt/utlidar/cloud_livox_mid360` (10 Hz, tipo
+  `PointCloud2_`, já no `unitree_sdk2py`: nada a instalar). 1) script só de leitura com a distância do ponto mais próximo à
+  frente, conferido com uma pessoa/caixa a 1, 2 e 3 m; 2) **parada por obstáculo** em todas as caminhadas (aproximação,
+  meia-volta, retorno): algo numa caixa à frente → para e registra. O `livox_ros_driver2` (direto no IP 192.168.123.120)
+  só se o tópico não bastar: disputaria o sensor com o driver da Unitree, que o SLAM usa.
+- **Explorar a movimentação** (sempre com alguém segurando e o controle na mão): velocidade da aproximação 0,45 × 0,3 m/s
+  filmado; modo de caminhada **801 (Run, o atual) × 500 (Walk) × 501 (Walk, cintura 3 eixos)** — trocar pelo controle, no
+  suporte; o código exige 801 para armar e só muda se o 500/501 ficar melhor; **passo lateral** (`vy`) para se alinhar
+  com a pessoa; gestos do firmware (aperto de mão 27, aceno 26) no cumprimento, coordenando com o `arm_sdk`.
+- **Mapeamento (SLAM, serviço `slam_operate`) — teste exploratório:** mapear a sala pelo controle (APIs 1801/1802), ligar
+  de novo e conferir se ele se localiza (1804, só leitura), depois ir a um ponto 2 m à frente e voltar (1102). Se for
+  preciso, vira o "posto" da apresentação e substitui a odometria no retorno. Doc: `UNITREE_G1_base_documentacao/
+  ORIGINAIS/unitree_official_G1_developer/734_slam_navigation_services_interface.md`.
 - **Mensagem "inicializando: damp → em pé → equilíbrio (robô no suporte)"** aparece mesmo quando o robô já está em
   equilíbrio e nada é feito: texto que assusta, sem efeito no movimento.
 - **Webcam com mau contato no USB:** cai e volta algumas vezes (`usb 1-3: USB disconnect` no `journalctl -k`). Prender o
