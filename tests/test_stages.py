@@ -9,7 +9,7 @@ GIL = [
 ]
 
 def test_all_stages_by_default_text():
-    assert parse_stages("virar,aproximar,fala,posturas,meia_volta") == frozenset(ESTAGIOS)
+    assert parse_stages("virar,aproximar,fala,posturas,meia_volta,retorno") == frozenset(ESTAGIOS)
 
 def test_approach_implies_turning():
     assert parse_stages(" aproximar , fala ") == {"aproximar", "virar", "fala"}

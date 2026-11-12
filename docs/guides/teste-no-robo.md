@@ -202,12 +202,28 @@ robô começa. Operador com o controle na mão.
 Ajustes (grupo **Meia-volta** na aba Calibrar): `vyaw_meia_volta` 0,5 rad/s, `tolerancia_meia_volta_graus`
 10°, `passo_m` 0,2 m (0 = sem passo), `vx_passo` 0,2 m/s, `tempo_max_meia_volta_s` 12 s.
 
+### 9a. Retorno ao ponto de partida
+
+Depois da meia-volta, anda até onde estava ao reconhecer a pessoa e vira de frente para ela. Design:
+[`2026-11-10-retorno-escuta-painel-design.md`](../superpowers/specs/2026-11-10-retorno-escuta-painel-design.md).
+
+1. **Medir a odometria (só leitura, nenhum comando ao robô):** `python3 scripts/robo_medir_odometria.py`. Marque o chão,
+   ande ~1 m pelo controle da Unitree, volte à marca e fique 20 s parado; Ctrl+C mostra o resumo. Tem que dar `andou`
+   perto da distância real e `do inicio` < 0,15 m na marca. O `rt/odommodestate` publica neste G1 (o de 20 Hz, `rt/lf/…`,
+   não). Se a odometria não acompanhar, não ligue o retorno.
+2. **Desarmado:** marque **Retorno** no painel e cumprimente: nada se mexe; o log só não tem erro.
+3. **Armado, com espaço:** a pessoa a ~3 m, caminho livre. F3+→: aproxima, cumprimenta, meia-volta, **anda de volta**
+   ("retorno: andando (faltam …)") e **vira de frente** ("retorno: virando para a pessoa", "retorno: fim").
+4. **F3+↓ no meio da volta e no meio do giro final:** para na hora.
+5. Se falhar: `retorno: falhou (tempo esgotado | afastando do ponto de partida | sem odometria | sem ponto de partida |
+   interrompida)`. Ajustes no grupo **Retorno** da aba Calibrar (comece com `vx_retorno` 0,2–0,3).
+
 ## 10. Comandos de voz
 
-O reconhecimento de fala ainda não está instalado (vem depois de medir o microfone): F3+Y grava, mas a transcrição
-falha e o robô fala "Não entendi". Os comandos (Sentido, Continência, Apresentação, À vontade) testam-se por texto.
-"Atenção" está desligado no `comandos_voz.yaml` (responde "Não entendi") até resolver o desequilíbrio do descansar
-(o robô tomba para trás quando os braços voltam; suspeita: fixador da cintura).
+O reconhecimento de fala é o Vosk com a gramática dos comandos (instalação: [`jetson-deployment.md`](jetson-deployment.md)
+seção 5). Na subida, a janela `rotina` mostra `reconhecimento de fala: Vosk, 9 frases`. Os comandos (Sentido, Apresentar arma,
+Atenção, Apresente-se, Descansar arma, À vontade) também se testam por texto, sem microfone. "Atenção" (descansar) foi
+religado em 2026-11-10 depois de duas idas e voltas estáveis no robô.
 
 ```bash
 cd ~/ipe-2-code/ros2_ws && python3 -m colcon build --symlink-install   # a ação Rotina mudou: build completo
@@ -224,19 +240,73 @@ source ~/ipe-2-code/scripts/ambiente_robo.sh
 cd ~/ipe-2-code && python3 -c 'from core.comandos_voz import enviar_voz; enviar_voz("texto:sentido")'
 ```
 
-Troque `sentido` por `continencia`, `apresentacao` ou `a vontade`. Confira, no painel e no status:
+Troque `sentido` por `apresentar arma`, `atenção`, `apresente se`, `descansar arma` ou `à vontade`. Confira, no painel e no status:
 
 - [ ] `arecord` existe; `robo_medir_voz.sh` mostra o microfone e um pico acima de zero falando.
-- [ ] Segurar F3+Y e soltar: o `voz_node` mostra `gravando` (depois "Não entendi", por ora).
+- [ ] Segurar F3+Y, dizer "Tenente Nichinica, sentido" e soltar: o log mostra `voz: 'tenente sentido' -> sentido`.
+- [ ] Os outros quatro pela voz. Com a pausa militar ("apresentar… arma"), solte só depois do "arma".
 - [ ] `texto:sentido`: o painel mostra "segurando sentido"; durante ele, F3+→ toca os dois tons graves de recusado.
 - [ ] Com F3+Y segurado, F3+↓ ainda para tudo.
-- [ ] Segurando **Continência**, F3+X e depois F3+↓: observe a folga dos braços (soltar pula o desc. arma).
+- [ ] Segurando **Apresentar arma**, F3+X e depois F3+↓: observe a folga dos braços (soltar pula o desc. arma).
+- [ ] "Tenente Nichinica, apresentar arma" e depois "Tenente Nichinica, descansar arma": o braço desce rápido e o robô
+      **fica em sentido** (painel: "segurando sentido") até "à vontade".
+- [ ] **Escuta contínua (F3+L1):** dois tons subindo e "Escuta ligada"; o painel mostra ESCUTANDO. Sem apertar nada,
+      "Tenente Nichinica, sentido" executa; "sentido" sozinho não. Conversa perto do robô não dispara nada. F3+Y ainda
+      funciona. F3+L1 de novo: dois tons descendo e "Escuta desligada". O botão do cartão **Voz** faz o mesmo.
+- [ ] **F3+R1**: sentido, a fala de apresentação pela caixa e à vontade. No painel, mude o texto, salve e aperte
+      **Fala de apresentação**: tem que sair o texto novo. Ajuste a pronúncia de "Nichinica" e "Níksi" se precisar.
 - [ ] F3+X (ou o botão **À vontade**) solta; sem nada, solta sozinho em 300 s (`posicao_max_s`).
+
+## O que falta (atualizado em 2026-11-11)
+
+Testado no robô em 2026-11-10/11: atualização e compilação, medição do giro, meia-volta (tolerância 3°, passo 0,4 m),
+caminho completo (aproximação → cumprimento → meia-volta), comandos de voz pelo Vosk, fala de apresentação (F3+R1),
+cadastro pela webcam (bianco), retorno ao ponto de partida, escuta contínua, bateria no painel e a aproximação a 0,45 m/s
+(confirmada pelo operador).
+
+Falta:
+
+- [ ] **"Descansar arma" pela voz** (seção 10): "Tenente Nichinica, apresentar arma" e depois "Tenente Nichinica,
+      descansar arma". O braço tem que descer rápido e o robô ficar **em sentido** até o "à vontade" (ordem unida).
+
+Na próxima conexão ao robô:
+
+- **Instalar o "descansar arma" que mantém o sentido** (`0222a43`): `git pull` (ou o envio por SSH do guia de operação), sem
+  build; descer e subir a rotina para o YAML valer. Depois, o teste acima.
+- **TensorRT no reconhecimento:** hoje roda só com CUDA porque falta a pasta do cache, e o painel mostra os quadros/s
+  **variando muito**. Com o TensorRT, em outubro: ~42 ms por quadro, ~24 quadros/s estáveis. Com a rotina parada:
+  `mkdir -p ~/.insightface/trt_cache/buffalo_l`; na primeira subida o reconhecimento fica **~2 min sem processar**
+  enquanto o TensorRT monta os engines (normal); as seguintes começam na hora. Confira no log da janela `rotina`:
+  `providers ativos` com `TensorrtExecutionProvider` e sem `EP Error ... trt_cache`; no painel, os quadros/s estáveis.
+
+Fica para depois da apresentação de quinta-feira (2026-11-13):
+
+- **LiDAR (Livox MID-360):** ler a nuvem que a Unitree já publica em `rt/utlidar/cloud_livox_mid360` (10 Hz, tipo
+  `PointCloud2_`, já no `unitree_sdk2py`: nada a instalar). 1) script só de leitura com a distância do ponto mais próximo à
+  frente, conferido com uma pessoa/caixa a 1, 2 e 3 m; 2) **parada por obstáculo** em todas as caminhadas (aproximação,
+  meia-volta, retorno): algo numa caixa à frente → para e registra. O `livox_ros_driver2` (direto no IP 192.168.123.120)
+  só se o tópico não bastar: disputaria o sensor com o driver da Unitree, que o SLAM usa.
+- **Explorar a movimentação** — roteiro completo em [`testar-marcha.md`](testar-marcha.md) (sempre com alguém segurando e o controle na mão): velocidade da aproximação 0,45 × 0,3 m/s
+  filmado; modo de caminhada **801 (Run, o atual) × 500 (Walk) × 501 (Walk, cintura 3 eixos)** — trocar pelo controle, no
+  suporte; o código exige 801 para armar e só muda se o 500/501 ficar melhor; **passo lateral** (`vy`) para se alinhar
+  com a pessoa; gestos do firmware (aperto de mão 27, aceno 26) no cumprimento, coordenando com o `arm_sdk`.
+- **Mapeamento (SLAM, serviço `slam_operate`) — teste exploratório:** mapear a sala pelo controle (APIs 1801/1802), ligar
+  de novo e conferir se ele se localiza (1804, só leitura), depois ir a um ponto 2 m à frente e voltar (1102). Se for
+  preciso, vira o "posto" da apresentação e substitui a odometria no retorno. Doc: `UNITREE_G1_base_documentacao/
+  ORIGINAIS/unitree_official_G1_developer/734_slam_navigation_services_interface.md`.
+- **Mensagem "inicializando: damp → em pé → equilíbrio (robô no suporte)"** aparece mesmo quando o robô já está em
+  equilíbrio e nada é feito: texto que assusta, sem efeito no movimento.
+- **Webcam com mau contato no USB:** cai e volta algumas vezes (`usb 1-3: USB disconnect` no `journalctl -k`). Prender o
+  conector ou trocar o cabo/porta; o vigia da câmera continua desligado.
+- **Testes do pacote ROS mais rápidos** (~2 min): rodar só os arquivos afetados no dia a dia, `--durations` para achar os
+  lentos, `pytest-xdist` com um `ROS_DOMAIN_ID` por processo.
 
 ## O que mandar se algo der errado
 
 - A janela `status` (o que o body_node fez) e o log da janela `rotina`.
 - Da meia-volta: a saída do `robo_medir_giro.py` e a linha `meia_volta:` do status.
+- Do retorno: o resumo do `robo_medir_odometria.py` e as linhas `retorno:` do status.
+- Da escuta contínua: as linhas `escuta:` do log da janela `rotina` (o que ouviu e o comando).
 - Em qual etapa deste guia, com quais `--estagios` e qual `operacao.yaml`.
 - O arquivo do **Baixar diagnóstico**, do painel.
 - Pelo controle: `journalctl --user -u ipe-controle --since "-10min"`.

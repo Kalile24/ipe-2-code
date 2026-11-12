@@ -7,7 +7,8 @@ pessoas, trocar webcam ou caixa, e resolver problemas.
 > Para parar fora do suporte: **F3+↓** ou o botão **PARAR** do painel.
 
 **Sempre:** alguém com o controle na mão e espaço livre em volta. Ninguém aperta START nem F1+… (são
-do `~/hhhh`).
+do `~/hhhh`). Para testar os modos de caminhada do controle (marcha mais militar, giros), veja
+[`testar-marcha.md`](testar-marcha.md).
 
 ## 1. Atualizar o robô
 
@@ -146,27 +147,45 @@ Segure **F3** e aperte o outro botão.
 
 | Combo | O que faz | Bipe |
 |---|---|---|
-| **F3 + ↑** | Sobe a rotina armada, com o automático **desligado**. Só em equilíbrio | dois tons subindo |
+| **F3 + ↑** | Sobe a rotina armada, com o automático **desligado**. Só em equilíbrio e com bateria ≥ 10% | dois tons subindo |
 | **F3 + →** | Cumprimenta agora quem está sendo reconhecido | um tom |
 | **F3 + ←** | Liga/desliga o automático (o robô fala o estado) | dois tons iguais |
 | **F3 + ↓** | **Para:** velocidade zero, braços de volta, encerra. Também aborta um F3+A | tom grave; dois descendo ao encerrar |
 | **F3 + A** (segurar 1,5 s) | Levanta **no suporte**. Só com o robô mole | três bipes curtos ao começar |
 | **F3 + B** (segurar 1,5 s) | **Damp. Só no suporte.** Recusado com a rotina de pé | três curtos; três descendo |
-| **F3 + Y** (segurar e falar, até 5 s) | Grava o comando de voz; ao soltar, o robô o executa. Recusado enquanto uma rotina roda; com o nó de voz fora do ar, nada acontece | sem bipe |
+| **F3 + Y** (segurar e falar, até 8 s) | Grava o comando de voz; ao soltar, o robô o executa. Recusado enquanto uma rotina roda; com o nó de voz fora do ar, nada acontece | sem bipe |
 | **F3 + X** | **À vontade:** solta a posição mantida por voz (o mesmo do botão **À vontade** do painel) | |
+| **F3 + L1** | **Escuta contínua de voz:** liga/desliga. O robô ouve sem apertar nada, só frases que começam por "Tenente…" | dois tons subindo + "Escuta ligada"; dois descendo + "Escuta desligada" |
+| **F3 + R1** | **Fala de apresentação:** sentido, o texto e à vontade (o mesmo do botão **Fala de apresentação**). Recusado enquanto uma rotina roda | |
 
 **Dois tons graves = recusado:** nada aconteceu. O L2+B da Unitree não dá damp no modo de equilíbrio.
 
 ### Comandos de voz
 
-Segure **F3+Y**, fale perto do microfone da webcam e solte (a gravação para sozinha em 5 s).
+Segure **F3+Y**, fale perto do microfone da webcam e solte **só depois de terminar a frase** (a gravação para
+sozinha em 8 s). Pode usar o vocativo ("Tenente Nichinica, sentido") ou só o comando ("sentido").
 
 | Diga | O robô faz |
 |---|---|
 | **Sentido** | Posição de sentido e **mantém** |
-| **Continência** | Continência e **mantém** |
-| **Apresentação** | Sentido, "Sou o Tenente Nichinica" e à vontade |
+| **Apresentar arma** (ou só "apresentar") | Continência e **mantém** |
+| **Atenção** | Descansar e **mantém** |
+| **Apresente-se** | Sentido, "Sou o Tenente Nichinica" e à vontade |
+| **Descansar arma** | Depois do apresentar arma: abaixa o braço rápido (como na rotina de cumprimento) e **mantém o sentido** até o à vontade |
 | **À vontade** | Solta a posição (também **F3+X** e o botão **À vontade**) |
+
+**Escuta contínua** (F3+L1 ou **Ligar escuta contínua** no cartão **Voz** do painel): o robô ouve o tempo todo, sem
+apertar nada, mas **só aceita frases que começam por "Tenente"** ("Tenente Nichinica, sentido"): "sentido" solto, vindo da
+plateia, não dispara. Ao ligar: dois tons subindo e "Escuta ligada"; ao desligar, dois descendo e "Escuta desligada"; o
+painel mostra **ESCUTANDO**. Não ouve enquanto um cumprimento ou um comando está em andamento (o robô pode estar falando)
+nem 1 s depois. O F3+Y continua funcionando com a escuta ligada. Começa **desligada** a cada subida; PARAR desliga.
+
+**Fala de apresentação** (F3+R1 ou o botão no painel): sentido, "Olá oficiais, alunos e banca avaliadora, sou o Tenente
+Nichinica, o robô humanoide do projeto Níksi." e à vontade. Edite o texto no painel (aba **Operar**, **Ordens**, "Texto da
+fala de apresentação"), escrito como deve soar; vale na próxima fala. Fica em `data/discurso.txt`.
+
+O reconhecimento é o **Vosk** com uma gramática: ele só ouve as frases da tabela, então ou acerta o comando ou
+responde "Não entendi" (nunca inventa outro). Roda na CPU, dentro do nó de voz, e decide em ~0,1 s depois de soltar.
 
 A posição mantida só termina com **à vontade**, **PARAR** (F3+↓) ou após 300 s (`posicao_max_s`). Durante ela, o
 cumprimento automático e o **cumprimentar agora** (F3+→) são recusados (o F3+→ toca os dois tons graves de recusado; o automático recusa em silêncio). O cartão **Voz**
@@ -174,11 +193,11 @@ mostra a última frase, o resultado e "segurando <postura>"; sem microfone, avis
 passos: `ros2_ws/src/robot_reaction_ros/config/comandos_voz.yaml`. Microfone: o `robo_rotina_cumprimento.sh` usa o
 dispositivo ALSA escrito (uma linha) em `data/microfone.txt`; sem o arquivo, a placa "Intelbras" do `arecord -l`
 (`plughw:CARD=<id>,DEV=0`); sem ela, `default`. Ele mostra a escolha ao subir. Meça com `scripts/robo_medir_voz.sh [dispositivo]`.
-**"Atenção"** está desligado (responde "Não entendi") até resolver o desequilíbrio do descansar: o robô tomba para trás
-quando os braços voltam.
+**"Atenção"** (descansar) foi religado em 2026-11-10: duas idas e voltas no robô ficaram estáveis, sem o tombo para trás
+de 07/11. Nos primeiros usos, fique perto do robô na saída do descansar.
 
-**Enquanto o reconhecimento de fala não estiver instalado**, a gravação funciona mas a transcrição falha e o robô fala
-"Não entendi". Teste os comandos por texto (seção 10 do guia de testes).
+Sem o modelo do Vosk instalado (`~/.cache/ipe-vosk`, [`jetson-deployment.md`](jetson-deployment.md) seção 5), o nó de voz
+registra "reconhecimento de fala desligado" e todo comando falado responde "Não entendi".
 
 ### Uso normal
 
@@ -195,7 +214,7 @@ estágio. Logo abaixo aparecem os problemas, em vermelho. Sem resposta do robô 
 
 | Aba | Para que serve |
 |---|---|
-| **Operar** | Estado de webcam (nome, formato real, quedas), câmera, reconhecimento e caixa; comandos; quem está na frente, com nota, altura do rosto e desvio; **Eventos** e **Baixar diagnóstico** |
+| **Operar** | Estado de webcam (nome, formato real, quedas), câmera, reconhecimento e caixa; comandos e ordens (Sentido, Continência, Apresentação, À vontade); o que o robô faz ao cumprimentar (marcar e desmarcar vale já; recusado durante uma rotina); quem está na frente, com nota, altura do rosto e desvio; **Eventos** e **Baixar diagnóstico** |
 | **Calibrar** | Passo a passo da distância de parada e os demais ajustes (seção 7) |
 | **Pessoas** | Quem tem foto e rotina, **Remover** e cadastro (seção 5) |
 | **Sistema** | Testar e trocar a caixa (seção 6) e o **Log técnico**: estado, ajustes, eventos e a janela `rotina` do tmux |
@@ -216,12 +235,19 @@ mas quem estiver na mesma rede consegue comandar. Em Wi-Fi compartilhado, deixe 
 (pede confirmação). A pessoa é reconhecida com as fotos novas na hora. Com várias pessoas na foto, vale o maior rosto:
 use fotos com uma pessoa só.
 
-**Pessoa nova:** digite o nome (minúsculas, sem espaço), o **tratamento** e a foto. Ela ganha o gesto
+**Pessoa nova:** digite o nome (minúsculas, sem espaço), o **tratamento** e a foto (ou a webcam, abaixo). Ela ganha o gesto
 padrão e a fala *"Olá, <tratamento> <Nome>, sou o Tenente Nichinica"*. A rotina vale na **próxima subida**.
 Se o nome soar mal, preencha **Nome falado** como ele deve soar.
 
+**Cadastro rápido pela webcam do robô** (recomendado: usa a câmera que vai reconhecer): rotina de pé, armada ou não,
+**sem cumprimento em andamento**; nome e, para pessoa nova, tratamento; clique **Fotografar pela webcam do robô** (não o
+**Salvar**: sem foto escolhida, o Salvar só grava a rotina). O robô diz **"Olhe para a câmera"** e, 1,5 s depois, usa os 6
+quadros do último segundo: a pessoa **de frente, a ~1 m, parada**. Responde "<nome> cadastrado: N foto(s) aproveitada(s)".
+Repita de outro ângulo para somar fotos.
+
 **Coronel Aderson:** tem rotina (*"Olá, coronel veterano Aderson, sou o Tenente Nichinica"*) e está no banco
-enviado pelo notebook, com 6 fotos. O Gil tem 2. Só esses dois têm rotina no projeto.
+enviado pelo notebook, com 6 fotos. O Gil tem 2. Só esses dois têm rotina no projeto; os cadastrados pelo painel (ex.:
+bianco) ficam em `data/reactions.yaml` no robô.
 
 **Remover alguém:** primeiro pare a rotina, depois **Remover** na lista. As fotos são apagadas. Para
 gil e aderson, a rotina continua no projeto e pode receber foto nova.
@@ -325,6 +351,13 @@ na próxima subida. O painel recusa valores fora da faixa e combinações que de
 | | Passo à frente | `passo_m` | 0,2 | 0–0,5 | m. 0 = sem passo |
 | | Velocidade do passo | `vx_passo` | 0,2 | 0,05–0,3 | m/s |
 | | Tempo máximo da meia-volta | `tempo_max_meia_volta_s` | 12 | 5–30 | s. Passou disso, falha |
+| Retorno | Velocidade da volta | `vx_retorno` | 0,3 | 0,1–0,5 | m/s |
+| | Chegou ao ponto | `tolerancia_retorno_m` | 0,15 | 0,05–0,4 | m do ponto de partida |
+| | Distância mínima | `retorno_min_m` | 0,3 | 0–1 | m. Andou menos que isso até a pessoa: não volta |
+| | Giro na volta | `vyaw_retorno` | 0,5 | 0,3–0,8 | rad/s. Teto da correção de rumo e do giro final |
+| | Ganho do rumo | `kp_rumo` | 1,0 | 0,2–3 | Correção por erro de rumo |
+| | Tolerância do giro final | `tolerancia_rumo_graus` | 8 | 2–30 | Graus |
+| | Tempo máximo | `tempo_max_retorno_s` | 30 | 5–60 | s, por fase (andar e virar) |
 | Voz | Falar "Perdi <nome> de vista" | `avisos_voz` | sim | | Desmarque na apresentação |
 
 ### Meia-volta
@@ -334,9 +367,20 @@ fica em **"aguardando o operador"** (durante o giro: **"fazendo meia-volta"**). 
 cumprimentos** no painel, ou desligar e ligar o automático (F3+←, duas vezes), ou **cumprimentar agora** (só libera se alguém for reconhecido).
 Desarmado, só registra `dry_run meia_volta` (e também espera o operador). **PARAR** ou F3+↓ interrompe o giro
 e o passo na hora. O passo é **cego**: deixe ~1 m livre atrás de onde o robô começa. Para não usar, desmarque
-**Meia-volta** nos estágios e salve (ajustes antigos ganham o estágio na próxima subida; desmarcado e salvo, fica
+**Meia-volta** em **O que o robô faz ao cumprimentar**, na aba **Operar** (vale já no próximo cumprimento; ajustes antigos ganham o estágio na próxima subida; desmarcado, fica
 desmarcado). Primeiro uso: meça o giro com `scripts/robo_medir_giro.py`
 ([`teste-no-robo.md`](teste-no-robo.md), seção 0).
+
+### Retorno ao ponto de partida
+
+Com **Retorno** marcado em **O que o robô faz ao cumprimentar** (desmarcado por padrão), depois da meia-volta o robô
+**anda de volta até onde estava quando reconheceu a pessoa** e **vira de frente para ela**, no lugar do passo cego. Não é
+preciso marcar distância: ele anota a própria posição (odometria do G1) ao começar e volta até ela, corrigindo o rumo, sem
+andar de ré. Status: "retorno: andando (faltam 1.20 m)", "retorno: virando para a pessoa", "retorno: fim". A volta é
+**cega**: caminho livre entre a pessoa e o ponto de partida. Para (e registra `retorno: falhou (…)`) se demorar, se estiver
+se afastando do ponto ou sem odometria; um retorno que falha ainda conta como cumprimento. **PARAR** ou F3+↓ param na hora.
+Se ele não andou até a pessoa (menos de 0,3 m), não volta nem vira. Primeiro uso: `scripts/robo_medir_odometria.py`
+([`teste-no-robo.md`](teste-no-robo.md), seção 9a).
 
 **Restaurar padrões** desfaz tudo.
 
@@ -370,6 +414,7 @@ Ele não gira para procurar a pessoa. Depois de desistir: no manual, aperte **F3
 | "Não estou em equilíbrio, não vou começar." | Ponha em equilíbrio e aperte F3+↑ de novo |
 | Braços errados depois de uma parada de emergência no meio de um gesto | Não ande. No suporte: F3+B e F3+A. Sem suporte: reinicie o equilíbrio pelo controle da Unitree antes de subir |
 | Combo sem bipe | Caixa desligada? Veja `journalctl --user -u ipe-controle -f` |
+| O robô agacha sozinho | **Bateria baixa** (agachou com 4% em 2026-11-10). Veja **Bateria** no painel e troque; abaixo de 10% a subida armada é recusada |
 | F3+↑ dá dois tons graves | A rotina já está de pé ou subindo: F3+↓ e espere |
 | Painel não abre | Rede `IPE-G1`? Use `http://`, não `https://`. Depois, `robo_hotspot.sh estado` e `systemctl --user status ipe-painel` |
 | Celular não entra no hotspot | Esqueça a rede no celular e conecte de novo |
@@ -416,7 +461,7 @@ Pare no primeiro item que falhar.
 - [ ] Pessoa sai da frente andando: para; fala "Perdi <nome> de vista" em ~10 s.
 - [ ] **F3+↓ e F3+↑** em seguida: sobe de novo.
 - [ ] **F3+←**: cumprimenta sozinho uma vez e não repete com a pessoa parada.
-- [ ] **Voz** ("Atenção" está desligado): `arecord` presente; F3+Y, falar "sentido" e soltar: o painel passa por "gravando" e fica "segurando sentido"; F3+X solta.
+- [ ] **Voz**: `arecord` presente; F3+Y, falar "sentido" e soltar: o painel passa por "gravando" e fica "segurando sentido"; F3+X solta.
 - [ ] **Continência** segurada: F3+X e depois F3+↓. Observe a folga dos braços (soltar pula o desc. arma).
 
 ## 11. Melhorar a precisão

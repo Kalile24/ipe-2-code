@@ -43,7 +43,9 @@ from vision_msgs.msg import Detection2DArray
 from core.approach import LIMITES_OPERACAO, validar_operacao
 from core.bipes import tocar
 from core.caixa import CAIXA_PADRAO, caixa_atual, ler_dispositivos, mac_valido, nome_do_sink
+from core import bateria, discurso
 from core.comandos_voz import enviar_voz
+from core.piper_voice import say
 from core.config import DB_PATH, MODEL_NAME
 from core.identity_store import IdentityStore
 from core.pessoas import carregar_reacoes, nome_falado, rotina_padrao
@@ -58,6 +60,8 @@ CAMPOS_OPERACAO = (  # o que o formulário pode mudar no operacao.yaml (o resto 
     "estagios", "altura_caixa_alvo_px", "vx", "vyaw_max", "vyaw_min", "kp_giro", "inverter_giro", "centro_ok",
     "centro_para_andar", "centro_chegada", "perda_rosto_s", "desistir_s", "tempo_max_s", "avisos_voz",
     "vyaw_meia_volta", "tolerancia_meia_volta_graus", "passo_m", "vx_passo", "tempo_max_meia_volta_s",
+    "vx_retorno", "tolerancia_retorno_m", "retorno_min_m", "tempo_max_retorno_s", "vyaw_retorno", "kp_rumo",
+    "tolerancia_rumo_graus",
 )
 FIM = ("fim", "falhou", "interrompida", "desistiu", "rejeitada")
 WEBCAM_GLOB = "/dev/v4l/by-id/*-video-index0"  # o mesmo que o robo_rotina_cumprimento.sh usa
@@ -69,8 +73,11 @@ CAIXA_CACHE_S = 3.0  # bluetoothctl/pactl a cada pedido pesariam no painel
 FORMATO_CACHE_S = 5.0
 PARAM_RETRY_S = 10.0  # nó que não respondeu um parâmetro fixo: só pergunta de novo depois disso
 FOTOS_MAX = 10
+CAPTURA_S = 1.5  # > a janela de quadros do face_recognition_node (6 × 0,15 s, ~1,2 s a 5 quadros/s)
 CORPO_MAX = 64 * 1024 * 1024  # 10 fotos de 1280 px cabem com folga
 EVENTOS_NA_TELA = 30
+ORDENS = {"sentido": "sentido", "continencia": "continência", "apresentacao": "apresentação", "a_vontade": "à vontade",
+          "discurso": "fala de apresentação"}  # discurso: o texto de data/discurso.txt (core.discurso)  # nomes de config/comandos_voz.yaml
 
 
 def registrar_status(status: deque, texto: str, agora: float) -> None:
@@ -230,6 +237,7 @@ class PainelNode(Node):
         self.create_subscription(String, "/voz/estado", self._on_voz, QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
         self._get = self.create_client(GetParameters, "/reaction_node/get_parameters")
         self._set = self.create_client(SetParameters, "/reaction_node/set_parameters")
+        self._set_corpo = self.create_client(SetParameters, "/body_node/set_parameters")
         self._get_corpo = self.create_client(GetParameters, "/body_node/get_parameters")
         self._get_rec = self.create_client(GetParameters, "/face_recognition_node/get_parameters")
         self._cadastrar = self.create_client(Cadastrar, "/face_recognition_node/cadastrar")
@@ -281,14 +289,15 @@ class PainelNode(Node):
 
     def _param_fixo(self, no: str, cliente: object, nome: str, nos: set) -> object | None:
         """Parâmetro que não muda enquanto o nó vive: pergunta uma vez, sem pesar a cada 1 s do painel."""
+        chave = (no, nome)
         if no not in nos:
-            self._params.pop(no, None)
+            self._params.pop(chave, None)
             return None
-        valor, perguntou_em = self._params.get(no, (None, float("-inf")))
+        valor, perguntou_em = self._params.get(chave, (None, float("-inf")))
         if valor is None and time.monotonic() - perguntou_em >= PARAM_RETRY_S:
             resposta = self._chamar(cliente, GetParameters.Request(names=[nome]), 1.0)
             valor = valor_param(resposta.values[0]) if resposta is not None and resposta.values else None
-            self._params[no] = (valor, time.monotonic())
+            self._params[chave] = (valor, time.monotonic())
         return valor
 
     def armado(self, nos: set) -> bool | None:
@@ -310,21 +319,40 @@ class PainelNode(Node):
         return None if valor is None else str(valor).lower() == "true"
 
     def set_reacao(self, nome: str, valor: object) -> str:
+        return self._set_param(self._set, "reaction_node", nome, valor)
+
+    def _set_param(self, cliente: object, no: str, nome: str, valor: object) -> str:
         if isinstance(valor, bool):
             pv = ParameterValue(type=ParameterType.PARAMETER_BOOL, bool_value=valor)
         else:
             pv = ParameterValue(type=ParameterType.PARAMETER_STRING, string_value=str(valor))
-        resposta = self._chamar(self._set, SetParameters.Request(parameters=[ParameterMsg(name=nome, value=pv)]), 3.0)
+        resposta = self._chamar(cliente, SetParameters.Request(parameters=[ParameterMsg(name=nome, value=pv)]), 3.0)
         if resposta is None:
-            return "reaction_node não respondeu (a rotina está de pé?)"
+            return f"{no} não respondeu (a rotina está de pé?)"
         r = resposta.results[0]
         return "ok" if r.successful else r.reason
 
-    def cadastrar(self, nome: str, fotos_b64: list[str], adicionar: bool = False) -> dict:
+    def cadastrar(self, nome: str, fotos_b64: list[str], adicionar: bool = False, webcam: bool = False) -> dict:
+        """Fotos enviadas, ou (webcam) os quadros da câmera do robô depois do aviso "Olhe para a câmera".
+
+        O face_recognition_node guarda os últimos ~3 s de quadros: esperando CAPTURA_S depois do aviso, os quadros usados
+        são só os de depois dele. Com o robô armado, só sem rotina em andamento (o cadastro pausa o reconhecimento).
+        """
         if len(fotos_b64) > FOTOS_MAX:
             return {"ok": False, "mensagem": f"{len(fotos_b64)} fotos: o máximo é {FOTOS_MAX} por envio. Nada foi alterado."}
+        with self._lock:
+            corpo = self._corpo
+        if corpo == "rotina":
+            return {"ok": False, "mensagem": "há uma rotina em andamento: espere terminar (o cadastro pausa o reconhecimento)"}
+        if webcam:
+            try:
+                say("Olhe para a câmera")
+            except Exception as exc:  # sem caixa, o cadastro segue: a pessoa já sabe que é para olhar
+                self.get_logger().warn(f"aviso do cadastro não falou: {exc!r}")
+            time.sleep(CAPTURA_S)
         fotos = [CompressedImage(format="jpeg", data=array.array("B", base64.b64decode(f.split(",", 1)[-1]))) for f in fotos_b64]
-        resposta = self._chamar(self._cadastrar, Cadastrar.Request(nome=nome, fotos=fotos, adicionar=adicionar), 90.0)
+        pedido = Cadastrar.Request(nome=nome, fotos=[] if webcam else fotos, adicionar=adicionar, da_webcam=webcam)
+        resposta = self._chamar(self._cadastrar, pedido, 90.0)
         if resposta is None:
             return {"ok": False, "mensagem": "face_recognition_node não respondeu (a rotina está de pé?)"}
         return {"ok": resposta.ok, "mensagem": resposta.mensagem, "tem_rotina": nome in self.pessoas_com_rotina()}
@@ -515,11 +543,15 @@ class PainelNode(Node):
             "body_node": "body_node" in nos,
             "automatico": self.param_reacao("automatico") if "reaction_node" in nos else None,
             "reaction_node": "reaction_node" in nos,
+            "voz_node": "voz_node" in nos,
+            # ponytail: guardado enquanto o nó vive; um `ros2 param set` à mão não aparece aqui.
+            "estagios": self._param_fixo("body_node", self._get_corpo, "estagios", nos),
             "armado": self.armado(nos),
             "status": _linhas_status(status[-EVENTOS_NA_TELA:]),
             "pessoas": self.pessoas(),
             # Sem o nó, o último valor guardado é velho: não mostra posição nem microfone.
             "corpo": corpo if "body_node" in nos else "livre",
+            "bateria": {"soc": bateria.ler(), "aviso": bateria.AVISO, "minimo": bateria.MINIMO},
             "voz": voz if "voz_node" in nos else {},
         }
 
@@ -585,11 +617,16 @@ class PainelNode(Node):
             return self.set_reacao("cumprimentar_agora", "agora")
         if nome == "liberar":  # todos podem ser cumprimentados de novo já (sem os 5 min)
             return self.set_reacao("liberar", "todos")
-        if nome == "a_vontade":  # o mesmo comando da voz e do F3+X: o nó de voz decide se pode
+        if nome == "escuta":  # o mesmo do F3+L1: liga/desliga a escuta contínua
             if "voz_node" not in self.get_node_names():
                 return "nó de voz fora do ar: não enviei"
-            enviar_voz("comando:a_vontade")
-            return "à vontade enviado"
+            enviar_voz("escuta:alternar")
+            return "escuta contínua alterada (ouça o aviso do robô)"
+        if nome in ORDENS:  # o mesmo comando da voz e do F3+X: o nó de voz decide se pode
+            if "voz_node" not in self.get_node_names():
+                return "nó de voz fora do ar: não enviei"
+            enviar_voz(f"comando:{nome}")
+            return f"{ORDENS[nome]} enviado"
         if nome == "automatico":
             atual = self.param_reacao("automatico")
             return "reaction_node não respondeu" if atual is None else self.set_reacao("automatico", not atual)
@@ -637,6 +674,35 @@ class PainelNode(Node):
             yaml.safe_dump({"/**": {"ros__parameters": atual}}, f, allow_unicode=True, sort_keys=False)
         self._operacao_alterada_em = time.time()
         return f"salvo em {self._operacao_file}; vale na próxima subida da rotina"
+
+    def aplicar_estagios(self, lista: str) -> dict:
+        """Grava os estágios e, com o body_node de pé, já valem no próximo cumprimento."""
+        try:
+            parse_stages(lista)
+        except ValueError as exc:
+            return {"ok": False, "mensagem": str(exc)}
+        vivo = "body_node" in self.get_node_names()
+        if vivo:
+            resultado = self._set_param(self._set_corpo, "body_node", "estagios", lista)
+            if resultado != "ok":  # não grava o que o robô recusou: tela e robô ficam iguais
+                return {"ok": False, "mensagem": resultado}
+            self._params[("body_node", "estagios")] = (lista, time.monotonic())
+        pendente_desde = self._operacao_alterada_em
+        self.salvar_operacao({"estagios": lista})
+        if vivo:  # já valeu: não é ajuste pendente para a próxima subida
+            self._operacao_alterada_em = pendente_desde
+        return {"ok": True, "mensagem": "valendo já" if vivo else "vale na próxima subida"}
+
+    def discurso(self) -> dict:
+        return {"texto": discurso.ler(), "padrao": discurso.PADRAO, "max": discurso.MAX_CARACTERES}
+
+    def salvar_discurso(self, texto: str) -> dict:
+        try:
+            limpo = discurso.salvar(texto)
+        except ValueError as exc:
+            return {"ok": False, "mensagem": str(exc)}
+        registrar_status(self._status, "painel: fala de apresentação alterada", time.time())
+        return {"ok": True, "texto": limpo, "mensagem": "salvo: vale na próxima fala"}
 
     def diagnostico(self) -> str:
         """Tudo de uma vez, em texto, para olhar ou mandar para alguém quando não há cabo."""
@@ -711,6 +777,8 @@ def handler(painel: PainelNode) -> type:
                 self.wfile.write(corpo)
             elif self.path == "/caixas":
                 self._json(painel.caixas())
+            elif self.path == "/discurso":
+                self._json(painel.discurso())
             else:
                 self._json({"erro": "não existe"}, 404)
 
@@ -726,6 +794,10 @@ def handler(painel: PainelNode) -> type:
                         self._json({"ok": True, "mensagem": painel.salvar_operacao(self._corpo())})
                     except ValueError as exc:
                         self._json({"ok": False, "mensagem": str(exc)})
+                elif self.path == "/discurso":
+                    self._json(painel.salvar_discurso(str(self._corpo().get("texto", ""))))
+                elif self.path == "/estagios":
+                    self._json(painel.aplicar_estagios(str(self._corpo().get("estagios", ""))))
                 elif self.path == "/operacao/restaurar":
                     self._json({"mensagem": painel.restaurar_operacao()})
                 elif self.path == "/pessoa":
@@ -742,7 +814,8 @@ def handler(painel: PainelNode) -> type:
                     self._json({"mensagem": "bipe enviado; ouviu?"})
                 elif self.path == "/cadastrar":
                     dados = self._corpo()
-                    self._json(painel.cadastrar(str(dados.get("nome", "")), list(dados.get("fotos", [])), dados.get("adicionar") is True))
+                    self._json(painel.cadastrar(str(dados.get("nome", "")), list(dados.get("fotos", [])), dados.get("adicionar") is True,
+                                                dados.get("webcam") is True))
                 else:
                     self._json({"erro": "não existe"}, 404)
             except Exception as exc:  # um pedido ruim não derruba o painel

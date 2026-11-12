@@ -10,6 +10,8 @@
     F2 + A      SEGURADO 1,5 s: levanta no suporte (damp → em pé → equilíbrio, scripts/robo_levantar.py);
                 só com o robô mole (damp/sem torque)
     F2 + X      a vontade: solta a posição mantida por um comando de voz (sentido, continência, descansar)
+    F2 + L1     liga/desliga a escuta contínua de voz (só frases com "Tenente ..."); bipes e fala avisam
+    F2 + R1     fala de apresentação: sentido, o texto de data/discurso.txt (o painel edita) e à vontade
     F2 + Y      SEGURADO: fala (o microfone grava enquanto apertado; ao soltar, o comando é reconhecido)
 
 O controle chega no `wireless_remote` do `rt/lf/lowstate` (não no `rt/wirelesscontroller`, onde o
@@ -33,9 +35,10 @@ sys.path.insert(0, REPO)
 
 from core.bipes import tocar  # noqa: E402
 from core.remote_combos import (  # noqa: E402
-    A_VONTADE, AGORA, AUTOMATICO, DAMP, FALAR, FIM, INICIAR, LEVANTAR, PADRAO, PARAR, SEGURAR, SEGURAR_S, Combos,
+    A_VONTADE, AGORA, AUTOMATICO, DAMP, DISCURSO, ESCUTA, FALAR, FIM, INICIAR, LEVANTAR, PADRAO, PARAR, SEGURAR, SEGURAR_S, Combos,
     Segurado, botoes, segue_apertado,
 )
+from core import bateria  # noqa: E402
 from core.comandos_voz import enviar_voz  # noqa: E402
 
 SESSAO = "rotina"  # a sessão tmux do robo_rotina_cumprimento.sh
@@ -72,6 +75,11 @@ def rotina_rodando() -> bool:
 
 
 def iniciar() -> None:
+    soc = bateria.ler()
+    if not bateria.pode_armar(soc):
+        log(f"F2+UP: recusado, bateria em {soc}% (mínimo {bateria.MINIMO}%): troque a bateria")
+        tocar("recusado")
+        return
     if sessao_de_pe() or subida_em_andamento():
         log("F2+UP: a rotina já está de pé (ou subindo); nada a fazer")
         tocar("recusado")
@@ -188,9 +196,19 @@ def a_vontade() -> None:
     enviar_voz("comando:a_vontade")
 
 
+def escuta() -> None:
+    log("F2+L1: liga/desliga a escuta contínua")
+    enviar_voz("escuta:alternar")  # o nó de voz toca os bipes e fala o estado
+
+
+def discurso() -> None:
+    log("F2+R1: fala de apresentação")
+    enviar_voz("comando:discurso")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    for nome in (INICIAR, AGORA, AUTOMATICO, PARAR, DAMP, LEVANTAR, A_VONTADE):
+    for nome in (INICIAR, AGORA, AUTOMATICO, PARAR, DAMP, LEVANTAR, A_VONTADE, DISCURSO, ESCUTA):
         parser.add_argument(f"--{nome}", type=lambda v: int(v, 0), default=PADRAO[nome], help=f"máscara (padrão {PADRAO[nome]:#06x})")
     parser.add_argument("--falar", type=lambda v: int(v, 0), default=FALAR, help=f"máscara de falar, segurado (padrão {FALAR:#06x})")
     parser.add_argument("--mostrar", action="store_true", help="imprime os botões em hexa a cada mudança")
@@ -198,10 +216,10 @@ def main() -> int:
     args = parser.parse_args()
 
     from unitree_sdk2py.core.channel import ChannelFactoryInitialize, ChannelSubscriber
-    from unitree_sdk2py.idl.unitree_hg.msg.dds_ import LowState_
+    from unitree_sdk2py.idl.unitree_hg.msg.dds_ import BmsState_, LowState_
 
     acoes = {INICIAR: iniciar, AGORA: agora, AUTOMATICO: alternar_automatico, PARAR: parar, DAMP: damp,
-             LEVANTAR: levantar, A_VONTADE: a_vontade}
+             LEVANTAR: levantar, A_VONTADE: a_vontade, DISCURSO: discurso, ESCUTA: escuta}
     combos = Combos({nome: getattr(args, nome) for nome in acoes})
     falar = Segurado(args.falar)
     ocupado = threading.Lock()  # uma ação por vez; PARAR passa sempre
@@ -243,9 +261,30 @@ def main() -> int:
             return
         threading.Thread(target=rodar, args=(nome,), daemon=True).start()  # nada lento no callback do SDK
 
+    bat = {"gravado_em": 0.0, "nivel": "ok"}
+
+    def ao_receber_bateria(msg: BmsState_) -> None:
+        # Grava a carga para o painel e para a subida armada; avisa (bipe e log) ao cair de nível.
+        agora = time.monotonic()
+        if agora - bat["gravado_em"] < 5.0:
+            return
+        bat["gravado_em"] = agora
+        soc = int(msg.soc)
+        try:
+            bateria.gravar(soc)
+        except OSError as exc:
+            log(f"bateria: não gravei a carga: {exc!r}")
+        nivel = bateria.nivel(soc)
+        if nivel != bat["nivel"] and nivel in ("baixa", "critica"):
+            log(f"bateria {nivel}: {soc}%" + (" — troque antes de armar" if nivel == "critica" else ""))
+            tocar("recusado")
+        bat["nivel"] = nivel
+
     ChannelFactoryInitialize(0, args.interface)
     assinatura = ChannelSubscriber("rt/lf/lowstate", LowState_)
     assinatura.Init(ao_receber, 10)
+    assinatura_bateria = ChannelSubscriber("rt/lf/bmsstate", BmsState_)
+    assinatura_bateria.Init(ao_receber_bateria, 1)
     log(f"esperando combos no controle ({', '.join(f'{n}={getattr(args, n):#06x}' for n in acoes)})")
     threading.Event().wait()  # só os callbacks trabalham
     return 0

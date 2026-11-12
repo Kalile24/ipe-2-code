@@ -113,7 +113,9 @@
       <div class="cartao">
         <h2>Agora</h2>
         <div class="grande" id="estagio">—</div>
+        <div class="linha"><span>Corpo</span><span id="corpo">—</span></div>
         <div class="linha"><span>Automático</span><span id="auto">—</span></div>
+        <div class="linha"><span>Bateria</span><span id="bateria">—</span></div>
         <div class="linha"><span>Webcam</span><span id="webcam">—</span></div>
         <div class="linha"><span>Câmera</span><span id="camera">—</span></div>
         <div class="linha"><span>Reconhecimento</span><span id="recon">—</span></div>
@@ -129,14 +131,41 @@
           <button id="b_agora" class="primario" onclick="comando('agora')">Cumprimentar agora</button>
           <button id="b_auto" onclick="alternarAuto()">Automático</button>
           <button id="b_liberar" onclick="comando('liberar')">Liberar cumprimentos</button>
-          <button id="b_a_vontade" onclick="comando('a_vontade')">À vontade</button>
+        </div>
+        <div id="cmd_ordens" hidden>
+          <h3>Ordens</h3>
+          <div class="botoes">
+            <button id="b_sentido" onclick="comando('sentido')">Sentido</button>
+            <button id="b_continencia" onclick="comando('continencia')">Continência</button>
+            <button id="b_apresentacao" onclick="comando('apresentacao')">Apresentação</button>
+            <button id="b_a_vontade" onclick="comando('a_vontade')">À vontade</button>
+            <button id="b_discurso" onclick="comando('discurso')">Fala de apresentação</button>
+          </div>
+          <details>
+            <summary>Texto da fala de apresentação (F3+R1)</summary>
+            <p class="dica">Escreva como deve soar (ex.: "Nichinica", "Níksi"). Sentido, a fala e à vontade. Vale na próxima fala.</p>
+            <textarea id="discurso_texto" rows="4" style="width:100%"></textarea>
+            <div class="botoes">
+              <button onclick="salvarDiscurso()">Salvar texto</button>
+              <button onclick="$('discurso_texto').value = discursoPadrao">Voltar ao padrão</button>
+            </div>
+            <p id="discurso_msg" class="msg muted" role="status"></p>
+          </details>
         </div>
         <p id="msg" class="msg muted" role="status"></p>
         <p class="dica">No automático, a mesma pessoa só é cumprimentada de novo depois de 5 min e de sair da frente por 5 s. <b>Liberar cumprimentos</b> e <b>Cumprimentar agora</b> ignoram essa espera.</p>
       </div>
       <div class="cartao">
+        <h2>O que o robô faz ao cumprimentar</h2>
+        <div id="etapas"></div>
+        <p id="etapas_msg" class="msg muted" role="status"></p>
+        <p class="dica">Nesta ordem, só o que estiver marcado. Vale já no próximo cumprimento, automático ou pedido; com o robô parado, na próxima subida.</p>
+      </div>
+      <div class="cartao">
         <h2>Voz</h2>
-        <div class="linha"><span>Posição</span><span id="v_posicao">—</span></div>
+        <div class="linha"><span>Escuta contínua</span><span id="v_escuta">—</span></div>
+        <div class="botoes"><button id="b_escuta" onclick="comando('escuta')">Ligar escuta contínua</button></div>
+        <p class="dica">Ligada, o robô ouve sem apertar nada, só frases que começam por <b>"Tenente…"</b> ("Tenente Nichinica, sentido"). Também <b>F3+L1</b>. O F3+Y continua funcionando.</p>
         <div class="linha"><span>Ouvi</span><span id="v_texto">—</span></div>
         <div class="linha"><span>Comando</span><span id="v_comando">—</span></div>
         <div class="linha"><span>Resultado</span><span id="v_resultado">—</span></div>
@@ -194,7 +223,7 @@
           <label class="bloco">Nome <small>minúsculas, sem espaço</small>
             <input id="nome" required pattern="[a-z0-9_]+" autocapitalize="off" autocomplete="off" list="nomes" placeholder="gil" oninput="ajustarCadastro()"></label>
           <datalist id="nomes"></datalist>
-          <label class="bloco">Fotos <small>de frente, uma pessoa só, até 10 por envio; a rotina precisa estar de pé e desarmada</small>
+          <label class="bloco">Fotos <small>de frente, uma pessoa só, até 10 por envio; a rotina precisa estar de pé (sem cumprimento em andamento)</small>
             <input id="fotos" type="file" accept="image/*" multiple></label>
           <div id="modo_bloco">
             <label class="caixa-marcar"><input type="radio" name="modo" id="modo_adicionar" checked> <span>Adicionar às fotos atuais</span></label>
@@ -207,7 +236,13 @@
             <label class="bloco">Nome falado <small>opcional: só se soar diferente do nome acima</small>
               <input id="falado" autocomplete="off"></label>
           </div>
-          <button class="primario" id="b_cadastrar">Salvar</button>
+          <div class="botoes">
+            <button class="primario" id="b_cadastrar">Salvar</button>
+            <button type="button" id="b_webcam" onclick="cadastrar(event, true)">Fotografar pela webcam do robô</button>
+          </div>
+          <p class="dica"><b>Cadastro rápido:</b> nome e, para pessoa nova, tratamento; clique <b>Fotografar pela webcam do robô</b>.
+            O robô diz "Olhe para a câmera" e fotografa o segundo seguinte: a pessoa <b>de frente, a ~1 m, parada</b>. Funciona armado,
+            com o robô parado.</p>
         </form>
         <p id="cad" class="msg" role="status"></p>
       </div>
@@ -303,6 +338,9 @@ function problemas(e) {
   if (e.rotina_de_pe && w.formato && opValores && opValores.largura_imagem && w.formato.largura !== opValores.largura_imagem)
     lista.push(['bad', `A webcam está em ${w.formato.largura}×${w.formato.altura}, mas o ajuste espera largura ${opValores.largura_imagem}: o giro e a distância saem errados. Não arme`]);
   if (w.reiniciar) lista.push(['bad', 'A webcam reconectou e a imagem não voltou: aperte PARAR e suba de novo']);
+  const b = e.bateria || {};
+  if (typeof b.soc === 'number' && b.soc < b.minimo) lista.push(['bad', `Bateria em ${b.soc}%: troque antes de armar (abaixo de ${b.minimo}% o robô agacha sozinho e a subida armada é recusada)`]);
+  else if (typeof b.soc === 'number' && b.soc < b.aviso) lista.push(['warn', `Bateria em ${b.soc}%: troque logo`]);
   if (c.conectada === false) lista.push(['bad', 'Caixa de som desconectada: sem fala nem bipes']);
   else if (c.conectada && !c.saida_padrao) lista.push(['warn', 'A caixa está conectada, mas não é a saída de som: teste em Sistema']);
   if (e.rotina_de_pe && !e.parando && !subindo) {
@@ -333,6 +371,8 @@ function desenhar(e) {
   $('problemas').innerHTML = lista.map(([n, t]) => `<li class="n-${n}">${esc(t)}</li>`).join('');
 
   $('estagio').textContent = e.estagio;
+  const corpo = e.corpo || 'livre';
+  $('corpo').innerHTML = !e.body_node ? '—' : corpo === 'rotina' ? span('warn', 'em rotina') : corpo.startsWith('mantendo:') ? span('warn', 'segurando ' + corpo.slice(9) + ': use À vontade') : span('ok', 'livre');
   $('auto').innerHTML = e.automatico === null ? '—' : e.automatico ? span('warn', 'ligado: cumprimenta sozinho') : 'desligado';
   const w = e.webcam, c = e.caixa || {};
   $('webcam').innerHTML = w.conectada
@@ -340,6 +380,9 @@ function desenhar(e) {
       + (e.rotina_de_pe && w.formato ? `<br><span class="muted">${w.formato.largura}×${w.formato.altura}${w.formato.fps ? `, ${w.formato.fps} q/s` : ''}</span>` : '')
       + (w.quedas ? ' ' + span('warn', `(${w.quedas} queda${w.quedas > 1 ? 's' : ''})`) : '')
     : span('bad', 'desconectada');
+  const bat = e.bateria || {};
+  $('bateria').innerHTML = typeof bat.soc !== 'number' ? span('muted', 'desconhecida (controle fora do ar?)')
+    : span(bat.soc < bat.minimo ? 'bad' : bat.soc < bat.aviso ? 'warn' : 'ok', `${bat.soc}%`);
   $('camera').innerHTML = e.camera.ok ? span('ok', 'no ar') : e.rotina_de_pe ? span('bad', 'fora do ar') : '—';
   $('recon').innerHTML = e.reconhecimento.ok ? span('ok', `${num(e.reconhecimento.fps, 1)} quadros/s`) : e.rotina_de_pe ? span('bad', e.reconhecimento.no ? 'sem imagem' : 'fora do ar') : '—';
   $('caixa').innerHTML = c.conectada === null || c.conectada === undefined ? '—'
@@ -347,6 +390,7 @@ function desenhar(e) {
     : c.saida_padrao ? span('ok', 'conectada') : span('warn', 'conectada, não é a saída de som');
   $('caixa_atual').textContent = c.mac ? (c.padrao ? `padrão (${c.mac})` : c.mac) : '—';
 
+  desenharEtapas(e);
   desenharVoz(e);
   desenharVistos(e);
   desenharMedida(e);
@@ -357,8 +401,12 @@ function desenhar(e) {
   $('cmd_parado').hidden = e.rotina_de_pe;
   $('cmd_de_pe').hidden = !e.rotina_de_pe;
   $('b_desarmado').disabled = $('b_armado').disabled = ocupado;
-  $('b_a_vontade').disabled = ocupado;
-  $('b_agora').disabled = $('b_auto').disabled = $('b_liberar').disabled = ocupado || !e.reaction_node;
+  $('cmd_ordens').hidden = !e.rotina_de_pe;
+  $('b_a_vontade').disabled = ocupado || !e.voz_node;
+  $('b_sentido').disabled = $('b_continencia').disabled = $('b_apresentacao').disabled = $('b_discurso').disabled = ocupado || !e.voz_node || corpo === 'rotina';
+  $('b_auto').disabled = $('b_liberar').disabled = ocupado || !e.reaction_node;
+  $('b_agora').disabled = ocupado || !e.reaction_node || corpo !== 'livre';  // o body_node recusaria
+  $('b_liberar').classList.toggle('primario', e.estagio === 'aguardando o operador');
   $('b_auto').textContent = e.automatico === null ? 'Automático' : e.automatico ? 'Desligar automático' : 'Ligar automático';
 }
 
@@ -366,8 +414,10 @@ const RESULTADO_VOZ = {gravando: 'gravando…', transcrevendo: 'transcrevendo…
 
 // O texto vem do reconhecimento de fala: sempre por esc().
 function desenharVoz(e) {
-  const v = e.voz || {}, c = e.corpo || '';
-  $('v_posicao').innerHTML = c.startsWith('mantendo:') ? `<span class="warn">segurando ${esc(c.slice(9))}</span>` : '—';
+  const v = e.voz || {};
+  $('v_escuta').innerHTML = v.escuta ? span('ok', 'ESCUTANDO') : (e.voz_node ? 'desligada' : '—');
+  $('b_escuta').textContent = v.escuta ? 'Desligar escuta contínua' : 'Ligar escuta contínua';
+  $('b_escuta').disabled = !e.voz_node;
   $('v_texto').innerHTML = v.texto ? esc(v.texto) : '—';
   $('v_comando').innerHTML = v.comando ? esc(v.comando) : '—';
   $('v_resultado').innerHTML = v.resultado ? esc(RESULTADO_VOZ[v.resultado] || v.resultado) : '—';
@@ -494,6 +544,28 @@ async function comando(nome) {
   }
   atualizar();
 }
+let discursoPadrao = '';
+async function carregarDiscurso() {
+  try {
+    const d = await json('/discurso');
+    discursoPadrao = d.padrao;
+    $('discurso_texto').value = d.texto;
+    $('discurso_texto').maxLength = d.max;
+  } catch (err) { $('discurso_msg').textContent = 'não consegui ler o texto atual'; }
+}
+async function salvarDiscurso() {
+  $('discurso_msg').className = 'msg muted';
+  try {
+    const r = await json('/discurso', {texto: $('discurso_texto').value});
+    $('discurso_msg').className = 'msg ' + (r.ok ? 'ok' : 'bad');
+    $('discurso_msg').textContent = r.mensagem;
+    if (r.ok) $('discurso_texto').value = r.texto;
+  } catch (err) {
+    $('discurso_msg').className = 'msg bad';
+    $('discurso_msg').textContent = 'O robô não respondeu: não salvou.';
+  }
+}
+carregarDiscurso();
 function alternarAuto() {
   const ligando = estado && estado.automatico === false;
   if (ligando && estado.armado !== false && !confirm('Ligar o automático com o robô armado: ele vai andar sozinho até quem reconhecer. Há espaço livre?')) return;
@@ -507,6 +579,7 @@ const ETAPAS = [
   ['fala', 'Falar', 'Diz a frase da rotina.'],
   ['posturas', 'Gestos', 'Sentido, continência, desc. arma e à vontade.'],
   ['meia_volta', 'Meia-volta', 'Depois do cumprimento, gira 180° pela esquerda e dá um passo à frente; depois espera Liberar cumprimentos.'],
+  ['retorno', 'Retorno', 'Depois da meia-volta, anda até onde estava ao reconhecer a pessoa e vira de frente para ela (no lugar do passo). Caminho livre: a volta é cega.'],
 ];
 const GRUPOS = [
   ['Distância de parada', [
@@ -536,6 +609,15 @@ const GRUPOS = [
     ['vx_passo', 'Velocidade do passo', 'm/s', 'Velocidade para frente durante o passo (0,05 a 0,3).'],
     ['tempo_max_meia_volta_s', 'Tempo máximo da meia-volta', 's', 'Passou disso, para e desiste da meia-volta (5 a 30).'],
   ]],
+  ['Retorno', [
+    ['vx_retorno', 'Velocidade da volta', 'm/s', 'Velocidade para frente voltando ao ponto de partida (0,1 a 0,5).'],
+    ['tolerancia_retorno_m', 'Chegou ao ponto', 'm', 'Para de andar quando estiver a menos disto do ponto de partida (0,05 a 0,4).'],
+    ['retorno_min_m', 'Distância mínima', 'm', 'Andou menos que isto até a pessoa: não volta nem vira de novo (0 a 1).'],
+    ['vyaw_retorno', 'Giro na volta', 'rad/s', 'Teto da correção de rumo e do giro final para a pessoa (0,3 a 0,8).'],
+    ['kp_rumo', 'Ganho do rumo', null, 'Quanto corrige o rumo por erro (0,2 a 3).'],
+    ['tolerancia_rumo_graus', 'Tolerância do giro final', '°', 'Para de virar quando faltar menos que isto para ficar de frente (2 a 30).'],
+    ['tempo_max_retorno_s', 'Tempo máximo', 's', 'Por fase (andar e virar): passou disso, para e desiste (5 a 60).'],
+  ]],
   ['Voz', [
     ['avisos_voz', 'Falar “Perdi <nome> de vista” ao desistir', null, 'Aviso para os testes. Desmarque na apresentação.'],
   ]],
@@ -561,23 +643,49 @@ async function carregarOperacao() {
   try {
     const [valores, info] = await Promise.all([json('/operacao'), json('/operacao/info')]);
     opValores = valores; opPadrao = info.padrao; opLimites = info.limites;
-    const ativas = new Set(String(valores.estagios).split(',').map(s => s.trim()));
-    $('operacao').innerHTML = '<h3 style="margin-top:4px">O que o robô faz</h3>'
-      + ETAPAS.map(([n, rotulo, ajuda]) => `<label class="caixa-marcar"><input type="checkbox" name="etapa" value="${n}"${ativas.has(n) ? ' checked' : ''} oninput="marcarAlteracoes()"> <span>${rotulo}<small>${ajuda}</small></span></label>`).join('')
-      + '<div class="campo-fim"><code>estagios</code> <span id="estagios_padrao"></span></div>'
-      + GRUPOS.map(([titulo, campos]) => `<details class="grupo"><summary>${esc(titulo)}<span class="selo" hidden>alterado</span></summary>` + campos.filter(c => c[0] in valores).map(htmlCampo).join('') + '</details>').join('');
+    $('operacao').innerHTML = GRUPOS.map(([titulo, campos]) => `<details class="grupo"><summary>${esc(titulo)}<span class="selo" hidden>alterado</span></summary>` + campos.filter(c => c[0] in valores).map(htmlCampo).join('') + '</details>').join('');
     marcarAlteracoes();
   } catch (err) {
     opValores = null;
   } finally { carregandoOp = false; }
 }
 
-function etapasMarcadas() {
-  const aproximar = document.querySelector('#operacao [value="aproximar"]');
-  const virar = document.querySelector('#operacao [value="virar"]');
-  if (aproximar.checked) virar.checked = true;  // aproximar inclui virar
-  virar.disabled = aproximar.checked;
-  return ETAPAS.map(e => e[0]).filter(n => document.querySelector(`#operacao [value="${n}"]`).checked).join(',');
+const caixaEtapa = n => document.querySelector(`#etapas [value="${n}"]`);
+$('etapas').innerHTML = ETAPAS.map(([n, rotulo, ajuda]) => `<label class="caixa-marcar"><input type="checkbox" value="${n}" onchange="alterarEtapa(this)"> <span>${rotulo}<small>${ajuda}</small></span></label>`).join('');
+let enviandoEtapas = false;
+
+function desenharEtapas(e) {
+  const lista = e.estagios || (opValores && opValores.estagios);
+  if (lista && !enviandoEtapas) {  // o que vale é o que o robô diz, não o último clique
+    const ativas = new Set(String(lista).split(',').map(s => s.trim()));
+    ETAPAS.forEach(([n]) => { caixaEtapa(n).checked = ativas.has(n); });
+  }
+  const ocupado = e.corpo === 'rotina' || enviandoEtapas;
+  ETAPAS.forEach(([n]) => { caixaEtapa(n).disabled = ocupado || !lista; });
+  if (caixaEtapa('aproximar').checked) caixaEtapa('virar').disabled = true;  // aproximar inclui virar
+}
+
+async function alterarEtapa(caixa) {
+  const movimento = ['virar', 'aproximar', 'meia_volta', 'retorno'].includes(caixa.value);
+  if (caixa.checked && movimento && estado && estado.rotina_de_pe && estado.armado !== false
+      && !confirm('O robô está armado: este movimento passa a valer já no próximo cumprimento. Há espaço livre?')) { caixa.checked = false; return; }
+  if (caixaEtapa('aproximar').checked) caixaEtapa('virar').checked = true;
+  const lista = ETAPAS.map(e => e[0]).filter(n => caixaEtapa(n).checked).join(',');
+  enviandoEtapas = true;
+  $('etapas_msg').className = 'msg muted';
+  $('etapas_msg').textContent = 'salvando…';
+  try {
+    const r = lista ? await json('/estagios', {estagios: lista}, 8000) : {ok: false, mensagem: 'deixe ao menos um marcado'};
+    $('etapas_msg').className = 'msg ' + (r.ok ? 'ok' : 'bad');
+    $('etapas_msg').textContent = r.ok ? r.mensagem : 'Não mudei: ' + r.mensagem;
+    if (r.ok && opValores) opValores.estagios = lista;
+  } catch (err) {
+    $('etapas_msg').className = 'msg bad';
+    $('etapas_msg').textContent = 'Não mudei: o robô não respondeu.';
+  } finally {
+    enviandoEtapas = false;
+    atualizar();
+  }
 }
 
 function marcarAlteracoes() {
@@ -593,15 +701,12 @@ function marcarAlteracoes() {
     g.querySelector('.selo').hidden = !alterado;
     if (alterado) g.open = true;  // ajuste fora do padrão nunca fica escondido
   });
-  const padraoEtapas = opPadrao.estagios;
-  const atuais = etapasMarcadas();
-  if (padraoEtapas !== undefined) $('estagios_padrao').textContent = atuais === padraoEtapas ? '' : `· padrão ${padraoEtapas}`;
   $('opmsg').textContent = '';
 }
 
 async function salvar(ev) {
   ev.preventDefault();
-  const corpo = {estagios: etapasMarcadas()};
+  const corpo = {};
   document.querySelectorAll('#operacao .campo input').forEach(i => { corpo[i.name] = i.type === 'checkbox' ? String(i.checked) : i.value; });
   $('opmsg').className = 'msg muted';
   $('opmsg').textContent = 'salvando…';
@@ -662,20 +767,21 @@ const reduzir = f => new Promise((ok, erro) => {
   img.src = URL.createObjectURL(f);
 });
 
-async function cadastrar(ev) {
+async function cadastrar(ev, webcam = false) {
   ev.preventDefault();
-  const arquivos = [...$('fotos').files], nome = $('nome').value.trim(), pessoa = pessoaPorNome(nome);
+  const arquivos = webcam ? [] : [...$('fotos').files], nome = $('nome').value.trim(), pessoa = pessoaPorNome(nome);
   const tratamento = $('novo_bloco').hidden ? '' : $('tratamento').value.trim();
   const adicionar = $('modo_adicionar').checked;
-  if (!arquivos.length && !tratamento) return avisoCad('bad', 'Escolha uma foto ou preencha o tratamento.');
+  if (!/^[a-z0-9_]+$/.test(nome)) return avisoCad('bad', 'Preencha o nome: minúsculas, números e _, sem espaço.');
+  if (!webcam && !arquivos.length && !tratamento) return avisoCad('bad', 'Escolha uma foto ou preencha o tratamento.');
   if (arquivos.length > 10) return avisoCad('bad', `São ${arquivos.length} fotos: envie no máximo 10 de cada vez.`);
-  if (arquivos.length && estado) {
-    if (!estado.reconhecimento.no) return avisoCad('bad', 'Para cadastrar fotos, aperte Subir desarmado e espere o reconhecimento entrar no ar.');
-    if (estado.armado !== false) return avisoCad('bad', 'O cadastro pausa o reconhecimento: com o robô armado isso não é seguro. Pare e suba desarmado.');
+  if ((webcam || arquivos.length) && estado) {
+    if (!estado.reconhecimento.no) return avisoCad('bad', 'Para cadastrar fotos, suba a rotina e espere o reconhecimento entrar no ar.');
+    if (estado.corpo === 'rotina') return avisoCad('bad', 'Há uma rotina em andamento: espere terminar (o cadastro pausa o reconhecimento).');
   }
-  if (arquivos.length && !adicionar && pessoa && pessoa.fotos && !confirm(`Apagar as ${pessoa.fotos} fotos atuais de ${nome} e ficar só com as ${arquivos.length} novas?`)) return;
-  $('b_cadastrar').disabled = true;
-  avisoCad('muted', 'enviando…');
+  if ((webcam || arquivos.length) && !adicionar && pessoa && pessoa.fotos && !confirm(`Apagar as ${pessoa.fotos} fotos atuais de ${nome} e ficar só com as novas?`)) return;
+  $('b_cadastrar').disabled = $('b_webcam').disabled = true;
+  avisoCad('muted', webcam ? 'o robô vai dizer "Olhe para a câmera": a pessoa fica de frente, parada…' : 'enviando…');
   try {
     let aviso = '';
     if (tratamento) {
@@ -683,17 +789,17 @@ async function cadastrar(ev) {
       if (!p.ok) return avisoCad('bad', p.mensagem);
       aviso = p.mensagem;
     }
-    if (!arquivos.length) return avisoCad('ok', aviso);
-    let fotos;
+    if (!webcam && !arquivos.length) return avisoCad('ok', aviso);
+    let fotos = [];
     try { fotos = await Promise.all(arquivos.map(reduzir)); }
     catch (err) { return avisoCad('bad', `Não consegui abrir ${err.message}: use JPG ou PNG.` + (aviso ? ' ' + aviso : '')); }
-    const r = await json('/cadastrar', {nome, fotos, adicionar}, 100000);
+    const r = await json('/cadastrar', {nome, fotos, adicionar, webcam}, 100000);
     avisoCad(r.ok ? 'ok' : 'bad', r.mensagem + (aviso ? '. ' + aviso : '') + (r.ok && !r.tem_rotina ? '. Reconhecido, mas sem rotina: preencha o tratamento para ser cumprimentado.' : ''));
     if (r.ok) { $('fotos').value = ''; $('modo_adicionar').checked = true; }
   } catch (err) {
     avisoCad('bad', 'O robô não respondeu: confira a conexão e veja a lista de pessoas antes de tentar de novo.');
   } finally {
-    $('b_cadastrar').disabled = false;
+    $('b_cadastrar').disabled = $('b_webcam').disabled = false;
     atualizar();
   }
 }

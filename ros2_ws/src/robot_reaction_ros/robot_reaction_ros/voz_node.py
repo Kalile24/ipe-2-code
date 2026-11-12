@@ -4,7 +4,9 @@ import functools
 import json
 import os
 import queue
+import signal
 import socket
+import subprocess
 import threading
 import time
 
@@ -16,11 +18,17 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile
 from std_msgs.msg import String
 
-from core.comandos_voz import PORTA_VOZ, carregar_comandos, reconhecer
+from core.bipes import tocar
+from core.comandos_voz import PORTA_VOZ, carregar_comandos, comando_da_escuta, gramatica, gramatica_escuta, reconhecer
+from core import discurso
 from core.gravador import Gravador
 from core.piper_voice import DEFAULT_URL, say
+from core.vosk_voice import MODELO_PADRAO, Transcritor
 from robot_reaction_interfaces.action import Rotina
 
+DISCURSO = "discurso"
+ESCUTA_PEDACO = 3200  # bytes: 0,1 s de 16 kHz mono S16
+SILENCIO_DEPOIS_S = 1.0  # depois de o robô falar ou de um ciclo: não ouve (eco da caixa, fim da fala)
 ESPERA_RESULTADO_S = 330.0  # pior caso de uma rotina no body_node (ESPERA_ROTINA_S 310) com folga
 
 
@@ -36,18 +44,18 @@ class VozNode(Node):
     silenciosa: só /voz/estado com `recusado`. O áudio fica na memória.
     """
 
-    def __init__(self, gravador_factory=Gravador, transcrever=sem_transcricao, speak=say) -> None:
+    def __init__(self, gravador_factory=Gravador, transcrever=None, speak=say) -> None:
         super().__init__("voz_node")
         self.declare_parameter("dispositivo", "default")
         self.declare_parameter("comandos_file", "")
         self.declare_parameter("porta", PORTA_VOZ)
-        self.declare_parameter("gravacao_max_s", 5.0)
+        self.declare_parameter("gravacao_max_s", 8.0)  # 5 s cortava o "apresentar... arma" com a pausa militar
         self.declare_parameter("tts_url", DEFAULT_URL)
         self.declare_parameter("tts_timeout_s", 60.0)
+        self.declare_parameter("modelo_vosk", MODELO_PADRAO)
         self._gravador_factory = gravador_factory
         self._dispositivo = self.get_parameter("dispositivo").value
         self._max_s = float(self.get_parameter("gravacao_max_s").value)
-        self._transcrever = transcrever
         self._speak = functools.partial(
             speak, url=self.get_parameter("tts_url").value, timeout_s=float(self.get_parameter("tts_timeout_s").value)
         ) if speak is say else speak
@@ -56,6 +64,7 @@ class VozNode(Node):
         )
         with open(caminho, encoding="utf-8") as f:
             self._tabela = carregar_comandos(yaml.safe_load(f))
+        self._transcrever = transcrever or self._criar_transcritor()
 
         self._rotina = ActionClient(self, Rotina, "/reaction/rotina")
         self._estado_pub = self.create_publisher(
@@ -71,7 +80,14 @@ class VozNode(Node):
         self._timer: threading.Timer | None = None
         self._ciclo: threading.Thread | None = None
         self._microfone = bool(self._gravador_factory(self._dispositivo).presente())  # reavaliado a cada aperto
-        self._estado = {"texto": "", "comando": "", "resultado": "", "transcricao_s": 0.0, "microfone": self._microfone}
+        self._estado = {"texto": "", "comando": "", "resultado": "", "transcricao_s": 0.0, "microfone": self._microfone,
+                        "escuta": False}
+        # Escuta contínua (F3+L1, painel): desligada ao subir. Um `arecord` contínuo alimenta o Vosk em fluxo,
+        # só com frases que começam por "tenente". O F3+Y toma o microfone (só um arecord por vez no dispositivo).
+        self._escuta = False
+        self._silencio_ate = 0.0
+        self._mic_lock = threading.Lock()  # abrir/fechar o arecord da escuta
+        self._escuta_proc: subprocess.Popen | None = None
 
         self._pendentes: queue.Queue = queue.Queue()  # goals a enviar pelo executor (ActionClient do Foxy não tem lock)
         self.create_timer(0.02, self._drenar)
@@ -81,8 +97,20 @@ class VozNode(Node):
         self._sock.settimeout(0.5)
         self._udp = threading.Thread(target=self._ouvir, daemon=True)
         self._udp.start()
+        if hasattr(self._transcrever, "fluxo"):  # sem o Vosk não há escuta contínua
+            threading.Thread(target=self._escutar, daemon=True).start()
         self._publicar("")  # o painel avisa de microfone ausente já na subida
         self.get_logger().info(f"voz: UDP em 127.0.0.1:{self._sock.getsockname()[1]}, microfone {self._dispositivo}")
+
+    def _criar_transcritor(self):
+        """Vosk com a gramática dos comandos; sem ele o nó sobe assim mesmo e responde "não entendi"."""
+        try:
+            t = Transcritor(gramatica(self._tabela), modelo=self.get_parameter("modelo_vosk").value)
+        except Exception as exc:
+            self.get_logger().error(f"reconhecimento de fala desligado: {exc}")
+            return sem_transcricao
+        self.get_logger().info(f"reconhecimento de fala: Vosk, {len(self._tabela.frases)} frases")
+        return t
 
     def _on_corpo(self, msg: String) -> None:
         self._corpo = msg.data
@@ -104,14 +132,90 @@ class VozNode(Node):
         self._estado.update(campos, resultado=resultado, microfone=self._microfone)
         self._estado_pub.publish(String(data=json.dumps(self._estado, ensure_ascii=False)))
 
+    # ---- escuta contínua -------------------------------------------------------------------
+    def _pode_ouvir(self) -> bool:
+        """Sem ciclo de voz, sem F3+Y, sem rotina (o robô pode estar falando) e passado o silêncio de guarda."""
+        return (self._escuta and not self._ocupado and self._gravador is None and self._corpo != "rotina"
+                and time.monotonic() >= self._silencio_ate)
+
+    def _fechar_escuta(self) -> None:
+        with self._mic_lock:
+            proc, self._escuta_proc = self._escuta_proc, None
+        if proc is not None and proc.poll() is None:
+            try:
+                os.killpg(proc.pid, signal.SIGTERM)
+                proc.wait(2.0)
+            except (ProcessLookupError, subprocess.TimeoutExpired):
+                proc.kill()
+
+    def _abrir_escuta(self) -> subprocess.Popen | None:
+        with self._mic_lock:
+            if not self._pode_ouvir():  # conferido sob o lock: o F3+Y não pode perder o microfone para nós
+                return None
+            if self._escuta_proc is None or self._escuta_proc.poll() is not None:
+                try:
+                    self._escuta_proc = subprocess.Popen(
+                        ["arecord", "-q", "-D", self._dispositivo, "-f", "S16_LE", "-r", "16000", "-c", "1", "-t", "raw"],
+                        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0, start_new_session=True)
+                except OSError as exc:  # sem arecord: tenta de novo depois, a escuta não morre
+                    self.get_logger().warn(f"escuta contínua: microfone: {exc!r}", throttle_duration_sec=10.0)
+                    return None
+            return self._escuta_proc
+
+    def _escutar(self) -> None:
+        fluxo = self._transcrever.fluxo(gramatica_escuta(self._tabela))
+        while not self._parar.is_set():
+            proc = self._abrir_escuta() if self._pode_ouvir() else None
+            if proc is None:
+                self._fechar_escuta()
+                fluxo.zerar()
+                self._parar.wait(0.5 if self._pode_ouvir() else 0.1)  # pode e não abriu: microfone com problema
+                continue
+            pedaco = proc.stdout.read(ESCUTA_PEDACO)
+            if not pedaco:  # arecord saiu (microfone sumiu, ou fechamos para o F3+Y)
+                self._fechar_escuta()
+                self._parar.wait(0.5)
+                continue
+            if not self._pode_ouvir():
+                continue
+            texto = fluxo.aceitar(pedaco)
+            if texto is None:
+                continue
+            nome = comando_da_escuta(self._tabela, texto)
+            self.get_logger().info(f"escuta: {texto!r} -> {nome}")
+            if nome is not None:
+                self._iniciar_ciclo(self._executar, nome, texto)
+        self._fechar_escuta()
+
+    def _mudar_escuta(self, ligar: bool) -> None:
+        if ligar and not hasattr(self._transcrever, "fluxo"):
+            self.get_logger().warn("escuta contínua: sem reconhecimento de fala (Vosk)")
+            tocar("recusado")
+            self._publicar("recusado")
+            return
+        if ligar == self._escuta:
+            return
+        self._escuta = ligar
+        self._silencio_ate = time.monotonic() + 3.0  # não ouve os bipes nem o aviso falado
+        self.get_logger().info(f"escuta contínua {'ligada' if ligar else 'desligada'}")
+        self._publicar("", escuta=ligar)
+        tocar("iniciar" if ligar else "encerrada")
+        threading.Thread(target=self._dizer, args=("Escuta ligada" if ligar else "Escuta desligada",), daemon=True).start()
+
     def _on_datagrama(self, msg: str) -> None:
-        if msg == "falar_inicio":
+        if msg == "escuta:alternar":
+            self._mudar_escuta(not self._escuta)
+        elif msg in ("escuta:ligar", "escuta:desligar"):
+            self._mudar_escuta(msg == "escuta:ligar")
+        elif msg == "falar_inicio":
             self._falar_inicio()
         elif msg == "falar_fim":
             self._fim_gravacao()
         elif msg.startswith("comando:"):
             nome = msg[len("comando:"):]
-            if nome not in self._tabela.comandos:
+            if nome == DISCURSO:  # a fala de apresentação (F3+R1, painel): texto de data/discurso.txt
+                self._iniciar_ciclo(self._executar, nome, "")
+            elif nome not in self._tabela.comandos:
                 self.get_logger().warn(f"comando desconhecido: {nome!r}")
             elif nome == "a_vontade":
                 # sempre passa (some o ciclo em andamento); o body_node é quem recusa o que sobrar
@@ -143,6 +247,7 @@ class VozNode(Node):
         except Exception as exc:
             self.get_logger().error(f"ciclo de voz: {exc!r}")
         finally:
+            self._silencio_ate = time.monotonic() + SILENCIO_DEPOIS_S
             self._ocupado = False
 
     def _falar_inicio(self) -> None:
@@ -151,6 +256,7 @@ class VozNode(Node):
                 self._publicar("recusado")
                 return
             self._ocupado = True
+        self._fechar_escuta()  # o microfone é do F3+Y agora (só um arecord por vez no dispositivo)
         g = self._gravador_factory(self._dispositivo)
         self._microfone = bool(g.presente())  # uma vez por aperto
         try:
@@ -222,7 +328,7 @@ class VozNode(Node):
         if not self._rotina.server_is_ready():
             self.get_logger().warn("o body_node não está de pé")
             return False
-        passos = self._tabela.comandos[nome][1]
+        passos = discurso.passos(discurso.ler()) if nome == DISCURSO else self._tabela.comandos[nome][1]
         goal = Rotina.Goal(pessoa="voz", passos_json=json.dumps(passos, ensure_ascii=False), voz=True)
         self._pendentes.put((goal, feito))
         return True
@@ -252,6 +358,7 @@ class VozNode(Node):
 
     def destroy_node(self) -> None:
         self._parar.set()
+        self._fechar_escuta()
         self._sock.close()
         self._udp.join(2.0)
         with self._lock:

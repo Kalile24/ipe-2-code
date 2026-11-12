@@ -371,6 +371,44 @@ def test_relax_button_sends_the_voice_command(monkeypatch):
     assert enviados == ["comando:a_vontade"]
 
 
+def test_order_buttons_send_their_voice_command(monkeypatch):
+    painel = _painel_vivo(monkeypatch)
+    enviados = []
+    monkeypatch.setattr(painel_mod, "enviar_voz", enviados.append)
+    assert painel.acao("sentido") == "sentido enviado"
+    assert enviados == ["comando:sentido"]
+
+
+def _painel_estagios(tmp_path, monkeypatch, nos, resultado="ok"):
+    painel = _painel(tmp_path, monkeypatch)
+    _yaml(tmp_path / "config" / "operacao.yaml", {"estagios": "virar,fala", "vyaw_meia_volta": 0.5, "vx": 0.2, "vyaw_min": 0.3, "centro_chegada": 0.3})
+    painel.get_node_names = lambda: nos
+    painel._params, painel._set_corpo, painel._operacao_alterada_em = {}, None, 0.0
+    painel._set_param = lambda *a: resultado
+    return painel
+
+
+def test_stages_apply_now_and_are_not_pending_when_the_body_is_up(tmp_path, monkeypatch):
+    painel = _painel_estagios(tmp_path, monkeypatch, ["body_node"])
+    assert painel.aplicar_estagios("fala") == {"ok": True, "mensagem": "valendo já"}
+    assert painel.operacao()["estagios"] == "fala"
+    assert painel._operacao_alterada_em == 0.0
+    assert painel._params[("body_node", "estagios")][0] == "fala"
+
+
+def test_stages_refused_by_the_body_are_not_saved(tmp_path, monkeypatch):
+    painel = _painel_estagios(tmp_path, monkeypatch, ["body_node"], "rotina em andamento: tente quando terminar")
+    antes = painel.operacao()["estagios"]
+    assert painel.aplicar_estagios("fala")["ok"] is False
+    assert painel.operacao()["estagios"] == antes
+
+
+def test_stages_with_the_robot_stopped_wait_for_the_next_start(tmp_path, monkeypatch):
+    painel = _painel_estagios(tmp_path, monkeypatch, [])
+    assert painel.aplicar_estagios("fala")["mensagem"] == "vale na próxima subida"
+    assert painel.aplicar_estagios("nada")["ok"] is False
+
+
 def test_state_drops_voice_and_held_position_when_their_nodes_are_gone(monkeypatch):
     painel = _painel_vivo(monkeypatch)
     painel._on_corpo(types.SimpleNamespace(data="mantendo:sentido"))
@@ -384,3 +422,45 @@ def test_state_drops_voice_and_held_position_when_their_nodes_are_gone(monkeypat
     painel.get_node_names = lambda: ["voz_node"]
     e = painel.estado()
     assert e["corpo"] == "livre" and e["voz"] == {"microfone": False}
+
+
+def test_speech_text_is_saved_cleaned_and_a_bad_one_keeps_the_old(tmp_path, monkeypatch):
+    from core import discurso
+
+    arquivo = str(tmp_path / "discurso.txt")
+    monkeypatch.setattr(discurso, "ARQUIVO", arquivo)
+    monkeypatch.setattr(discurso.ler, "__defaults__", (arquivo,))
+    monkeypatch.setattr(discurso.salvar, "__defaults__", (arquivo,))
+    painel = PainelNode.__new__(PainelNode)
+    painel._status = deque(maxlen=10)
+    assert painel.discurso()["texto"] == discurso.PADRAO
+    assert painel.salvar_discurso("  Olá,\n banca. ") == {"ok": True, "texto": "Olá, banca.", "mensagem": "salvo: vale na próxima fala"}
+    assert painel.salvar_discurso("   ")["ok"] is False
+    assert painel.discurso()["texto"] == "Olá, banca."
+    assert "discurso" in painel_mod.ORDENS
+
+
+def test_webcam_enrollment_warns_waits_then_asks_and_is_refused_during_a_routine(monkeypatch):
+    painel = PainelNode.__new__(PainelNode)
+    painel._lock = threading.Lock()
+    painel._corpo = "rotina"
+    assert painel.cadastrar("bianco", [], webcam=True)["ok"] is False
+    ordem = []
+    monkeypatch.setattr(painel_mod, "say", lambda texto: ordem.append(("fala", texto)))
+    monkeypatch.setattr(painel_mod.time, "sleep", lambda s: ordem.append(("espera", s)))
+    pedidos = []
+    painel._cadastrar = None
+    painel._chamar = lambda cliente, pedido, timeout: pedidos.append(pedido) or types.SimpleNamespace(ok=True, mensagem="ok")
+    painel.pessoas_com_rotina = lambda: {"bianco"}
+    painel._corpo = "mantendo:sentido"  # armado e parado: pode
+    assert painel.cadastrar("bianco", [], webcam=True)["ok"] is True
+    assert ordem == [("fala", "Olhe para a câmera"), ("espera", painel_mod.CAPTURA_S)]
+    assert pedidos[0].da_webcam is True and list(pedidos[0].fotos) == []
+
+
+def test_panel_state_module_reads_the_battery_file(tmp_path, monkeypatch):
+    from core import bateria
+
+    arquivo = str(tmp_path / "bat.txt")
+    bateria.gravar(37, arquivo=arquivo)
+    assert painel_mod.bateria.ler(arquivo) == 37 and painel_mod.bateria.MINIMO == 10

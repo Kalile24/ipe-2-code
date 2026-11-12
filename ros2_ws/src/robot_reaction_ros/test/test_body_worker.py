@@ -513,3 +513,90 @@ def test_meia_volta_interrompida_antes_da_escrita_nao_manda_a_ordem(tmp_path):
     assert body.meia_volta(_CFG, lambda: True) == (False, "interrompida")
     body.shutdown()
     assert "meia_volta" not in log.read_text()
+
+
+class _FakeLocoOdom:
+    """Integra as velocidades comandadas na odometria do corpo (50 Hz do laço do retorno)."""
+
+    def __init__(self, corpo):
+        self.corpo, self.comandos = corpo, []
+
+    def SetVelocity(self, vx, vy, vyaw, duracao):
+        import math as m
+
+        self.comandos.append((vx, vyaw))
+        x, y, yaw, _ = self.corpo._odom
+        yaw += vyaw * 0.02
+        self.corpo._odom = (x + vx * 0.02 * m.cos(yaw), y + vx * 0.02 * m.sin(yaw), yaw, time.monotonic())
+
+    def StopMove(self):
+        self.comandos.append("StopMove")
+        x, y, yaw, _ = self.corpo._odom
+        self.corpo._odom = (x, y, yaw, time.monotonic())
+
+
+def _corpo_odom(x=0.0, y=0.0, yaw=0.0):
+    import types
+
+    corpo = G1Body.__new__(G1Body)
+    corpo._odom, corpo._inicio = (x, y, yaw, time.monotonic()), None
+    corpo.robot = types.SimpleNamespace()
+    corpo.robot.loco = _FakeLocoOdom(corpo)
+    return corpo
+
+
+def _cfg_retorno(**kw):
+    from core.retorno import RetornoConfig
+
+    return RetornoConfig(**{"tempo_max_retorno_s": 20.0, **kw})
+
+
+def test_retorno_volta_ao_inicio_e_vira_para_a_pessoa():
+    import math as m
+
+    corpo = _corpo_odom()
+    assert corpo.marcar_inicio()
+    corpo._odom = (2.0, 0.0, m.pi, time.monotonic())  # andou 2 m até a pessoa (+x) e já fez a meia-volta
+    assert corpo.retorno(_cfg_retorno(), threading.Event(), lambda t: None) == ""
+    x, y, yaw, _ = corpo._odom
+    assert m.hypot(x, y) <= 0.15  # de volta ao ponto de partida
+    assert abs(m.atan2(m.sin(yaw), m.cos(yaw))) <= m.radians(8)  # de frente para a pessoa (rumo 0)
+    assert corpo.robot.loco.comandos[-1] == "StopMove"
+    assert all(c == "StopMove" or c[0] >= 0 for c in corpo.robot.loco.comandos)  # nunca de ré
+
+
+def test_retorno_sem_ter_andado_nao_se_mexe():
+    corpo = _corpo_odom()
+    corpo.marcar_inicio()
+    assert corpo.retorno(_cfg_retorno(), threading.Event(), lambda t: None) == ""
+    assert all(c == "StopMove" for c in corpo.robot.loco.comandos)
+
+
+def test_retorno_sem_inicio_ou_sem_odometria_falha_parado():
+    corpo = _corpo_odom()
+    assert corpo.retorno(_cfg_retorno(), threading.Event(), lambda t: None) == "sem ponto de partida"
+    corpo._odom = None
+    assert not corpo.marcar_inicio()
+    assert all(c == "StopMove" for c in corpo.robot.loco.comandos)
+
+
+def test_retorno_interrompido_para():
+    import math as m
+
+    corpo = _corpo_odom()
+    corpo.marcar_inicio()
+    corpo._odom = (2.0, 0.0, m.pi, time.monotonic())
+    parar = threading.Event()
+    parar.set()
+    assert corpo.retorno(_cfg_retorno(), parar, lambda t: None) == "interrompida"
+    assert corpo.robot.loco.comandos == ["StopMove"]
+
+
+def test_marcar_inicio_e_retorno_vao_para_a_executora():
+    body = _FakeBody()
+    body.marcar_inicio = lambda: True
+    body.retorno = lambda cfg, interromper, log: body.calls.append(("retorno", cfg)) or ""
+    respostas = _serve(body, {"id": 1, "cmd": "marcar_inicio"}, {"id": 2, "cmd": "retorno", "cfg": {"vx_retorno": 0.2}},
+                       {"id": 3, "cmd": "shutdown"})
+    assert respostas == [{"id": 1, "ok": True}, {"id": 2, "ok": True}, {"id": 3, "ok": True}]
+    assert [c for c in body.calls if c != "parar"][0][1].vx_retorno == 0.2

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import re
+import time
+from collections import deque
 
 import cv2
 import numpy as np
@@ -31,6 +33,7 @@ _IMAGE_QOS = {
     "default": QoSProfile(reliability=ReliabilityPolicy.RELIABLE, history=HistoryPolicy.KEEP_LAST, depth=1),
 }
 HEARTBEAT_S = 10.0
+QUADROS_CADASTRO, GUARDA_S = 6, 0.15  # cadastro pela webcam: 6 quadros do último ~1 s
 NOME_VALIDO = re.compile(r"^[a-z0-9_]+$")  # vira chave do reactions.yaml: minúsculas, sem espaço
 
 
@@ -97,6 +100,10 @@ class FaceRecognitionNode(Node):
         # Se nem esta linha aparecer, o nó está preso dentro de um frame (o timer roda na mesma thread).
         self._frames = 0
         self._faces = 0
+        # Cadastro pela webcam: os últimos quadros, um a cada GUARDA_S (~1 s). O serviço roda na mesma
+        # thread das imagens, então não dá para esperar quadros novos dentro dele: usa os já guardados.
+        self._recentes: deque = deque(maxlen=QUADROS_CADASTRO)
+        self._guardado_em = 0.0
         self.create_timer(HEARTBEAT_S, self._heartbeat)
         # Cadastro pela interface (painel_node): o modelo já está carregado aqui. Mesma thread das
         # imagens (executor simples), então o banco nunca muda no meio de um frame.
@@ -110,14 +117,21 @@ class FaceRecognitionNode(Node):
             response.ok, response.mensagem = False, f"nome inválido {nome!r}: use minúsculas, números e _"
             return response
         embeddings, avisos = [], []
-        for i, foto in enumerate(request.fotos, start=1):
-            frame = cv2.imdecode(np.frombuffer(bytes(foto.data), np.uint8), cv2.IMREAD_COLOR)
+        if request.da_webcam:
+            quadros = [(f"quadro {i}", q) for i, q in enumerate(self._recentes, start=1)]
+            if not quadros:
+                response.ok, response.mensagem = False, "nenhum quadro da webcam ainda: a câmera está mandando imagem?"
+                return response
+        else:
+            quadros = [(f"foto {i}", cv2.imdecode(np.frombuffer(bytes(f.data), np.uint8), cv2.IMREAD_COLOR))
+                       for i, f in enumerate(request.fotos, start=1)]
+        for rotulo, frame in quadros:
             if frame is None:
-                avisos.append(f"foto {i}: não é uma imagem")
+                avisos.append(f"{rotulo}: não é uma imagem")
                 continue
             face = select_reference_face(self._engine.extract_faces(frame))
             if face is None:
-                avisos.append(f"foto {i}: nenhum rosto")
+                avisos.append(f"{rotulo}: nenhum rosto")
                 continue
             embeddings.append(face.embedding)
         if not embeddings:
@@ -154,6 +168,10 @@ class FaceRecognitionNode(Node):
             self.get_logger().warn(f"Falha ao converter frame: {exc}")
             return
 
+        agora = time.monotonic()
+        if agora - self._guardado_em >= GUARDA_S:
+            self._recentes.append(frame)
+            self._guardado_em = agora
         shape = (frame.shape[0], frame.shape[1])
         detections = []
         try:

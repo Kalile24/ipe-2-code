@@ -34,6 +34,7 @@ from core.approach import (
 )
 from core.comandos_voz import transicao
 from core.meia_volta import MeiaVoltaConfig
+from core.retorno import RetornoConfig
 from core.pessoas import nome_falado
 from core.piper_voice import DEFAULT_URL, say
 from core.reaction_policy import A_VONTADE, ReactionConfigError, validate_steps
@@ -47,7 +48,8 @@ POSTURA_TIMEOUT_S = 120.0
 LIMITE_POSICAO_VERIFICA_S = 1.0  # de quanto em quanto tempo o limite da posição mantida é conferido
 INICIALIZACAO_TIMEOUT_S = 120.0
 MEIA_VOLTA_TIMEOUT_S = 60.0
-ESPERA_ROTINA_S = 2 * POSTURA_TIMEOUT_S + MEIA_VOLTA_TIMEOUT_S + 10.0
+RETORNO_TIMEOUT_S = 2 * 60.0 + 10.0  # andar + virar, cada um até o teto de tempo_max_retorno_s
+ESPERA_ROTINA_S = 2 * POSTURA_TIMEOUT_S + MEIA_VOLTA_TIMEOUT_S + RETORNO_TIMEOUT_S + 10.0
 SHUTDOWN_TIMEOUT_S = 60.0
 ESPERA_PROCESSO_S = 10.0
 # Desarmado o robô não se mexe: virar/aproximar só medem (status com a caixa do rosto) por isto.
@@ -156,6 +158,12 @@ class SubprocessBody:
             {"cmd": "meia_volta", "cfg": cfg}, timeout_s=MEIA_VOLTA_TIMEOUT_S, deve_parar=deve_parar
         )
 
+    def marcar_inicio(self) -> bool:
+        return self._call({"cmd": "marcar_inicio"}, timeout_s=5.0)
+
+    def retorno(self, cfg: dict, deve_parar: Callable[[], bool]) -> tuple[bool, str]:
+        return self._call_erro({"cmd": "retorno", "cfg": cfg}, timeout_s=RETORNO_TIMEOUT_S, deve_parar=deve_parar)
+
     def shutdown(self) -> None:
         try:
             self._call({"cmd": "shutdown"}, timeout_s=SHUTDOWN_TIMEOUT_S)
@@ -207,6 +215,8 @@ class BodyNode(Node):
             self.declare_parameter(campo.name, campo.default)
         for campo in fields(MeiaVoltaConfig):
             self.declare_parameter(campo.name, campo.default)
+        for campo in fields(RetornoConfig):
+            self.declare_parameter(campo.name, campo.default)
         # ValueError com os estágios válidos: derruba o nó na partida
         self._estagios = parse_stages(str(self.get_parameter("estagios").value))
         self._approach = ApproachConfig(**{
@@ -220,6 +230,10 @@ class BodyNode(Node):
             c.name: type(c.default)(self.get_parameter(c.name).value) for c in fields(MeiaVoltaConfig)
         })
         validar_operacao(asdict(self._meia_volta))  # fora da faixa: o nó não sobe, como parse_stages
+        self._retorno = RetornoConfig(**{
+            c.name: type(c.default)(self.get_parameter(c.name).value) for c in fields(RetornoConfig)
+        })
+        validar_operacao(asdict(self._retorno))
         self._so_equilibrio = self.get_parameter("so_equilibrio").value is True
         self._avisos_voz = self.get_parameter("avisos_voz").value is True
         self._posicao_max_s = float(self.get_parameter("posicao_max_s").value)
@@ -337,6 +351,19 @@ class BodyNode(Node):
     def _on_set_parameters(self, params: list) -> SetParametersResult:
         if any(p.name == "armed" for p in params):
             return SetParametersResult(successful=False, reason="armed só vale na partida (reinicie o nó)")
+        for p in params:
+            if p.name == "estagios":
+                try:
+                    novos = parse_stages(str(p.value))
+                except ValueError as exc:
+                    return SetParametersResult(successful=False, reason=str(exc))
+                # Sob _busy: uma rotina em andamento não troca de estágios no meio.
+                if not self._busy.acquire(blocking=False):
+                    return SetParametersResult(successful=False, reason="rotina em andamento: tente quando terminar")
+                try:
+                    self._estagios = novos
+                finally:
+                    self._busy.release()
         return SetParametersResult(successful=True)
 
     def _initialize(self, body_factory: Callable[..., object], *args: object) -> None:
@@ -454,6 +481,10 @@ class BodyNode(Node):
                     pass
 
             self._publish(f"rotina de {pessoa}: início")
+            if not voz and "retorno" in self._estagios and self._ready:
+                # o ponto de partida é onde ele estava ao reconhecer a pessoa, antes de virar/aproximar
+                if not self._body.marcar_inicio():
+                    log("retorno: sem odometria; não vai voltar ao ponto de partida")
             estado = PRONTO if voz or "virar" not in self._estagios else self._aproximar(pessoa, log)
             if voz:  # nunca aproxima, filtra estágios nem faz meia-volta
                 ok = self._executar_voz(passos, log)
@@ -472,6 +503,8 @@ class BodyNode(Node):
                 fim = "fim" if ok else "interrompida" if interrompida else "falhou"
                 if ok and "meia_volta" in self._estagios and not self._interromper.is_set():
                     mensagem = self._fazer_meia_volta(log)
+                    if mensagem == "meia_volta: fim" and "retorno" in self._estagios and not self._interromper.is_set():
+                        mensagem = self._fazer_retorno(log)
             else:  # desistiu ou interrompida na aproximação: não cumprimenta
                 ok, fim = False, estado
                 if estado == DESISTIU_ROSTO and self._avisos_voz:
@@ -538,12 +571,28 @@ class BodyNode(Node):
             return "meia_volta: dry_run"
         log("meia_volta: girando")
         try:
-            ok, erro = self._body.meia_volta(asdict(self._meia_volta), self._interromper.is_set)
+            cfg = asdict(self._meia_volta)
+            if "retorno" in self._estagios:
+                cfg["passo_m"] = 0.0  # o retorno anda; o passo cego não
+            ok, erro = self._body.meia_volta(cfg, self._interromper.is_set)
         except Exception as exc:
             ok, erro = False, repr(exc)
         if not ok and self._interromper.is_set():
             erro = "interrompida"
         texto = "meia_volta: fim" if ok else f"meia_volta: falhou ({erro})"
+        log(texto)
+        return texto
+
+    def _fazer_retorno(self, log: Callable[[str], None]) -> str:
+        """Anda até o ponto de partida e vira para a pessoa. Devolve a mensagem (nunca falha a rotina)."""
+        log("retorno: voltando ao ponto de partida")
+        try:
+            ok, erro = self._body.retorno(asdict(self._retorno), self._interromper.is_set)
+        except Exception as exc:
+            ok, erro = False, repr(exc)
+        if not ok and self._interromper.is_set():
+            erro = "interrompida"
+        texto = "retorno: fim" if ok else f"retorno: falhou ({erro})"
         log(texto)
         return texto
 

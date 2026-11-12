@@ -34,6 +34,9 @@ class _FakeBody:
         self.stop_em = None  # instante do primeiro stop
         self.meia_volta_gate = None  # threading.Event: segura a meia-volta; stop() a solta
         self.meia_volta_res = (True, "")
+        self.meia_volta_cfgs = []
+        self.marcar_ok = True
+        self.retorno_res = (True, "")
 
     def initialize(self, so_equilibrio=False):
         self.calls.append("initialize")
@@ -60,10 +63,21 @@ class _FakeBody:
         if deve_parar():  # como o SubprocessBody: interrompida antes da escrita, nada é mandado
             return False, "interrompida"
         self.calls.append("meia_volta")
+        self.meia_volta_cfgs.append(cfg)
         if self.meia_volta_gate is not None:
             self.meia_volta_gate.wait(5)
             return False, "interrompida"
         return self.meia_volta_res
+
+    def marcar_inicio(self):
+        self.calls.append("marcar_inicio")
+        return self.marcar_ok
+
+    def retorno(self, cfg, deve_parar):
+        if deve_parar():
+            return False, "interrompida"
+        self.calls.append("retorno")
+        return self.retorno_res
 
     def shutdown(self):
         self.calls.append("shutdown")
@@ -248,6 +262,21 @@ def test_armed_cannot_change_after_start(make_node):
     env = make()
     result = env.node.set_parameters([Parameter("armed", Parameter.Type.BOOL, True)])
     assert not result[0].successful
+
+
+def test_stages_change_live_but_not_during_a_routine_or_to_an_invalid_list(make_node):
+    make, _, _ = make_node
+    env = make()
+    estagios = lambda lista: env.node.set_parameters([Parameter("estagios", Parameter.Type.STRING, lista)])[0]
+    assert env.node._busy.acquire(timeout=5)  # como uma rotina em andamento
+    antes = env.node._estagios
+    assert not estagios("fala").successful
+    assert env.node._estagios == antes
+    env.node._busy.release()
+    assert estagios("fala").successful
+    assert env.node._estagios == frozenset({"fala"})
+    assert not estagios("voar").successful
+    assert env.node._estagios == frozenset({"fala"})
 
 
 def test_cancel_stops_after_the_current_step_and_releases_the_arms(make_node):
@@ -716,3 +745,48 @@ def test_goal_de_cumprimento_ainda_exige_a_vontade(make_node):
     env = make(body=_FakeBody(), armed=True)
     assert not env.send(passos=SENTIDO)[0]  # sem voz: tem que terminar em a_vontade
     assert env.send(passos=SENTIDO, voz=True)[0]
+
+
+MVR = "posturas,meia_volta,retorno"
+
+
+def test_retorno_marca_o_inicio_antes_e_volta_depois_da_meia_volta_sem_o_passo(make_node):
+    make, status, _ = make_node
+    body = _FakeBody()
+    r = make(body=body, armed=True, estagios=MVR).run(passos=POSTURA)
+    assert body.calls == ["initialize", "marcar_inicio", "a_vontade", "meia_volta", "retorno"]
+    assert body.meia_volta_cfgs[0]["passo_m"] == 0.0  # o retorno anda; o passo cego não
+    assert r.sucesso and r.mensagem == "retorno: fim"
+    assert status[-3:] == ["retorno: voltando ao ponto de partida", "retorno: fim", "rotina de gil: fim"]
+
+
+def test_sem_estagio_retorno_nem_marca_e_o_passo_continua(make_node):
+    make, _, _ = make_node
+    body = _FakeBody()
+    make(body=body, armed=True, estagios=MV).run(passos=POSTURA)
+    assert "marcar_inicio" not in body.calls and "retorno" not in body.calls
+    assert body.meia_volta_cfgs[0]["passo_m"] > 0
+
+
+def test_meia_volta_que_falha_nao_faz_retorno(make_node):
+    make, _, _ = make_node
+    body = _FakeBody()
+    body.meia_volta_res = (False, "tempo esgotado")
+    r = make(body=body, armed=True, estagios=MVR).run(passos=POSTURA)
+    assert "retorno" not in body.calls and r.mensagem == "meia_volta: falhou (tempo esgotado)"
+
+
+def test_retorno_que_falha_ainda_conta_como_cumprimento(make_node):
+    make, status, _ = make_node
+    body = _FakeBody()
+    body.retorno_res = (False, "afastando do ponto de partida")
+    r = make(body=body, armed=True, estagios=MVR).run(passos=POSTURA)
+    assert r.sucesso and r.mensagem == "retorno: falhou (afastando do ponto de partida)"
+
+
+def test_sem_odometria_avisa_e_segue_o_cumprimento(make_node):
+    make, status, _ = make_node
+    body = _FakeBody()
+    body.marcar_ok = False
+    r = make(body=body, armed=True, estagios=MVR).run(passos=POSTURA)
+    assert r.sucesso and "retorno: sem odometria; não vai voltar ao ponto de partida" in status

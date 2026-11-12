@@ -97,3 +97,19 @@ latest binary's recommended copy:
 Both are idempotent: re-runs replace the block delimited by the ai-memory
 start/end HTML-comment markers, without disturbing the rest of the file.
 <!-- ai-memory:end -->
+
+## Regras do projeto
+
+- **Testes do pacote ROS no robô: só com a rotina parada (`tmux ls` sem a sessão `rotina`) e sempre num domínio DDS
+  isolado:** `ROS_DOMAIN_ID=77 python3 -m pytest src/robot_reaction_ros/test`. Os testes criam nós ROS de verdade; no
+  domínio padrão o `body_node` real aceita os pedidos deles e o robô se mexe (2026-11-10: continência e sentido no meio
+  de uma rotina armada). Testes puros (`tests/`, só `core`) não têm esse risco.
+- **Antes de mexer no robô, avise e espere o operador.** Parar ou subir a rotina, reiniciar serviços, instalar código ou
+  rodar testes no robô só depois de dizer o que vai acontecer e de o operador confirmar que o robô está seguro (no
+  suporte, ou em pé com alguém segurando e o controle da Unitree na mão). Nunca encadeie "parar → instalar → subir
+  armado" num comando só. (2026-11-10: o robô agachou durante um deploy feito sem aviso; era a proteção de bateria
+  baixa, 4%: confira a carga antes de testes armados, `rt/lf/bmsstate`, campo `soc`.)
+- **Revise o código antes de instalar no robô.** Leia o diff inteiro procurando qualquer caminho que mande comando ao
+  corpo (`body_worker`, `G1ArmController`, `LocoClient`/`SetVelocity`, `SetFsmId`/damp, `ChannelFactoryInitialize`,
+  scripts `robo_*`) e rode `/code-review` no que muda movimento, parada ou inicialização. Testes que tocam o corpo usam
+  sempre um dublê: o `ROS_DOMAIN_ID` isola o ROS, **não** o SDK da Unitree, que fala com o robô direto pela `eth0`.

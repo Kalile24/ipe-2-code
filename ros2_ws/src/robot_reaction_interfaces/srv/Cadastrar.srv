@@ -3,6 +3,7 @@
 string nome
 sensor_msgs/CompressedImage[] fotos
 bool adicionar  # true: soma às fotos que a pessoa já tem; false: substitui
+bool da_webcam  # true: usa os últimos quadros da câmera do robô (~3 s) em vez de `fotos`
 ---
 bool ok
 string mensagem

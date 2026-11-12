@@ -222,6 +222,23 @@ scp data/identity_db_buffalo_l.* data/identity_db_buffalo_sc.* unitree@IP_DO_ROB
 
 O nó só lê o banco ao subir: reinicie-o depois (janela 0 do tmux, `Ctrl+C` e seta para cima).
 
+**Reconhecimento de fala (Vosk).** Os comandos de voz usam o `vosk` 0.3.45 no `.venv` e o modelo
+`vosk-model-small-pt-0.3` (32 MB) em `~/.cache/ipe-vosk/`. Sem internet no robô, baixe no notebook e copie:
+
+```bash
+# no notebook
+mkdir -p vosk/rodas && cd vosk
+curl -fLO https://alphacephei.com/vosk/models/vosk-model-small-pt-0.3.zip
+pip download vosk==0.3.45 --no-deps --platform manylinux2014_aarch64 --python-version 38 --only-binary=:all: -d rodas
+pip download srt==3.5.3 --no-deps --no-binary=:all: -d rodas
+pip download "websockets<14" --no-deps --platform manylinux2014_aarch64 --python-version 38 --only-binary=:all: -d rodas
+ssh unitree@IP_DO_ROBO mkdir -p /tmp/rodas .cache/ipe-vosk
+scp rodas/* unitree@IP_DO_ROBO:/tmp/rodas/ && scp vosk-model-small-pt-0.3.zip unitree@IP_DO_ROBO:.cache/ipe-vosk/
+# no robô
+cd ~/.cache/ipe-vosk && python3 -m zipfile -e vosk-model-small-pt-0.3.zip . && rm vosk-model-small-pt-0.3.zip
+source ~/ipe-2-code/scripts/ambiente_robo.sh && pip install --no-index --no-build-isolation --find-links /tmp/rodas vosk
+```
+
 ## 6. Compilar o pacote ROS2
 
 ```bash

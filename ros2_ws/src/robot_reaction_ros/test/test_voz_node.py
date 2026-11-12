@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import threading
+import types
 import time
 
 import pytest
@@ -199,6 +200,17 @@ def test_comando_direto_nao_precisa_de_microfone():
         rclpy.shutdown()
 
 
+def test_discurso_le_o_texto_salvo_e_vai_de_sentido_a_a_vontade(node, monkeypatch):
+    from core import discurso
+
+    monkeypatch.setattr(discurso, "ler", lambda: "Olá, banca.")
+    node._on_datagrama("comando:discurso")
+    _espera(node)
+    assert json.loads(node._rotina.goals[0].passos_json) == [
+        {"postura": "sentido"}, {"fala": "Olá, banca."}, {"postura": "a_vontade"}]
+    assert _resultados(node)[-1] == "ok"
+
+
 def test_comando_desconhecido_e_ignorado(node):
     node._on_datagrama("comando:inexistente")
     _espera(node)
@@ -288,3 +300,73 @@ def test_excecao_qualquer_no_iniciar_nao_deixa_surdo():
     finally:
         n.destroy_node()
         rclpy.shutdown()
+
+
+class _FluxoFalso:
+    def __init__(self, frases):
+        self.frases = list(frases)
+
+    def aceitar(self, pcm):
+        return self.frases.pop(0) if self.frases else None
+
+    def zerar(self):
+        pass
+
+
+class _ProcFalso:
+    def __init__(self):
+        import io
+
+        self.stdout = io.BytesIO(b"\x00" * 3200 * 50)
+        self.pid = -1
+
+    def poll(self):
+        return None
+
+
+def test_escuta_sem_vosk_e_recusada(node):
+    node._on_datagrama("escuta:alternar")
+    assert node._escuta is False and _resultados(node)[-1] == "recusado"
+
+
+def test_escuta_liga_e_desliga_avisando(node):
+    node._transcrever = types.SimpleNamespace(fluxo=lambda frases: _FluxoFalso([]))
+    node._on_datagrama("escuta:alternar")
+    assert node._escuta is True and node._estado_pub.msgs[-1]["escuta"] is True
+    node._on_datagrama("escuta:alternar")
+    assert node._escuta is False and node._estado_pub.msgs[-1]["escuta"] is False
+    for _ in range(100):
+        if len(node.fala) >= 2:
+            break
+        time.sleep(0.02)
+    assert node.fala == ["Escuta ligada", "Escuta desligada"]
+
+
+def test_escuta_so_ouve_livre_e_depois_do_silencio(node):
+    node._escuta, node._silencio_ate = True, 0.0
+    assert node._pode_ouvir()
+    node._corpo = "rotina"
+    assert not node._pode_ouvir()  # o robô pode estar falando
+    node._corpo = "livre"
+    node._ocupado = True
+    assert not node._pode_ouvir()
+    node._ocupado, node._silencio_ate = False, time.monotonic() + 5
+    assert not node._pode_ouvir()
+
+
+def test_escuta_executa_so_frase_com_o_vocativo(node, monkeypatch):
+    frases = ["sentido", "tenente nichinica sentido"]
+    node._transcrever = types.SimpleNamespace(fluxo=lambda g: _FluxoFalso(frases))
+    node._escuta, node._silencio_ate = True, 0.0
+    monkeypatch.setattr(node, "_abrir_escuta", lambda: _ProcFalso())
+    monkeypatch.setattr(node, "_fechar_escuta", lambda: None)
+    t = threading.Thread(target=node._escutar, daemon=True)
+    t.start()
+    for _ in range(200):
+        if node._rotina.goals:
+            break
+        rclpy.spin_once(node, timeout_sec=0.02)
+    node._parar.set()
+    t.join(2.0)
+    assert len(node._rotina.goals) == 1  # "sentido" solto (sem "tenente") não disparou
+    assert json.loads(node._rotina.goals[0].passos_json) == [{"postura": "sentido"}]

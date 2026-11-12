@@ -88,3 +88,40 @@ def test_enviar_voz_chega_por_udp():
         s.settimeout(1)
         enviar_voz("comando:sentido", s.getsockname()[1])
         assert s.recv(100) == b"comando:sentido"
+
+
+def test_gramatica_aceita_o_comando_sozinho_ou_com_o_vocativo():
+    from core.comandos_voz import carregar_comandos, gramatica
+
+    raw = {"nao_entendi": "n", "comandos": {
+        "a_vontade": {"palavras": ["À  Vontade"], "passos": [{"postura": "a_vontade"}]},
+        "sentido": {"palavras": ["sentido"], "passos": [{"postura": "sentido"}]},
+    }}
+    tabela = carregar_comandos(raw)
+    assert tabela.frases == ["à vontade", "sentido"]
+    assert gramatica(tabela) == [
+        "à vontade", "sentido",
+        "tenente à vontade", "tenente sentido",
+        "tenente [unk] à vontade", "tenente [unk] sentido",
+        "[unk]",
+    ]
+    assert tabela.comandos["a_vontade"][0] == ["a vontade"]  # a comparação continua sem acento
+
+
+def test_escuta_continua_so_aceita_com_o_vocativo():
+    from core.comandos_voz import comando_da_escuta, gramatica_escuta
+
+    tabela = _tabela()
+    tabela.frases.extend(["sentido", "continencia"])
+    assert gramatica_escuta(tabela) == ["tenente sentido", "tenente continencia",
+                                        "tenente [unk] sentido", "tenente [unk] continencia", "[unk]"]
+    assert comando_da_escuta(tabela, "Tenente Nichinica, sentido!") == "sentido"
+    assert comando_da_escuta(tabela, "tenente sentido") == "sentido"
+    assert comando_da_escuta(tabela, "sentido") is None  # pedaço sem o vocativo: pode ser a plateia
+    assert comando_da_escuta(tabela, "tenente") is None
+
+
+def test_descansar_arma_desce_o_braco_e_fica_em_sentido():
+    passos = [{"postura": "desc_arma"}, {"postura": "sentido"}]
+    assert transicao("continencia", passos) == passos
+    assert posicao_final("continencia", passos) == "sentido"  # mantém até o à vontade
