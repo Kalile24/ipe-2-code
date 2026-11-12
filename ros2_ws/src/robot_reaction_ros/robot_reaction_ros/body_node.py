@@ -9,7 +9,7 @@ import subprocess
 import sys
 import threading
 import time
-from dataclasses import fields
+from dataclasses import asdict, fields
 from typing import Callable
 
 import rclpy
@@ -23,7 +23,16 @@ from rclpy.qos import QoSProfile
 from std_msgs.msg import String
 from vision_msgs.msg import Detection2DArray
 
-from core.approach import DESISTIU_ROSTO, DESISTIU_TEMPO, PRONTO, ApproachConfig, escolher_caixa, passo_aproximacao
+from core.approach import (
+    DESISTIU_ROSTO,
+    DESISTIU_TEMPO,
+    PRONTO,
+    ApproachConfig,
+    escolher_caixa,
+    passo_aproximacao,
+    validar_operacao,
+)
+from core.meia_volta import MeiaVoltaConfig
 from core.pessoas import nome_falado
 from core.piper_voice import DEFAULT_URL, say
 from core.reaction_policy import ReactionConfigError, validate_steps
@@ -35,7 +44,8 @@ from robot_reaction_interfaces.action import Rotina
 # a postura em andamento + o a_vontade + a ordem de shutdown + a espera do processo.
 POSTURA_TIMEOUT_S = 120.0
 INICIALIZACAO_TIMEOUT_S = 120.0
-ESPERA_ROTINA_S = 2 * POSTURA_TIMEOUT_S + 10.0
+MEIA_VOLTA_TIMEOUT_S = 60.0
+ESPERA_ROTINA_S = 2 * POSTURA_TIMEOUT_S + MEIA_VOLTA_TIMEOUT_S + 10.0
 SHUTDOWN_TIMEOUT_S = 60.0
 ESPERA_PROCESSO_S = 10.0
 # Desarmado o robô não se mexe: virar/aproximar só medem (status com a caixa do rosto) por isto.
@@ -90,23 +100,38 @@ class SubprocessBody:
                 return resposta
             # resposta atrasada de uma ordem em que já desistimos de esperar: descartada
 
-    def _call(self, ordem: dict, timeout_s: float) -> bool:
+    def _call_erro(
+        self, ordem: dict, timeout_s: float, deve_parar: Callable[[], bool] | None = None
+    ) -> tuple[bool, str]:
         with self._lock:
             if self._proc.poll() is not None:
-                return False
+                return False, "body_worker morto"
             self._next_id += 1
             ordem = {"id": self._next_id, **ordem}
-            if not self._write(ordem):
-                return False
-            return bool(self._read(timeout_s, ordem["id"]).get("ok"))
+            with self._escrita:
+                # Conferido com a escrita presa: o stop() também escreve sob este lock, então ou a
+                # ordem nunca sai ou o "parar" vem depois dela (o leitor do worker limparia um anterior).
+                if deve_parar is not None and deve_parar():
+                    return False, "interrompida"
+                if not self._write_preso(ordem):
+                    return False, "body_worker morto"
+            resposta = self._read(timeout_s, ordem["id"])
+            return bool(resposta.get("ok")), str(resposta.get("erro", ""))
+
+    def _call(self, ordem: dict, timeout_s: float) -> bool:
+        return self._call_erro(ordem, timeout_s)[0]
+
+    def _write_preso(self, ordem: dict) -> bool:
+        """Escreve a linha; quem chama já segura `_escrita`."""
+        try:
+            self._proc.stdin.write((json.dumps(ordem) + "\n").encode())
+        except BrokenPipeError:
+            return False
+        return True
 
     def _write(self, ordem: dict) -> bool:
         with self._escrita:
-            try:
-                self._proc.stdin.write((json.dumps(ordem) + "\n").encode())
-            except BrokenPipeError:
-                return False
-        return True
+            return self._write_preso(ordem)
 
     def initialize(self, so_equilibrio: bool = False) -> bool:
         return self._call(
@@ -122,6 +147,12 @@ class SubprocessBody:
 
     def posture(self, nome: str) -> bool:
         return self._call({"cmd": "posture", "nome": nome}, timeout_s=self._posture_timeout_s)
+
+    def meia_volta(self, cfg: dict, deve_parar: Callable[[], bool]) -> tuple[bool, str]:
+        """Não manda a ordem se `deve_parar()` já vale: ver _call_erro."""
+        return self._call_erro(
+            {"cmd": "meia_volta", "cfg": cfg}, timeout_s=MEIA_VOLTA_TIMEOUT_S, deve_parar=deve_parar
+        )
 
     def shutdown(self) -> None:
         try:
@@ -164,12 +195,14 @@ class BodyNode(Node):
         self.declare_parameter("passo_descansar", True)
         self.declare_parameter("tts_url", DEFAULT_URL)
         self.declare_parameter("tts_timeout_s", 60.0)
-        self.declare_parameter("estagios", "virar,aproximar,fala,posturas")
+        self.declare_parameter("estagios", "virar,aproximar,fala,posturas,meia_volta")
         self.declare_parameter("detections_topic", "/face_recognition/detections")
         # true: inicializa só se já estiver em equilíbrio (FSM 801), sem damp → em pé (partida pelo controle)
         self.declare_parameter("so_equilibrio", False)
         self.declare_parameter("avisos_voz", True)  # depuração: "Perdi <nome> de vista" ao desistir
         for campo in fields(ApproachConfig):
+            self.declare_parameter(campo.name, campo.default)
+        for campo in fields(MeiaVoltaConfig):
             self.declare_parameter(campo.name, campo.default)
         # ValueError com os estágios válidos: derruba o nó na partida
         self._estagios = parse_stages(str(self.get_parameter("estagios").value))
@@ -180,6 +213,10 @@ class BodyNode(Node):
             else type(c.default)(self.get_parameter(c.name).value)
             for c in fields(ApproachConfig)
         })
+        self._meia_volta = MeiaVoltaConfig(**{
+            c.name: type(c.default)(self.get_parameter(c.name).value) for c in fields(MeiaVoltaConfig)
+        })
+        validar_operacao(asdict(self._meia_volta))  # fora da faixa: o nó não sobe, como parse_stages
         self._so_equilibrio = self.get_parameter("so_equilibrio").value is True
         self._avisos_voz = self.get_parameter("avisos_voz").value is True
         self._pausa_s = float(self.get_parameter("pausa_s").value)
@@ -347,6 +384,7 @@ class BodyNode(Node):
             self._interromper.clear()
         try:
             pessoa, passos = self._parse(goal_handle.request)
+            mensagem = ""
 
             def log(text: str) -> None:
                 self._publish(text)
@@ -369,6 +407,8 @@ class BodyNode(Node):
                 )
                 interrompida = not ok and self._interromper.is_set()
                 fim = "fim" if ok else "interrompida" if interrompida else "falhou"
+                if ok and "meia_volta" in self._estagios and not self._interromper.is_set():
+                    mensagem = self._fazer_meia_volta(log)
             else:  # desistiu ou interrompida na aproximação: não cumprimenta
                 ok, fim = False, estado
                 if estado == DESISTIU_ROSTO and self._avisos_voz:
@@ -378,18 +418,34 @@ class BodyNode(Node):
                         log(f"fala falhou: {exc!r}")
             self._publish(f"rotina de {pessoa}: {fim}")
             try:
-                if ok:
-                    goal_handle.succeed()
-                elif goal_handle.is_cancel_requested:
+                if goal_handle.is_cancel_requested:  # nunca succeed() num goal em cancelamento
                     goal_handle.canceled()
+                elif ok:
+                    goal_handle.succeed()
                 else:
                     goal_handle.abort()
             except Exception:  # Ctrl+C no meio: ninguém espera mais o resultado
                 pass
-            return Rotina.Result(sucesso=ok, mensagem="" if ok else fim)
+            return Rotina.Result(sucesso=ok, mensagem=mensagem if ok else fim)
         finally:
             self._busy.release()
             self._idle.set()
+
+    def _fazer_meia_volta(self, log: Callable[[str], None]) -> str:
+        """Meia-volta à esquerda + passo curto. Devolve a mensagem do resultado (nunca falha a rotina)."""
+        if not self._ready:
+            self._publish("dry_run meia_volta")
+            return "meia_volta: dry_run"
+        log("meia_volta: girando")
+        try:
+            ok, erro = self._body.meia_volta(asdict(self._meia_volta), self._interromper.is_set)
+        except Exception as exc:
+            ok, erro = False, repr(exc)
+        if not ok and self._interromper.is_set():
+            erro = "interrompida"
+        texto = "meia_volta: fim" if ok else f"meia_volta: falhou ({erro})"
+        log(texto)
+        return texto
 
     def _posture(self, nome: str) -> bool:
         if not self._ready:

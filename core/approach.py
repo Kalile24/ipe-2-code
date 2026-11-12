@@ -30,6 +30,11 @@ LIMITES_OPERACAO = {
     "perda_rosto_s": (0.2, 5.0),
     "desistir_s": (1.0, 60.0),
     "tempo_max_s": (5.0, 120.0),
+    "vyaw_meia_volta": (0.3, 0.8),
+    "tolerancia_meia_volta_graus": (2.0, 30.0),
+    "passo_m": (0.0, 0.5),
+    "vx_passo": (0.05, 0.3),
+    "tempo_max_meia_volta_s": (5.0, 30.0),
 }
 
 

@@ -17,6 +17,10 @@ equilíbrio (FSM 801), sem damp.
 
 Andar não espera postura e não tem resposta (nem `id`):
     → {"cmd": "velocidade", "vx": 0.1, "vyaw": -0.2} | {"cmd": "parar"}
+
+`{"id": 9, "cmd": "meia_volta", "cfg": {<campos do MeiaVoltaConfig>}}`: gira 180° para a esquerda
+pela IMU e dá um passo; responde ok, ou {"ok": false, "erro": "<falha>" | "interrompida"}. É a
+ordem que o `parar` interrompe (a thread de leitura aciona o evento e para o robô).
 """
 from __future__ import annotations
 
@@ -29,6 +33,8 @@ import sys
 import threading
 import time
 from typing import IO
+
+from core.meia_volta import CHEGOU, GIRANDO, MeiaVoltaConfig, acumular, duracao_passo, passo_giro
 
 SEM_TORQUE_OU_DAMP = (0, 1)  # FSM_ID do G1 com os motores soltos: o damp não muda nada
 
@@ -136,6 +142,50 @@ class G1Body:
     def stop(self) -> None:
         self.robot.loco.StopMove()
 
+    def yaw(self) -> float | None:
+        estado = self.robot.low_state
+        return None if estado is None else float(estado.imu_state.rpy[2])
+
+    def meia_volta(self, cfg: MeiaVoltaConfig, interromper: threading.Event, log) -> str:
+        """Gira 180° à esquerda medindo o yaw da IMU, depois anda `passo_m`. "" = deu certo."""
+        dt = 0.02  # 50 Hz
+        try:
+            girado, anterior, t0, ultimo_log = 0.0, self.yaw(), time.monotonic(), 0.0
+            while not interromper.is_set():
+                yaw = self.yaw()
+                if yaw is not None and math.isfinite(yaw) and anterior is not None:
+                    girado = acumular(girado, anterior, yaw)
+                    anterior = yaw
+                elif yaw is not None and math.isfinite(yaw):
+                    anterior = yaw  # 1ª leitura válida
+                sem_angulo = yaw is None or not math.isfinite(yaw) or anterior is None
+                agora = time.monotonic()
+                vyaw, estado = passo_giro(cfg, None if sem_angulo else girado, agora - t0)
+                if estado == CHEGOU:
+                    break
+                if estado != GIRANDO:
+                    return estado
+                if interromper.is_set():
+                    break
+                self.velocity(0.0, vyaw)
+                if agora - ultimo_log >= 0.5:
+                    ultimo_log = agora
+                    log(f"meia_volta: girando (girado={math.degrees(girado):+.0f}°)")
+                interromper.wait(dt)
+            if interromper.is_set():
+                return "interrompida"
+            self.stop()
+            if cfg.vx_passo > 0:  # sem velocidade não há passo (e duracao_passo dividiria por zero)
+                fim = time.monotonic() + duracao_passo(cfg)
+                while time.monotonic() < fim:
+                    if interromper.is_set():
+                        return "interrompida"
+                    self.velocity(cfg.vx_passo, 0.0)
+                    interromper.wait(0.1)
+            return ""
+        finally:
+            self.stop()
+
     def shutdown(self) -> None:
         """Braços de volta ao equilíbrio e arm_sdk solto; o robô continua em pé (FSM 801)."""
         self.robot.shutdown()
@@ -160,6 +210,7 @@ def serve(body: object, inp: IO[str], out: IO[str]) -> None:
             out.flush()
 
     fila: queue.Queue = queue.Queue()
+    interromper = threading.Event()  # o `parar` interrompe a meia_volta em andamento
 
     def executar() -> None:
         while True:
@@ -172,6 +223,11 @@ def serve(body: object, inp: IO[str], out: IO[str]) -> None:
                     reply(ordem, bool(body.initialize(bool(ordem.get("so_equilibrio", False)))))
                 elif cmd == "posture":
                     reply(ordem, bool(body.posture(ordem["nome"])))
+                elif cmd == "meia_volta" and hasattr(body, "meia_volta"):
+                    erro = body.meia_volta(
+                        MeiaVoltaConfig(**ordem["cfg"]), interromper, lambda t: print(t, file=sys.stderr)
+                    )
+                    reply(ordem, not erro, erro)
                 else:
                     reply(ordem, False, f"ordem desconhecida {cmd!r}")
             except Exception as exc:  # erro do SDK numa ordem não derruba o processo
@@ -188,17 +244,21 @@ def serve(body: object, inp: IO[str], out: IO[str]) -> None:
             if cmd == "velocidade":
                 body.velocity(float(ordem["vx"]), float(ordem["vyaw"]))
             elif cmd == "parar":
+                interromper.set()
                 body.stop()
             elif cmd == "shutdown":
                 final = ordem
                 break
             else:
+                if cmd == "meia_volta":
+                    interromper.clear()  # aqui, não na executora: um `parar` já lido não pode ser apagado
                 fila.put(ordem)
         except Exception as exc:
             if isinstance(ordem, dict) and ordem.get("cmd") in ("velocidade", "parar"):
                 print(f"body_worker: {ordem['cmd']} falhou: {exc!r}", file=sys.stderr)  # sem resposta
             else:
                 reply(ordem if isinstance(ordem, dict) else {}, False, repr(exc))
+    interromper.set()  # a meia_volta em andamento não segue sem supervisão
     try:  # entrada fechada ou shutdown: para de andar já, antes de esperar a postura em andamento
         body.stop()
     except Exception as exc:

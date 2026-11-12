@@ -17,6 +17,23 @@ START nem F1+… (são do `~/hhhh`). Avise o autor do `~/hhhh` antes dos testes 
 | Robô **fora do suporte** | **F3+DOWN** (para de andar na hora, braços voltam, fica em pé) ou o próprio controle da Unitree. **Nunca damp fora do suporte**: ele cai |
 | Qualquer um | Ctrl+C na janela `rotina` (termina o passo atual, para de andar, devolve os braços) |
 
+## 0. Medir o giro (antes de armar a meia-volta)
+
+Só leitura: o script lê o yaw do IMU e **não manda nenhum comando** ao robô.
+
+```bash
+cd ~/ipe-2-code && python3 scripts/robo_medir_giro.py          # --interface eth0 é o padrão
+```
+
+Imprime, a ~10 Hz, o `yaw` em graus e o `girado` acumulado (+ = esquerda). Robô em pé, **pelo
+controle da Unitree**:
+
+- Gire ~180° à **esquerda**: o `girado` tem que chegar perto de **+180**. À **direita**: perto de **-180**.
+  Sinal trocado = não arme a meia-volta; mande a medição.
+- Parado por 30 s: o `girado` tem que variar **bem menos que 10°** (a tolerância da meia-volta).
+
+Ctrl+C para sair. Só então a meia-volta: veja a seção 9.
+
 ## 1. Atualizar e compilar
 
 ```bash
@@ -163,9 +180,31 @@ No celular ou notebook, conecte-se à `IPE-G1` e abra `http://10.42.0.1:8080`. C
 - **Subir armado** só com o robô em equilíbrio (FSM 801), como o F3+UP.
 - `robo_hotspot.sh desliga` volta o robô para a rede de antes.
 
+## 9. Meia-volta
+
+Depois de um cumprimento com sucesso, o robô gira 180° pela **esquerda** (fechado no yaw do IMU), dá
+um passo à frente (~0,2 m) e **espera o operador**. Estágio **Meia-volta** no painel; design em
+[`2026-11-07-meia-volta-design.md`](../superpowers/specs/2026-11-07-meia-volta-design.md). Só depois do passo zero
+(seção 0) e com **espaço**: o passo é cego (sem detecção de obstáculo), deixe ~1 m livre atrás de onde o
+robô começa. Operador com o controle na mão.
+
+1. **Desarmado:** a rotina só registra `dry_run meia_volta` no log e também espera o operador.
+2. **Primeira meia-volta armada**, com muito espaço, `vyaw_meia_volta` em 0,5 (o padrão): cumprimente
+   (F3+RIGHT). Confira: estado "fazendo meia-volta" e giro à esquerda; depois o passo; depois
+   "aguardando o operador".
+3. **Liberar:** botão **Liberar cumprimentos** no painel, ou desligar e ligar o automático (F3+LEFT duas
+   vezes), ou **cumprimentar agora** (só libera se alguém for reconhecido).
+4. **PARAR / F3+DOWN no meio do giro e do passo:** têm que parar na hora.
+5. Se falhar, o log diz `meia_volta: falhou (tempo esgotado | girou para o lado errado | sem angulo |
+   interrompida)`. Se girar para o lado errado ele para sozinho: avise o autor.
+
+Ajustes (grupo **Meia-volta** na aba Calibrar): `vyaw_meia_volta` 0,5 rad/s, `tolerancia_meia_volta_graus`
+10°, `passo_m` 0,2 m (0 = sem passo), `vx_passo` 0,2 m/s, `tempo_max_meia_volta_s` 12 s.
+
 ## O que mandar se algo der errado
 
 - A janela `status` (o que o body_node fez) e o log da janela `rotina`.
+- Da meia-volta: a saída do `robo_medir_giro.py` e a linha `meia_volta:` do status.
 - Em qual etapa deste guia, com quais `--estagios` e qual `operacao.yaml`.
 - O arquivo do **Baixar diagnóstico**, do painel.
 - Pelo controle: `journalctl --user -u ipe-controle --since "-10min"`.

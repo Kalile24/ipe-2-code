@@ -293,3 +293,31 @@ def test_real_webcam_format_is_read_and_missing_tool_is_not_an_error():
     parm = "Streaming Parameters Video Capture:\n\tFrames per second: 30.000 (30/1)\n"
     assert painel_mod.ler_formato_webcam(fmt, parm) == {"largura": 640, "altura": 480, "fps": 30}
     assert painel_mod.ler_formato_webcam("", "") is None
+
+
+def test_half_turn_status_lines_have_a_stage_name():
+    assert painel_mod.estagio("meia_volta: girando (girado=+93°)") == "fazendo meia-volta"
+    assert painel_mod.estagio("pronto: cumprimentos liberados") == "pronto"
+    assert painel_mod.estagio("dry_run meia_volta") == "fazendo meia-volta"
+    assert painel_mod.estagio("aguardando o operador (Liberar cumprimentos)") == "aguardando o operador"
+
+
+def test_saved_file_from_before_the_half_turn_gains_the_stage(tmp_path, monkeypatch):
+    painel = _painel(tmp_path, monkeypatch)
+    (tmp_path / "config" / "operacao.yaml").write_text(
+        yaml.safe_dump({"/**": {"ros__parameters": {"estagios": "fala,posturas", "vyaw_meia_volta": 0.5}}}))
+    _yaml(tmp_path / "operacao.yaml", {"estagios": "fala,posturas"})
+    assert painel.operacao()["estagios"] == "fala,posturas,meia_volta"
+    _yaml(tmp_path / "operacao.yaml", {"estagios": "fala", "vyaw_meia_volta": 0.5})
+    assert painel.operacao()["estagios"] == "fala"
+
+
+def test_form_saves_the_half_turn_fields(tmp_path, monkeypatch):
+    painel = _painel(tmp_path, monkeypatch)
+    novos = {"vyaw_meia_volta": 0.4, "tolerancia_meia_volta_graus": 12.0, "passo_m": 0.1, "vx_passo": 0.15,
+             "tempo_max_meia_volta_s": 15.0}
+    _yaml(tmp_path / "config" / "operacao.yaml", {"vx": 0.2, "vyaw_meia_volta": 0.5, "tolerancia_meia_volta_graus": 10.0, "passo_m": 0.2,
+                                                      "vx_passo": 0.2, "tempo_max_meia_volta_s": 12.0})
+    painel.salvar_operacao({k: str(v) for k, v in novos.items()})
+    salvo = yaml.safe_load((tmp_path / "operacao.yaml").read_text())["/**"]["ros__parameters"]
+    assert {k: salvo[k] for k in novos} == novos

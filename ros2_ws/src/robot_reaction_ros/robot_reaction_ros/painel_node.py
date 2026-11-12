@@ -46,7 +46,7 @@ from core.config import DB_PATH, MODEL_NAME
 from core.identity_store import IdentityStore
 from core.pessoas import carregar_reacoes, nome_falado, rotina_padrao
 from core.reaction_policy import load_reactions
-from core.stages import parse_stages
+from core.stages import migrar_estagios, parse_stages
 from robot_reaction_interfaces.srv import Cadastrar
 
 REPO = os.path.expanduser(os.environ.get("IPE_REPO", "~/ipe-2-code"))
@@ -55,6 +55,7 @@ RECENTE_S = 2.0  # câmera/detecção mais velha que isso conta como parada
 CAMPOS_OPERACAO = (  # o que o formulário pode mudar no operacao.yaml (o resto fica como está)
     "estagios", "altura_caixa_alvo_px", "vx", "vyaw_max", "vyaw_min", "kp_giro", "inverter_giro", "centro_ok",
     "centro_para_andar", "centro_chegada", "perda_rosto_s", "desistir_s", "tempo_max_s", "avisos_voz",
+    "vyaw_meia_volta", "tolerancia_meia_volta_graus", "passo_m", "vx_passo", "tempo_max_meia_volta_s",
 )
 FIM = ("fim", "falhou", "interrompida", "desistiu", "rejeitada")
 WEBCAM_GLOB = "/dev/v4l/by-id/*-video-index0"  # o mesmo que o robo_rotina_cumprimento.sh usa
@@ -173,7 +174,9 @@ def sessao_criada() -> float | None:
 
 def estagio(status: str) -> str:
     """O estágio do robô a partir da última linha do /reaction/rotina_status."""
-    for prefixo, nome in (("aproximar:", "aproximando"), ("virar:", "virando"), ("inicializando", "inicializando"),
+    if status.startswith(("meia_volta:", "dry_run meia_volta")) and "fim" not in status and "falhou" not in status:
+        return "fazendo meia-volta"
+    for prefixo, nome in (("aguardando o operador", "aguardando o operador"), ("aproximar:", "aproximando"), ("virar:", "virando"), ("inicializando", "inicializando"),
                           ("pronto", "pronto"), ("desarmado", "pronto (desarmado)"), ("falha na inicialização", "falha na inicialização")):
         if status.startswith(prefixo):
             return nome
@@ -578,7 +581,7 @@ class PainelNode(Node):
         valores = self._operacao_padrao()
         if os.path.exists(self._operacao_file):
             with open(self._operacao_file) as f:
-                valores.update(yaml.safe_load(f)["/**"]["ros__parameters"])
+                valores.update(migrar_estagios(yaml.safe_load(f)["/**"]["ros__parameters"]))
         return valores
 
     def restaurar_operacao(self) -> str:

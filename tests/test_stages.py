@@ -1,6 +1,6 @@
 import pytest
 
-from core.stages import ESTAGIOS, filter_steps, parse_stages
+from core.stages import ESTAGIOS, filter_steps, migrar_estagios, override_estagios, parse_stages
 
 GIL = [
     {"postura": "sentido"}, {"postura": "continencia"},
@@ -9,7 +9,7 @@ GIL = [
 ]
 
 def test_all_stages_by_default_text():
-    assert parse_stages("virar,aproximar,fala,posturas") == frozenset(ESTAGIOS)
+    assert parse_stages("virar,aproximar,fala,posturas,meia_volta") == frozenset(ESTAGIOS)
 
 def test_approach_implies_turning():
     assert parse_stages(" aproximar , fala ") == {"aproximar", "virar", "fala"}
@@ -30,3 +30,23 @@ def test_filter_can_leave_nothing():
 
 def test_movement_stages_do_not_filter_steps():
     assert filter_steps(GIL, frozenset(ESTAGIOS)) == GIL
+
+
+def test_meia_volta_e_um_estagio_valido():
+    assert parse_stages("posturas,meia_volta") == frozenset({"posturas", "meia_volta"})
+
+def test_migra_estagios_de_arquivo_antigo():
+    assert migrar_estagios({"estagios": "virar,fala"})["estagios"] == "virar,fala,meia_volta"
+
+def test_migra_estagios_nao_mexe_em_arquivo_novo():
+    v = {"estagios": "virar,fala", "vyaw_meia_volta": 0.5}
+    assert migrar_estagios(v) == v
+
+def test_migra_estagios_nao_duplica():
+    assert migrar_estagios({"estagios": "fala,meia_volta"})["estagios"] == "fala,meia_volta"
+
+
+def test_override_estagios():
+    assert override_estagios({"estagios": "virar,fala"}) == "virar,fala,meia_volta"
+    assert override_estagios({"estagios": "fala", "vyaw_meia_volta": 0.5}) is None
+    assert override_estagios({}) is None

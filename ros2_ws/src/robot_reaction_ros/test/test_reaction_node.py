@@ -302,3 +302,60 @@ def test_package_map_keeps_gil_and_adds_the_colonel():
                            {"postura": "desc_arma"}, {"postura": "a_vontade"}]
     assert mapa["gil"]["passos"] == passos("Olá, aspirante a oficial da reserva Gil, sou o Tenente Nichinica")
     assert mapa["aderson"]["passos"] == passos("Olá, coronel veterano Aderson, sou o Tenente Nichinica")
+
+
+def _meia_volta(node, mensagem="meia_volta: fim", nome="cmt"):
+    node._rotina.hold = True
+    for _ in range(3):
+        node._on_detections(_array(nome))
+    node._rotina.results[-1].finish(True, mensagem)
+    node._rotina.hold = False
+
+
+def test_depois_da_meia_volta_nao_cumprimenta_sozinho(node):
+    publicado = []
+    node._status_pub = type("P", (), {"publish": lambda _s, m: publicado.append(m.data)})()
+    _meia_volta(node)
+    assert publicado == ["aguardando o operador (Liberar cumprimentos)"]
+    for _ in range(5):
+        node._on_detections(_array("gil"))
+    assert _greeted(node) == ["cmt"]
+
+
+def test_liberar_volta_a_cumprimentar(node):
+    _meia_volta(node)
+    publicado = []
+    node._status_pub = type("P", (), {"publish": lambda _s, m: publicado.append(m.data)})()
+    for _ in range(5):
+        node._on_detections(_array("gil"))
+    assert node.set_parameters([Parameter("liberar", Parameter.Type.STRING, "")])[0].successful
+    node._on_detections(_array("gil"))
+    assert _greeted(node) == ["cmt", "gil"]  # a política seguiu contando enquanto esperava
+    assert publicado == ["pronto: cumprimentos liberados"]
+
+
+def test_ligar_automatico_volta_a_cumprimentar(node):
+    _meia_volta(node, "meia_volta: falhou (tempo)")
+    for _ in range(5):
+        node._on_detections(_array("gil"))
+    node.set_parameters([Parameter("automatico", Parameter.Type.BOOL, False)])
+    node.set_parameters([Parameter("automatico", Parameter.Type.BOOL, True)])
+    node._on_detections(_array("gil"))
+    assert _greeted(node) == ["cmt", "gil"]
+
+
+def test_cumprimentar_agora_funciona_aguardando(node):
+    _meia_volta(node)
+    node._on_detections(_array("gil"))
+    assert node.set_parameters([Parameter("cumprimentar_agora", Parameter.Type.STRING, "x")])[0].successful
+    assert _greeted(node) == ["cmt", "gil"]
+    assert not node._aguardando_operador
+
+
+def test_resultado_sem_meia_volta_nao_espera(node):
+    _meia_volta(node, "")
+    assert not node._aguardando_operador
+    node.set_parameters([Parameter("liberar", Parameter.Type.STRING, "")])
+    for _ in range(3):
+        node._on_detections(_array("gil"))
+    assert _greeted(node) == ["cmt", "gil"]
