@@ -5,6 +5,7 @@ import pytest
 import rclpy
 import yaml
 from rclpy.parameter import Parameter
+from std_msgs.msg import String
 from vision_msgs.msg import Detection2D, Detection2DArray, ObjectHypothesisWithPose
 
 import robot_reaction_ros.reaction_node as node_mod
@@ -359,3 +360,42 @@ def test_resultado_sem_meia_volta_nao_espera(node):
     for _ in range(3):
         node._on_detections(_array("gil"))
     assert _greeted(node) == ["cmt", "gil"]
+
+
+def _corpo(node, texto):
+    node._on_corpo(String(data=texto))
+
+
+def test_nao_cumprimenta_com_posicao_mantida(node):
+    _corpo(node, "mantendo:sentido")
+    for _ in range(6):
+        node._on_detections(_array("gil"))
+    assert _greeted(node) == []
+
+
+def test_volta_a_cumprimentar_quando_livre(node):
+    _corpo(node, "mantendo:sentido")
+    for _ in range(6):
+        node._on_detections(_array("gil"))
+    _corpo(node, "livre")
+    node._on_detections(_array("gil"))
+    assert _greeted(node) == ["gil"]
+
+
+def test_cumprimentar_agora_recusado_com_posicao_mantida(node):
+    _meia_volta(node)
+    node._on_detections(_array("gil"))
+    _corpo(node, "mantendo:continencia")
+    r = node.set_parameters([Parameter("cumprimentar_agora", Parameter.Type.STRING, "x")])[0]
+    assert not r.successful and r.reason == "posicao mantida"
+    assert node._aguardando_operador
+    assert _greeted(node) == ["cmt"]
+
+
+def test_quem_aparece_na_posicao_mantida_nao_conta_como_cumprimentado(node):
+    _corpo(node, "mantendo:sentido")
+    for _ in range(6):
+        node._on_detections(_array("gil"))
+    _corpo(node, "rotina")
+    node._on_detections(_array("gil"))
+    assert _greeted(node) == ["gil"]

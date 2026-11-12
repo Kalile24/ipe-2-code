@@ -129,9 +129,18 @@
           <button id="b_agora" class="primario" onclick="comando('agora')">Cumprimentar agora</button>
           <button id="b_auto" onclick="alternarAuto()">Automático</button>
           <button id="b_liberar" onclick="comando('liberar')">Liberar cumprimentos</button>
+          <button id="b_a_vontade" onclick="comando('a_vontade')">À vontade</button>
         </div>
         <p id="msg" class="msg muted" role="status"></p>
         <p class="dica">No automático, a mesma pessoa só é cumprimentada de novo depois de 5 min e de sair da frente por 5 s. <b>Liberar cumprimentos</b> e <b>Cumprimentar agora</b> ignoram essa espera.</p>
+      </div>
+      <div class="cartao">
+        <h2>Voz</h2>
+        <div class="linha"><span>Posição</span><span id="v_posicao">—</span></div>
+        <div class="linha"><span>Ouvi</span><span id="v_texto">—</span></div>
+        <div class="linha"><span>Comando</span><span id="v_comando">—</span></div>
+        <div class="linha"><span>Resultado</span><span id="v_resultado">—</span></div>
+        <div class="linha"><span>Transcrição</span><span id="v_tempo">—</span></div>
       </div>
       <div class="cartao">
         <h2>Na frente agora</h2>
@@ -303,6 +312,7 @@ function problemas(e) {
     else if (!e.reconhecimento.ok) lista.push(['bad', 'Reconhecimento sem imagem']);
   }
   if (e.rotina_de_pe && subindo && !e.reconhecimento.ok) lista.push(['neutro', 'Subindo: leva cerca de 1 minuto até o reconhecimento entrar no ar']);
+  if (e.voz && e.voz.microfone === false) lista.push(['warn', 'Microfone da webcam não encontrado: os comandos de voz não funcionam']);
   if (e.operacao_pendente) lista.push(['warn', 'Há ajustes salvos que só valem na próxima subida: PARAR e suba de novo']);
   return lista;
 }
@@ -337,6 +347,7 @@ function desenhar(e) {
     : c.saida_padrao ? span('ok', 'conectada') : span('warn', 'conectada, não é a saída de som');
   $('caixa_atual').textContent = c.mac ? (c.padrao ? `padrão (${c.mac})` : c.mac) : '—';
 
+  desenharVoz(e);
   desenharVistos(e);
   desenharMedida(e);
   desenharEventos(e.status);
@@ -346,8 +357,21 @@ function desenhar(e) {
   $('cmd_parado').hidden = e.rotina_de_pe;
   $('cmd_de_pe').hidden = !e.rotina_de_pe;
   $('b_desarmado').disabled = $('b_armado').disabled = ocupado;
+  $('b_a_vontade').disabled = ocupado;
   $('b_agora').disabled = $('b_auto').disabled = $('b_liberar').disabled = ocupado || !e.reaction_node;
   $('b_auto').textContent = e.automatico === null ? 'Automático' : e.automatico ? 'Desligar automático' : 'Ligar automático';
+}
+
+const RESULTADO_VOZ = {gravando: 'gravando…', transcrevendo: 'transcrevendo…', ok: 'ok', nao_entendi: 'não entendi', recusado: 'recusado'};
+
+// O texto vem do reconhecimento de fala: sempre por esc().
+function desenharVoz(e) {
+  const v = e.voz || {}, c = e.corpo || '';
+  $('v_posicao').innerHTML = c.startsWith('mantendo:') ? `<span class="warn">segurando ${esc(c.slice(9))}</span>` : '—';
+  $('v_texto').innerHTML = v.texto ? esc(v.texto) : '—';
+  $('v_comando').innerHTML = v.comando ? esc(v.comando) : '—';
+  $('v_resultado').innerHTML = v.resultado ? esc(RESULTADO_VOZ[v.resultado] || v.resultado) : '—';
+  $('v_tempo').innerHTML = typeof v.transcricao_s === 'number' ? esc(num(v.transcricao_s, 1)) + ' s' : '—';
 }
 
 const desvioDe = x => { const meia = ((opValores && opValores.largura_imagem) || 640) / 2; return (x - meia) / meia; };

@@ -22,6 +22,15 @@ HHHH=$HOME/hhhh  # só para checar se o START do outro projeto está de pé
 # Caixa Bluetooth: a KD-833 do robô, ou a escolhida no painel (data/caixa.txt).
 CAIXA=A8:AA:CD:C6:5C:A3
 if grep -qsE '^[0-9A-F]{2}(:[0-9A-F]{2}){5}$' "$REPO/data/caixa.txt"; then CAIXA=$(cat "$REPO/data/caixa.txt"); fi
+# Microfone dos comandos de voz: data/microfone.txt, senão a placa Intelbras do arecord -l, senão default.
+# Nunca bloqueia a subida (sem microfone, o painel avisa).
+MICROFONE=default
+if [ -s "$REPO/data/microfone.txt" ]; then
+    MICROFONE=$(head -1 "$REPO/data/microfone.txt")
+else
+    PLACA=$(arecord -l 2>/dev/null | grep -i intelbras | sed -n 's/^card [0-9]*: \([^ ]*\).*/\1/p' | head -1)
+    [ -n "$PLACA" ] && MICROFONE="plughw:CARD=$PLACA,DEV=0"
+fi
 ARMADO=false
 CONTROLE=false
 ESTAGIOS=""
@@ -97,6 +106,7 @@ if [ "$ARMADO" = true ] && [ "$CONTROLE" = false ]; then
     [ "$resposta" = s ] || [ "$resposta" = S ] || { echo "Cancelado."; exit 1; }
 fi
 
+echo "Microfone dos comandos de voz: $MICROFONE"
 echo "[3/3] Reconhecimento + reação + corpo (sessão tmux '$SESSAO')..."
 AMBIENTE="source $REPO/scripts/ambiente_robo.sh"
 rodar() { tmux send-keys -t "$SESSAO:$1" "$AMBIENTE" C-m "$2" C-m; }
@@ -123,7 +133,7 @@ if [ -z "$ESTAGIOS" ] && [ -n "${OPERACAO:-}" ]; then
         || { LISTA=""; echo "aviso: não consegui atualizar os estágios do arquivo de ajustes; migração ignorada." >&2; }
     [ -n "$LISTA" ] && ARGS_MODO="$ARGS_MODO estagios:=$LISTA"
 fi
-rodar rotina "ros2 launch robot_reaction_ros rotina.launch.py armed:=$ARMADO $ARGS_MODO $ARGS_CAMERA \
+rodar rotina "ros2 launch robot_reaction_ros rotina.launch.py armed:=$ARMADO $ARGS_MODO $ARGS_CAMERA microfone:=$MICROFONE \
 onnx_providers:=TensorrtExecutionProvider,CUDAExecutionProvider,CPUExecutionProvider"
 rodar status "ros2 topic echo /reaction/rotina_status"
 rodar deteccoes "python3 $REPO/scripts/watch_detections.py"

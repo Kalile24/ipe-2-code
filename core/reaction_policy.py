@@ -20,12 +20,13 @@ class ReactionConfigError(ValueError):
     """Mapa de reações inválido."""
 
 
-def validate_steps(nome: str, passos: object) -> list[dict[str, str]]:
+def validate_steps(nome: str, passos: object, exigir_a_vontade: bool = True) -> list[dict[str, str]]:
     """Valida a lista `passos` de uma rotina: cada passo é `{postura: <nome>}`, `{fala: <texto>}`
     ou `{pausa: <segundos>}` (espera extra, ex.: ficar 15 s em descansar).
 
     Se a rotina mexe os braços, a última postura tem que ser `a_vontade`: é ela que devolve os
     braços ao equilíbrio e solta o arm_sdk; sem isso o braço ficaria preso na última pose.
+    Os comandos de voz (`exigir_a_vontade=False`) podem terminar numa posição mantida.
     """
     if not isinstance(passos, list) or not passos:
         raise ReactionConfigError(f"{nome}: 'passos' tem que ser uma lista não vazia, veio {passos!r}")
@@ -45,7 +46,7 @@ def validate_steps(nome: str, passos: object) -> list[dict[str, str]]:
             raise ReactionConfigError(f"{nome}: passo {i}: pausa tem que ser um número de segundos entre 0 e 120, veio {valor!r}")
         validos.append({tipo: valor})
     posturas = [p["postura"] for p in validos if "postura" in p]
-    if posturas and posturas[-1] != A_VONTADE:
+    if exigir_a_vontade and posturas and posturas[-1] != A_VONTADE:
         raise ReactionConfigError(f"{nome}: a última postura tem que ser {A_VONTADE!r} (solta os braços), veio {posturas[-1]!r}")
     return validos
 

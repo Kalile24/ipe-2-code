@@ -11,7 +11,7 @@ from ament_index_python.packages import get_package_share_directory
 from rcl_interfaces.msg import SetParametersResult
 from rclpy.action import ActionClient
 from rclpy.node import Node
-from rclpy.qos import QoSProfile
+from rclpy.qos import DurabilityPolicy, QoSProfile
 from std_msgs.msg import String
 from vision_msgs.msg import Detection2DArray
 
@@ -85,7 +85,12 @@ class ReactionNode(Node):
         self._rotina = ActionClient(self, Rotina, "/reaction/rotina")
         self._em_andamento: str | None = None  # pessoa cuja rotina o body_node está executando
         self._aguardando_operador = False  # meia-volta feita: só o operador libera os cumprimentos
+        self._mantendo = False  # operador mandou uma posição e o body_node a segura: sem cumprimento automático
         self._status_pub = self.create_publisher(String, "/reaction/rotina_status", 10)
+        self._corpo_sub = self.create_subscription(
+            String, "/reaction/corpo", self._on_corpo,
+            QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL),
+        )
         self._subscription = self.create_subscription(
             Detection2DArray, detections_topic, self._on_detections, QoSProfile(depth=1)
         )
@@ -104,6 +109,9 @@ class ReactionNode(Node):
 
         threading.Thread(target=falar, daemon=True).start()
 
+    def _on_corpo(self, msg: String) -> None:
+        self._mantendo = msg.data.startswith("mantendo:")
+
     def _fim_da_espera(self) -> None:
         if self._aguardando_operador:
             self._aguardando_operador = False
@@ -118,6 +126,8 @@ class ReactionNode(Node):
                 self._falar(f"Reações automáticas {'ligadas' if self._automatico else 'desligadas'}.")
                 continue
             if p.name == "cumprimentar_agora":
+                if self._mantendo:
+                    return SetParametersResult(successful=False, reason="posicao mantida")
                 if self._em_andamento is not None:
                     return SetParametersResult(successful=False, reason=f"rotina em andamento ({self._em_andamento})")
                 agora = time.monotonic()
@@ -147,7 +157,7 @@ class ReactionNode(Node):
             # body_node morreu no meio: o resultado nunca vai chegar
             self.get_logger().warn(f"rotina de {self._em_andamento}: o body_node sumiu")
             self._em_andamento = None
-        livre = self._automatico and self._em_andamento is None and not self._aguardando_operador
+        livre = self._automatico and self._em_andamento is None and not self._aguardando_operador and not self._mantendo
         hit = self._policy.update(seen, time.monotonic(), allow_fire=livre)
         if hit is not None:
             self._enviar(*hit)

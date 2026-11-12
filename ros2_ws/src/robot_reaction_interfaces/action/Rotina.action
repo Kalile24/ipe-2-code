@@ -2,6 +2,9 @@
 # passos_json: a lista `passos` do reactions.yaml em JSON, ex.: [{"postura": "sentido"}, ...]
 string pessoa
 string passos_json
+# true: comando de voz do operador (não aproxima, não faz meia-volta e pode terminar numa posição mantida).
+# Os outros remetentes deixam false.
+bool voz
 ---
 # sucesso: todos os passos deram certo. mensagem: o motivo quando não deram.
 bool sucesso

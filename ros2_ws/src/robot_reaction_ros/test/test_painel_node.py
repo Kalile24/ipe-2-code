@@ -321,3 +321,66 @@ def test_form_saves_the_half_turn_fields(tmp_path, monkeypatch):
     painel.salvar_operacao({k: str(v) for k, v in novos.items()})
     salvo = yaml.safe_load((tmp_path / "operacao.yaml").read_text())["/**"]["ros__parameters"]
     assert {k: salvo[k] for k in novos} == novos
+
+
+def _painel_vivo(monkeypatch):
+    painel = PainelNode.__new__(PainelNode)
+    painel._lock = threading.Lock()
+    painel._quadros, painel._status, painel._deteccoes, painel._deteccao_em = deque(), deque(), [], 0.0
+    painel._parando, painel._subindo = threading.Event(), threading.Event()
+    painel._image_topic, painel._operacao_alterada_em = "/imagem", 0.0
+    painel._corpo, painel._voz, painel._subida_erro = "livre", {}, None
+    painel.get_node_names = lambda: ["body_node", "voz_node"]
+    painel.count_publishers = lambda _t: 0
+    painel.webcam, painel.caixa, painel.pessoas = (lambda *a: {"reiniciar": False}), (lambda *a: {}), (lambda *a: [])
+    painel._get_rec = painel._get_corpo = None
+    painel._param_fixo = lambda *a: None
+    painel.armado = lambda nos: None
+    painel.param_reacao = lambda nome: None
+    monkeypatch.setattr(painel_mod, "sessao_criada", lambda: None)
+    monkeypatch.setattr(painel_mod, "sessao_de_pe", lambda: False)
+    return painel
+
+
+def test_state_carries_the_last_voice_state_and_the_body(monkeypatch):
+    painel = _painel_vivo(monkeypatch)
+    painel._on_corpo(types.SimpleNamespace(data="mantendo:sentido"))
+    painel._on_voz(types.SimpleNamespace(data='{"texto": "sentido", "resultado": "ok", "microfone": true}'))
+    e = painel.estado()
+    assert e["corpo"] == "mantendo:sentido"
+    assert e["voz"]["texto"] == "sentido" and e["voz"]["microfone"] is True
+
+
+def test_invalid_voice_json_is_ignored(monkeypatch):
+    painel = _painel_vivo(monkeypatch)
+    painel._on_voz(types.SimpleNamespace(data='{"texto": "a"}'))
+    for lixo in ("{quebrado", "[1, 2]", "null"):
+        painel._on_voz(types.SimpleNamespace(data=lixo))
+    assert painel.estado()["voz"] == {"texto": "a"}
+
+
+def test_relax_button_sends_the_voice_command(monkeypatch):
+    painel = _painel_vivo(monkeypatch)
+    enviados = []
+    monkeypatch.setattr(painel_mod, "enviar_voz", enviados.append)
+    painel.get_node_names = lambda: ["voz_node"]
+    assert painel.acao("a_vontade") == "à vontade enviado"
+    assert enviados == ["comando:a_vontade"]
+    painel.get_node_names = lambda: []  # sem o nó de voz, não finge sucesso
+    assert "fora do ar" in painel.acao("a_vontade")
+    assert enviados == ["comando:a_vontade"]
+
+
+def test_state_drops_voice_and_held_position_when_their_nodes_are_gone(monkeypatch):
+    painel = _painel_vivo(monkeypatch)
+    painel._on_corpo(types.SimpleNamespace(data="mantendo:sentido"))
+    painel._on_voz(types.SimpleNamespace(data='{"microfone": false}'))
+    painel.get_node_names = lambda: []
+    e = painel.estado()
+    assert e["corpo"] == "livre" and e["voz"] == {}
+    painel.get_node_names = lambda: ["body_node"]
+    e = painel.estado()
+    assert e["corpo"] == "mantendo:sentido" and e["voz"] == {}
+    painel.get_node_names = lambda: ["voz_node"]
+    e = painel.estado()
+    assert e["corpo"] == "livre" and e["voz"] == {"microfone": False}
